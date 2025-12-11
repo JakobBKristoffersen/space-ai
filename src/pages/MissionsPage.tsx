@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import { Box, Button, Card, HStack, Heading, Progress, Select, SimpleGrid, Text, VStack, Portal, createListCollection } from "@chakra-ui/react";
 
 interface MissionRow {
@@ -20,6 +20,8 @@ function fmtReward(r: { money: number; rp: number }) {
 
 export default function MissionsPage() {
   const [rows, setRows] = useState<MissionRow[]>([]);
+  const rowsRef = useRef<MissionRow[]>([]);
+  useEffect(() => { rowsRef.current = rows; }, [rows]);
   const [filter, setFilter] = useState<string>("active");
 
   const filters = useMemo(() => createListCollection({
@@ -30,27 +32,68 @@ export default function MissionsPage() {
     ]
   }), []);
 
-  // Poll missions (throttled)
+  // Poll missions via services getter on render cadence (throttled and equality-guarded)
   useEffect(() => {
-    const svcs: any = (window as any).__services;
+    const g: any = (window as any).__manager;
+    const svc: any = (window as any).__services;
+
+    let disposed = false;
+    let rafId: number | null = null;
+    let lastUpdateTs = 0; // ms, throttle UI updates
+
+    const equalRows = (a: MissionRow[], b: MissionRow[]) => {
+      if (a === b) return true;
+      if (!a || !b) return false;
+      if (a.length !== b.length) return false;
+      for (let i = 0; i < a.length; i++) {
+        const x = a[i], y = b[i];
+        if (!x || !y) return false;
+        if (x.id !== y.id || x.completed !== y.completed || x.progress !== y.progress || x.reward !== y.reward || x.name !== y.name || x.description !== y.description) {
+          return false;
+        }
+      }
+      return true;
+    };
+
+    const scheduleUpdate = (data: MissionRow[]) => {
+      if (disposed) return;
+      if (equalRows(data, rowsRef.current)) return; // no change -> avoid state churn
+      const now = performance.now();
+      // throttle to ~5 Hz (200 ms)
+      if (now - lastUpdateTs < 200) return;
+      lastUpdateTs = now;
+      if (rafId != null) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        if (disposed) return;
+        if (!equalRows(data, rowsRef.current)) {
+          setRows(data);
+        }
+      });
+    };
+
     const tick = () => {
       try {
-        // Simple optimization: only update if we have data
-        // Ideally we'd deep compare, but 200ms-500ms poll is fine for UI
-        const data = svcs?.getMissions ? svcs.getMissions() as MissionRow[] : [];
-        setRows(prev => {
-          // Very cheap check: if length and IDs match, maybe skip? 
-          // For now, just setting it is fine if throttled.
-          // React performs strict equality check on state. New array = new render.
-          // Let's rely on JSON stringify check to avoid re-render if data is identical?
-          if (JSON.stringify(prev) === JSON.stringify(data)) return prev;
-          return data;
-        });
-      } catch { }
+        const data = (svc?.getMissions ? (svc.getMissions() as MissionRow[]) : []);
+        // Sanitize progress to be finite [0,1] to avoid NaN downstream
+        const safe = (Array.isArray(data) ? data : []).map((m) => ({
+          ...m,
+          progress: (Number.isFinite(m.progress) ? Math.max(0, Math.min(1, m.progress)) : 0),
+        }));
+        scheduleUpdate(safe);
+      } catch {
+        scheduleUpdate([]);
+      }
     };
-    tick(); // initial
-    const id = setInterval(tick, 500);
-    return () => clearInterval(id);
+
+    // initial fetch
+    tick();
+    const unsub = g?.onPostRender?.(() => tick());
+
+    return () => {
+      disposed = true;
+      try { if (rafId != null) cancelAnimationFrame(rafId); } catch { }
+      try { unsub?.(); } catch { }
+    };
   }, []);
 
   const shown = useMemo(() => {
@@ -104,39 +147,32 @@ export default function MissionsPage() {
         </Card.Root>
       )}
 
-      {tiers.map(([tier, missions]) => (
-        <Box key={tier}>
-          <Heading size="xs" mb={2} color="gray.400" textTransform="uppercase" letterSpacing="wider">
-            Tier {tier}
-          </Heading>
-          <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={3}>
-            {missions.map(m => (
-              <Card.Root key={m.id} variant="outline" borderColor={m.completed ? "green.500/30" : undefined} bg={m.completed ? "green.500/5" : undefined}>
-                <Card.Header>
-                  <HStack justify="space-between" align="center">
-                    <Heading size="sm">{m.name}</Heading>
-                    {m.completed && <Text fontSize="xs" color="green.400" fontWeight="bold">COMPLETED</Text>}
-                  </HStack>
-                </Card.Header>
-                <Card.Body>
-                  <VStack align="stretch" gap={2}>
-                    <Text fontSize="sm" color="gray.500">{m.description}</Text>
-                    <HStack justify="space-between">
-                      <Text fontFamily="mono" fontSize="xs" color="yellow.400">{fmtReward(m.reward)}</Text>
-                      <Text fontFamily="mono" fontSize="xs">{Math.round(m.progress * 100)}%</Text>
-                    </HStack>
-                    <Progress.Root value={Math.floor(m.progress * 100)} max={100} colorScheme={m.completed ? "green" : "blue"} size="sm">
-                      <Progress.Track>
-                        <Progress.Range />
-                      </Progress.Track>
-                    </Progress.Root>
-                  </VStack>
-                </Card.Body>
-              </Card.Root>
-            ))}
-          </SimpleGrid>
-        </Box>
-      ))}
+      <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={3}>
+        {shown.map(m => (
+          <Card.Root key={m.id} variant="outline">
+            <Card.Header>
+              <HStack justify="space-between" align="center">
+                <Heading size="sm">{m.name}</Heading>
+                <Text fontFamily="mono" fontSize="sm" color={m.completed ? "green.400" : "gray.500"}>{m.completed ? "Completed" : ""}</Text>
+              </HStack>
+            </Card.Header>
+            <Card.Body>
+              <VStack align="stretch" gap={2}>
+                <Text fontSize="sm" color="gray.500">{m.description}</Text>
+                <HStack justify="space-between">
+                  <Text fontFamily="mono" fontSize="sm">Reward: {fmtMoney(m.reward)}</Text>
+                  <Text fontFamily="mono" fontSize="sm">{Math.max(0, Math.min(100, Math.round(((Number.isFinite(m.progress) ? m.progress : 0) * 100))))}%</Text>
+                </HStack>
+                <Progress.Root value={Math.max(0, Math.min(100, Math.floor(((Number.isFinite(m.progress) ? m.progress : 0) * 100))))} max={100}>
+                  <Progress.Track>
+                    <Progress.Range />
+                  </Progress.Track>
+                </Progress.Root>
+              </VStack>
+            </Card.Body>
+          </Card.Root>
+        ))}
+      </SimpleGrid>
     </VStack>
   );
 }
