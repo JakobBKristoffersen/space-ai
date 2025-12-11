@@ -106,8 +106,6 @@ export default function App() {
 
           <Tabs.Content p={0} value={'world_scene'}>
             <WorldScenePage />
-            {/* Hidden legacy hooks to avoid legacy controllers failing when mounted */}
-            <Box id="metrics" display="none" />
           </Tabs.Content>
 
           <Tabs.Content p={0} value={'missions'}>

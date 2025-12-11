@@ -27,8 +27,8 @@ function update(api) {
   const targetPe = 2000;    // m (±10% acceptable)
   const peOkLow = targetPe * 0.9;
   const peOkHigh = targetPe * 1.1;
-  const alignRate = 0.10;   // rad/s turn rate to command
-  const alignTol = 0.03;    // rad (~1.7°)
+  const alignRate = 0.25;   // rad/s turn rate to command
+  const alignTol = 0.05;    // rad (~1.7°)
 
   // Persistent phase (ensure first one is logged)
   const storedPhase = api.memory.get("phase");
@@ -136,7 +136,7 @@ function update(api) {
     api.setEnginePower(0);
     api.setTurnRate(0);
     if (isFinite(ap)) {
-      const close = Math.abs(ap - alt) < 25; // within 25 m of Ap
+      const close = Math.abs(ap - alt) < 50; // within 25 m of Ap
       const passedPeak = prevAlt > alt && alt > ap * 0.9; // started descending near Ap
       const p = clamp01(1 - Math.abs(ap - alt) / Math.max(1, ap));
       reportProgress("Coast to Ap", p);
@@ -148,7 +148,10 @@ function update(api) {
     // At/near Ap: burn prograde to raise Periapsis to target band
     const aim = progradeAngle();
     const aligned = alignTo(aim);
-    api.setEnginePower(aligned ? 1 : 0);
+    
+    api.log('close to prograde burning to Pe and mainting prograde')
+    api.setEnginePower(1);  
+    
     if (isFinite(pe) && isFinite(targetPe)) {
       reportProgress("Circularize (raise Pe)", clamp01(pe / targetPe));
     }

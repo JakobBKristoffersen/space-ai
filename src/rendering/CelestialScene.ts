@@ -4,6 +4,9 @@
  */
 import { RenderContext, SceneLike } from "./Renderer";
 import type { EnvironmentSnapshot } from "../simulation/Environment";
+import { drawAtmosphereGlow } from "./sceneParts/atmosphere";
+import { updateTrail, drawTrail } from "./sceneParts/trail";
+import { drawRocket as drawRocketHelper } from "./sceneParts/rockets";
 
 export interface SceneStateProvider<T> {
   get(): T;
@@ -83,73 +86,24 @@ export class CelestialScene implements SceneLike {
     // Update engine-on trail (store world positions while engines burn)
     const nowT = snap.timeSeconds;
     const burning = (snap.rocket.fuelConsumptionKgPerS ?? 0) > 1e-3;
-    // Prune old points
-    if (this.thrustTrail.length > 0) {
-      let cut = 0;
-      for (let i = 0; i < this.thrustTrail.length; i++) {
-        if (nowT - this.thrustTrail[i].t <= this.maxTrailAgeSec) { cut = i; break; }
-      }
-      if (cut > 0) this.thrustTrail.splice(0, cut);
-      // If all points are too old, clear
-      if (this.thrustTrail.length && nowT - this.thrustTrail[0].t > this.maxTrailAgeSec) {
-        this.thrustTrail = [];
-        this.lastTrailX = this.lastTrailY = null;
-      }
-    }
-    // Append new point if burning and moved sufficiently since last recorded point
-    if (burning) {
-      const rx = snap.rocket.position.x;
-      const ry = snap.rocket.position.y;
-      let shouldAdd = false;
-      if (this.lastTrailX === null || this.lastTrailY === null) {
-        shouldAdd = true;
-      } else {
-        const dxm = rx - this.lastTrailX;
-        const dym = ry - this.lastTrailY;
-        const dist = Math.hypot(dxm, dym);
-        if (dist >= this.trailMinSpacingMeters) shouldAdd = true;
-      }
-      if (shouldAdd) {
-        this.thrustTrail.push({ x: rx, y: ry, t: nowT });
-        this.lastTrailX = rx;
-        this.lastTrailY = ry;
-      }
-    } else {
-      // Stop accumulating spacing reference so next burn starts a new segment immediately
-      this.lastTrailX = this.lastTrailY = null;
+    {
+      const res = updateTrail(
+        this.thrustTrail,
+        nowT,
+        burning,
+        snap.rocket.position.x,
+        snap.rocket.position.y,
+        this.maxTrailAgeSec,
+        this.trailMinSpacingMeters,
+        this.lastTrailX,
+        this.lastTrailY,
+      );
+      this.lastTrailX = res.lastX;
+      this.lastTrailY = res.lastY;
     }
 
-    // Draw atmosphere around primary only when the rocket is within the atmosphere
-    if ((snap.rocket as any)?.inAtmosphere && (primary.atmosphereScaleHeightMeters && primary.atmosphereScaleHeightMeters > 0)) {
-      const Rm = primary.radiusMeters;
-      const cutoffAlt = (snap.atmosphereCutoffAltitudeMeters ?? (primary.atmosphereScaleHeightMeters * 6));
-      const outerRpx = (Rm + Math.max(0, cutoffAlt)) * pxPerMeter;
-      const R = Rm * pxPerMeter;
-      const center = toScreen(primary.position.x, primary.position.y);
-      const grad = ctx.createRadialGradient(center.x, center.y, R, center.x, center.y, outerRpx);
-      const base = primary.atmosphereColor || "rgba(80,160,255,1)";
-      const toRgbaWithAlpha = (c: string, a: number) => {
-        const m = c.match(/^rgba\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*([\d.]+)\s*\)$/i);
-        if (m) return `rgba(${m[1]},${m[2]},${m[3]},${a})`;
-        const m2 = c.match(/^rgb\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\)$/i);
-        if (m2) return `rgba(${m2[1]},${m2[2]},${m2[3]},${a})`;
-        const mh = c.match(/^#([0-9a-fA-F]{6})$/);
-        if (mh) {
-          const hex = mh[1];
-          const r = parseInt(hex.substring(0, 2), 16);
-          const g = parseInt(hex.substring(2, 4), 16);
-          const b = parseInt(hex.substring(4, 6), 16);
-          return `rgba(${r},${g},${b},${a})`;
-        }
-        return `rgba(80,160,255,${a})`;
-      };
-      grad.addColorStop(0, toRgbaWithAlpha(base, 0.22));
-      grad.addColorStop(1, toRgbaWithAlpha(base, 0));
-      ctx.fillStyle = grad;
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, outerRpx, 0, Math.PI * 2);
-      ctx.fill();
-    }
+    // Draw atmosphere glow via helper
+    drawAtmosphereGlow(ctx, snap, pxPerMeter, toScreen)
 
     // Draw primary planet disk
     {
@@ -189,28 +143,7 @@ export class CelestialScene implements SceneLike {
     }
 
     // Draw thrust trail (engine-on path), behind all ships but above planets
-    if (this.thrustTrail.length >= 2) {
-      ctx.save();
-      ctx.globalCompositeOperation = "lighter"; // subtle glow
-      for (let i = 1; i < this.thrustTrail.length; i++) {
-        const p0 = this.thrustTrail[i - 1];
-        const p1 = this.thrustTrail[i];
-        const ageMid = nowT - (p0.t + p1.t) * 0.5;
-        const k = Math.max(0, Math.min(1, 1 - ageMid / this.maxTrailAgeSec));
-        if (k <= 0) continue;
-        const a = 0.85 * k * k; // ease-out alpha
-        const w = 3 * k + 0.5; // width tapers with age
-        const s0 = toScreen(p0.x, p0.y);
-        const s1 = toScreen(p1.x, p1.y);
-        ctx.strokeStyle = `rgba(255,200,80,${a.toFixed(3)})`;
-        ctx.lineWidth = w;
-        ctx.beginPath();
-        ctx.moveTo(s0.x, s0.y);
-        ctx.lineTo(s1.x, s1.y);
-        ctx.stroke();
-      }
-      ctx.restore();
-    }
+    drawTrail(ctx, this.thrustTrail, toScreen, nowT, this.maxTrailAgeSec)
 
     // Draw all rockets, focused camera on active rocket.
     {
@@ -262,11 +195,11 @@ export class CelestialScene implements SceneLike {
         if (i === activeIdx) continue;
         const r = rockets[i];
         const burningOther = (Number(r.fuelConsumptionKgPerS ?? 0) > 1e-3);
-        drawRocket(r, "#bbbbbb", burningOther);
+        drawRocketHelper(ctx, snap.timeSeconds, r, toScreen, "#bbbbbb", burningOther);
       }
 
       // Draw active rocket with full styling and plume/trail as before
-      drawRocket(snap.rocket as any, snap.destroyed ? "#444" : "#e74c3c", burning);
+      drawRocketHelper(ctx, snap.timeSeconds, snap.rocket as any, toScreen, snap.destroyed ? "#444" : "#e74c3c", burning);
     }
 
     // Minimap: top-right corner

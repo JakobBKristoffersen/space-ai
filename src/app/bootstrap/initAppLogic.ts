@@ -54,7 +54,7 @@ export function initAppLogic(): void {
   });
 
   // 5) Missions + money + store
-  const missionMgr = new MissionManager();
+  let missionMgr = new MissionManager();
   seedDefaultMissions(missionMgr);
   let money: number = (window as any).__money ?? (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
   const store = new PartStore(DefaultCatalog);
@@ -140,10 +140,7 @@ export function initAppLogic(): void {
         money = (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
         // Reset missions progression
         try {
-          // Reinitialize missions manager to clear completion state and re-seed
-          // (closure uses the same variable name, so __services.getMissions will observe the new instance)
-          // eslint-disable-next-line @typescript-eslint/no-unused-vars
-          (missionMgr as any) = new (MissionManager as any)();
+          missionMgr = new MissionManager();
           seedDefaultMissions(missionMgr);
         } catch {}
         // Publish telemetry keys for editor

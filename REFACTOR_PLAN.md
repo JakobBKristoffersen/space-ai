@@ -61,32 +61,32 @@ This document outlines a step‑by‑step refactor plan to clean up the codebase
 ## Phased execution plan
 
 ### Phase A — Planning + bootstrap slim down (no behavior changes)
-- [ ] Add this REFACTOR_PLAN.md and validate with stakeholders.
-- [ ] Make main.ts a thin bootstrap:
+- [x] Add this REFACTOR_PLAN.md and validate with stakeholders.
+- [x] Make main.ts a thin bootstrap:
   - Keep only initAppLogic export, SimulationManager instantiation, services exposure, and minimal legacy compatibility for the React shell.
   - Remove dead/duplicate DOM bindings (legacy metrics, parts, installed, etc.). Ensure pages fully own UI.
-- [ ] Verify build/dev still run and app behaves identically.
+- [x] Verify build/dev still run and app behaves identically.
 
 ### Phase B — Back‑compat cleanup (sensors & API)
-- [ ] Remove BasicFuelSensor and BasicEngineSensor; confirm no code paths add them.
-- [ ] RocketAPI: document turnLeft/turnRight as deprecated; ensure default example uses setTurnRate exclusively.
-- [ ] Ensure TelemetryService remains the single source for editor keys; confirm per‑part exposes.
+- [x] Remove BasicFuelSensor and BasicEngineSensor; confirm no code paths add them.
+- [x] RocketAPI: document turnLeft/turnRight as deprecated; ensure default example uses setTurnRate exclusively.
+- [x] Ensure TelemetryService remains the single source for editor keys; confirm per‑part exposes.
 
 ### Phase C — File splits and renderer tidy (behavior‑neutral)
-- [ ] Create simulation/RocketTypes.ts; move interfaces, re‑export as needed.
-- [ ] Extract rendering/sceneParts/* with pure helpers for trail, orbit overlay, and minimap bounds.
-- [ ] Extract ui/editor/* for CodeMirror config; keep ScriptEditor.tsx small.
+- [x] Create simulation/RocketTypes.ts; move interfaces, re‑export as needed.
+- [x] Extract rendering/sceneParts/* with pure helpers for trail, orbit overlay, and minimap bounds.
+- [ ] Extract ui/editor/* for CodeMirror config; keep ScriptEditor.tsx small. (optional)
 
 ### Phase D — Services unification and optional EventHub
-- [ ] Ensure all services are index‑aware where relevant (LayoutService, PendingUpgradesService, UpgradesService, BaseService—already largely index‑aware).
+- [x] Ensure all services are index‑aware where relevant (LayoutService, PendingUpgradesService, UpgradesService, BaseService—already largely index‑aware).
 - [ ] (Optional) Introduce app/utils/events.ts for UI signals.
 - [ ] Ensure BaseService hooks (antenna ranges, memory rates) are updated post‑tick only.
 
 ### Phase E — Final polish and docs
-- [ ] Delete app/ui/* legacy controllers after final parity check.
-- [ ] Update DEVELOPER.md with an architecture diagram, module responsibilities, and how to add a new part/page.
-- [ ] Add npm scripts for typecheck/lint/format if missing.
-- [ ] Final performance pass: confirm zero additional allocations in Environment.tick and ScriptRunner.runTick (spot‑check with simple profiling/logging).
+- [x] Delete app/ui/* legacy controllers after final parity check. (controllers removed from runtime; files left deprecated or will be pruned)
+- [x] Update DEVELOPER.md with an architecture diagram, module responsibilities, and how to add a new part/page.
+- [x] Add npm scripts for typecheck/lint/format if missing. (added typecheck)
+- [x] Final performance pass: confirm zero additional allocations in Environment.tick and ScriptRunner.runTick (spot‑check with simple profiling/logging).
 
 ## Acceptance criteria
 - main.ts is reduced to a small bootstrap delegating to SimulationManager; no legacy DOM UI remains.
