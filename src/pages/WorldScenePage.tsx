@@ -277,7 +277,12 @@ export default function WorldScenePage() {
 
     const dv = useMemo(() => manager ? estimateDeltaV(manager.getRocket()) : 0, [manager, snapKey]);
     const speedMag = rocketSnap ? mag2(rocketSnap.velocity.x, rocketSnap.velocity.y) : 0;
-    const batteryPct = rocketSnap ? Number(rocketSnap.batteryPercent || 0) : 0;
+    // Clamp battery percentage to a safe [0,100] number for Progress component
+    const batteryPct = (() => {
+        const raw = Number(rocketSnap?.batteryPercent ?? 0);
+        if (!Number.isFinite(raw)) return 0;
+        return Math.max(0, Math.min(100, raw));
+    })();
 
     // Rocket selection (active vehicle)
     const rocketOptions = useMemo(() => {
