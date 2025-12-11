@@ -210,6 +210,17 @@ export class Environment {
       }
     }
 
+    // Process spawn queue from Rockets (e.g. deployed satellites)
+    for (const r of this.rockets) {
+      if (r.spawnQueue.length > 0) {
+        const spawned = r.spawnQueue.splice(0, r.spawnQueue.length);
+        for (const s of spawned) {
+          this.rockets.push(s);
+          // Auto-name if not named? Assuming ID is unique.
+        }
+      }
+    }
+
     // 1) Apply queued commands to the rocket (throttle, attitude commands, etc.).
     this.rocket.applyCommands(commands);
 
@@ -268,7 +279,7 @@ export class Environment {
     for (const b of this.bodies) {
       const dx = b.position.x - rx;
       const dy = b.position.y - ry;
-      const r2 = dx*dx + dy*dy;
+      const r2 = dx * dx + dy * dy;
       const r = Math.max(1e-3, Math.sqrt(r2));
       const nx = dx / r, ny = dy / r;
       const g = b.surfaceGravity * (b.radiusMeters / Math.max(b.radiusMeters, r)) ** 2; // clamp inside
@@ -282,12 +293,12 @@ export class Environment {
       perBodyGrav.push({ id: b.id, name: b.name, fx: g * nx, fy: g * ny });
     }
     // Persist per-rocket SOI id for snapshot consumers
-    try { (this.rocket as any).setSoIForSnapshot?.(soiBody?.id ?? this.system.primaryId); } catch {}
+    try { (this.rocket as any).setSoIForSnapshot?.(soiBody?.id ?? this.system.primaryId); } catch { }
 
     // Altitude over primary
     const dxp = primary.position.x - rx;
     const dyp = primary.position.y - ry;
-    const rp = Math.sqrt(dxp*dxp + dyp*dyp);
+    const rp = Math.sqrt(dxp * dxp + dyp * dyp);
     const altitude = rp - primary.radiusMeters;
     this.rocket.setAltitudeForSnapshot(altitude);
 
@@ -299,7 +310,7 @@ export class Environment {
       const vxRel = this.rocket.state.velocity.x;
       const vyRel = this.rocket.state.velocity.y;
       const r = Math.hypot(rxRel, ryRel);
-      const v2 = vxRel*vxRel + vyRel*vyRel;
+      const v2 = vxRel * vxRel + vyRel * vyRel;
       const mu = body.surfaceGravity * body.radiusMeters * body.radiusMeters;
       if (mu > 0 && r > 0) {
         const eps = 0.5 * v2 - mu / r;
@@ -325,11 +336,11 @@ export class Environment {
     // 3) Atmospheric density on primary only
     const rho = this.atmosphere.densityAt(altitude);
     // Expose air density to rocket snapshot for scripts/UI
-    try { (this.rocket as any).setAirDensityForSnapshot?.(rho); } catch {}
+    try { (this.rocket as any).setAirDensityForSnapshot?.(rho); } catch { }
     // Determine cutoff altitude and in-atmosphere flag (if model supports it)
     const cutoffAlt = (this.atmosphere as any)?.cutoffAltitudeMeters ?? undefined;
     this.lastAtmosphereCutoff = cutoffAlt;
-    try { (this.rocket as any).setInAtmosphereForSnapshot?.(((rho ?? 0) > 0)); } catch {}
+    try { (this.rocket as any).setInAtmosphereForSnapshot?.(((rho ?? 0) > 0)); } catch { }
 
     // 4) Drag force magnitude using simple quadratic drag.
     const speed = Math.hypot(this.rocket.state.velocity.x, this.rocket.state.velocity.y);
@@ -357,7 +368,7 @@ export class Environment {
         drag: { fx: dragFx, fy: dragFy },
         gravity: { fx: gravFx, fy: gravFy, perBody: perBodyForces },
       });
-    } catch {}
+    } catch { }
 
     const ax = ax_g + (dragFx + thrustFx) / Math.max(1e-6, mass);
     const ay = ay_g + (dragFy + thrustFy) / Math.max(1e-6, mass);
@@ -378,7 +389,7 @@ export class Environment {
     // 10) Spherical ground collision with primary; destroy on hard impact, otherwise stop.
     const dxpc = this.rocket.state.position.x - primary.position.x;
     const dypc = this.rocket.state.position.y - primary.position.y;
-    const rnow = Math.sqrt(dxpc*dxpc + dypc*dypc);
+    const rnow = Math.sqrt(dxpc * dxpc + dypc * dypc);
     if (rnow < primary.radiusMeters) {
       const nx = dxpc / Math.max(1e-6, rnow);
       const ny = dypc / Math.max(1e-6, rnow);
@@ -408,7 +419,7 @@ export class Environment {
       for (const b of this.bodies) {
         const dx = b.position.x - r.state.position.x;
         const dy = b.position.y - r.state.position.y;
-        const r2 = Math.max(1e-6, dx*dx + dy*dy);
+        const r2 = Math.max(1e-6, dx * dx + dy * dy);
         const rs = Math.sqrt(r2);
         const nx = dx / rs, ny = dy / rs;
         const g = b.surfaceGravity * (b.radiusMeters / Math.max(b.radiusMeters, rs)) ** 2;
@@ -416,14 +427,14 @@ export class Environment {
         ax_g2 += g * nx; ay_g2 += g * ny;
         perBodyGrav2.push({ id: b.id, name: b.name, fx: g * nx, fy: g * ny });
       }
-      try { (r as any).setSoIForSnapshot?.(soiBody2?.id ?? this.system.primaryId); } catch {}
+      try { (r as any).setSoIForSnapshot?.(soiBody2?.id ?? this.system.primaryId); } catch { }
       // Altitude vs primary
       const primary = this.bodies.find(b => b.id === this.system.primaryId)!;
       const dxp2 = primary.position.x - r.state.position.x;
       const dyp2 = primary.position.y - r.state.position.y;
-      const rp2 = Math.sqrt(dxp2*dxp2 + dyp2*dyp2);
+      const rp2 = Math.sqrt(dxp2 * dxp2 + dyp2 * dyp2);
       const alt2 = rp2 - primary.radiusMeters;
-      try { (r as any).setAltitudeForSnapshot?.(alt2); } catch {}
+      try { (r as any).setAltitudeForSnapshot?.(alt2); } catch { }
       // Orbit elements for UI (relative to SOI body)
       try {
         const body = soiBody2 ?? primary;
@@ -432,7 +443,7 @@ export class Environment {
         const vxRel = r.state.velocity.x;
         const vyRel = r.state.velocity.y;
         const rmag = Math.hypot(rxRel, ryRel);
-        const v2 = vxRel*vxRel + vyRel*vyRel;
+        const v2 = vxRel * vxRel + vyRel * vyRel;
         const mu = body.surfaceGravity * body.radiusMeters * body.radiusMeters;
         if (mu > 0 && rmag > 0) {
           const eps = 0.5 * v2 - mu / rmag;
@@ -451,11 +462,11 @@ export class Environment {
             (r as any).setApPeForSnapshot?.(Number.NaN, Number.NaN);
           }
         }
-      } catch {}
+      } catch { }
       // Atmosphere & drag/thrust
       const rho2 = this.atmosphere.densityAt(alt2);
-      try { (r as any).setAirDensityForSnapshot?.(rho2); } catch {}
-      try { (r as any).setInAtmosphereForSnapshot?.(((rho2 ?? 0) > 0)); } catch {}
+      try { (r as any).setAirDensityForSnapshot?.(rho2); } catch { }
+      try { (r as any).setInAtmosphereForSnapshot?.(((rho2 ?? 0) > 0)); } catch { }
       const speed2 = Math.hypot(r.state.velocity.x, r.state.velocity.y);
       const dragMag2 = this.dragModel.computeDrag(rho2, speed2, r.dragCoefficient, r.referenceArea);
       const dragFx2 = speed2 > 0 ? -dragMag2 * (r.state.velocity.x / speed2) : 0;
@@ -473,7 +484,7 @@ export class Environment {
           drag: { fx: dragFx2, fy: dragFy2 },
           gravity: { fx: gravFx2, fy: gravFy2, perBody: perBodyGrav2.map(g => ({ id: g.id, name: g.name, fx: g.fx * mass2, fy: g.fy * mass2 })) },
         });
-      } catch {}
+      } catch { }
       const ax2 = ax_g2 + (dragFx2 + thrustFx2) / Math.max(1e-6, mass2);
       const ay2 = ay_g2 + (dragFy2 + thrustFy2) / Math.max(1e-6, mass2);
       r.state.velocity.x += ax2 * dt;
@@ -487,7 +498,7 @@ export class Environment {
       // Ground collision with primary
       const dxpc2 = r.state.position.x - primary.position.x;
       const dypc2 = r.state.position.y - primary.position.y;
-      const rnow2 = Math.sqrt(dxpc2*dxpc2 + dypc2*dypc2);
+      const rnow2 = Math.sqrt(dxpc2 * dxpc2 + dypc2 * dypc2);
       if (rnow2 < primary.radiusMeters) {
         const nx2 = dxpc2 / Math.max(1e-6, rnow2);
         const ny2 = dypc2 / Math.max(1e-6, rnow2);
@@ -519,7 +530,7 @@ export class Environment {
       atmosphereCutoffAltitudeMeters: this.lastAtmosphereCutoff,
       structures: structs,
     };
-    }
+  }
 
   // --- Multi-rocket management ---
   getRockets(): ReadonlyArray<Rocket> { return this.rockets; }

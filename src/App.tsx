@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { Box, Flex, HStack, Heading, Tabs, Button, Text } from "@chakra-ui/react";
+import { Box, Flex, HStack, Heading, Tabs, Button, Text, Dialog } from "@chakra-ui/react";
 import { ColorModeButton, useColorModeValue } from "@/components/ui/color-mode";
 import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
@@ -7,6 +7,7 @@ import WorldScenePage from "./pages/WorldScenePage";
 import ScriptsPage from "./pages/ScriptsPage";
 import EnterprisePage from "./pages/EnterprisePage";
 import MissionsPage from "./pages/MissionsPage";
+import ResearchPage from "./pages/ResearchPage";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -22,7 +23,7 @@ function useManagerAndServices() {
       if ((window as any).__manager) {
         const mgr = (window as any).__manager;
         const svcs = (window as any).__services || {};
-        setCore({ manager: mgr, services: { layout: svcs.layoutSvc ?? null, scripts: svcs.scripts ?? null, telemetry: svcs.telemetrySvc ?? null, upgrades: svcs.upgrades ?? null, pending: svcs.pending ?? null } });
+        setCore({ manager: mgr, services: { layout: svcs.layoutSvc ?? null, scripts: svcs.scripts ?? null, telemetry: svcs.telemetrySvc ?? null, upgrades: svcs.upgrades ?? null, research: svcs.research ?? null, pending: svcs.pending ?? null } });
         clearInterval(id);
       }
     }, 50);
@@ -47,14 +48,16 @@ export default function App() {
 
   const core = useManagerAndServices();
 
-  // Money state for header
+  // Money & RP state for header
   const [money, setMoney] = useState<number>(0);
+  const [rp, setRp] = useState<number>(0);
   useEffect(() => {
     const t = setInterval(() => {
       try {
         const svcs: any = (window as any).__services;
         if (svcs?.getMoney) setMoney(Number(svcs.getMoney()) || 0);
-      } catch {}
+        if (svcs?.getResearchPoints) setRp(Number(svcs.getResearchPoints()) || 0);
+      } catch { }
     }, 500);
     return () => clearInterval(t);
   }, []);
@@ -68,16 +71,16 @@ export default function App() {
       try {
         const parts = mgr.getGameTimeParts?.();
         if (parts) setClock(formatGameTime(parts));
-      } catch {}
+      } catch { }
     };
     const unsub = mgr.onPostRender?.((_alpha: number, _now: number) => update());
     // initialize immediately
     update();
-    return () => { try { unsub?.(); } catch {} };
+    return () => { try { unsub?.(); } catch { } };
   }, [core]);
 
   const handleResetAll = () => {
-    try { (window as any).__services?.resetAll?.(); } catch {}
+    try { (window as any).__services?.resetAll?.(); } catch { }
   };
 
   return (
@@ -87,10 +90,26 @@ export default function App() {
         <HStack px={4} py={3} justify="space-between" borderBottomWidth="1px">
           <Heading size="md">Space AI</Heading>
 
-            <Text fontFamily="mono">{clock}</Text>
-            <Text fontFamily="mono">$ {money.toLocaleString()}</Text>
+          <Text fontFamily="mono">{clock}</Text>
+          <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
+          <Text fontFamily="mono" color="green.300">$ {money.toLocaleString()}</Text>
           <HStack gap={3}>
-            <Button size="sm" variant="outline" colorScheme="red" onClick={handleResetAll}>Reset All</Button>
+            <Dialog.Root>
+              <Dialog.Trigger asChild>
+                <Button size="sm" variant="outline" colorScheme="purple">Dev</Button>
+              </Dialog.Trigger>
+              <Dialog.Content>
+                <Dialog.Header><Dialog.Title>Developer Tools</Dialog.Title></Dialog.Header>
+                <Dialog.Body>
+                  <HStack gap={4}>
+                    <Button onClick={() => { (window as any).__services?.debug?.unlockAll(); alert("Unlocked!"); }}>Unlock All Cheats</Button>
+                    <Button onClick={() => { (window as any).__services?.debug?.maximizeRocket(0); }}>Max Rocket (0)</Button>
+                  </HStack>
+                </Dialog.Body>
+                <Dialog.CloseTrigger />
+              </Dialog.Content>
+            </Dialog.Root>
+            <Button size="sm" variant="ghost" colorPalette="red" onClick={handleResetAll}>Reset All</Button>
             <ColorModeButton />
           </HStack>
         </HStack>
@@ -100,6 +119,7 @@ export default function App() {
           <Tabs.List>
             <Tabs.Trigger value={'world_scene'}>World</Tabs.Trigger>
             <Tabs.Trigger value={'missions'}>Missions</Tabs.Trigger>
+            <Tabs.Trigger value={'research'}>Research</Tabs.Trigger>
             <Tabs.Trigger value={'scripts'}>Scripts</Tabs.Trigger>
             <Tabs.Trigger value={'enterprise'}>Enterprise</Tabs.Trigger>
           </Tabs.List>
@@ -112,7 +132,11 @@ export default function App() {
             <MissionsPage />
           </Tabs.Content>
 
-          <Tabs.Content p={0}  value={'scripts'}>
+          <Tabs.Content p={0} value={'research'}>
+            <ResearchPage />
+          </Tabs.Content>
+
+          <Tabs.Content p={0} value={'scripts'}>
             <ScriptsPage />
           </Tabs.Content>
 

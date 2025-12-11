@@ -13,6 +13,27 @@ function update(api) {
     api.memory.set("__phasesListed", 1);
   }
 
+  // --- Telemetry Ping ---
+  // Send a packet every 2 seconds if valid
+  const lastPing = Number(api.memory.get("__lastPing") || 0);
+  const now = Date.now();
+  if (now - lastPing > 2000) {
+    // Check if we can send (e.g. valid tiers?), but api.sendDataPacket checks internally or just charges
+    api.sendDataPacket("telemetry", 2, { alt: Math.floor(Number(api.getSnapshot().data.altitude||0)), phase: api.memory.get("phase") });
+    api.memory.set("__lastPing", now);
+  }
+  // ---------------------
+
+  // --- Telemetry Ping ---
+  // Send a packet every 2 seconds if valid
+  const lastPing = Number(api.memory.get("__lastPing") || 0);
+  const now = Date.now();
+  if (now - lastPing > 2000) {
+    // Check if we can send (e.g. valid tiers?); api.sendDataPacket checks internally or just charges
+    api.sendDataPacket("telemetry", 2, { alt: Math.floor(Number(api.getSnapshot().data.altitude||0)), phase: api.memory.get("phase") });
+    api.memory.set("__lastPing", now);
+  }
+
   const s = api.getSnapshot().data;
   const alt = Number(s.altitude ?? 0);
   const v = s.velocity || { x: 0, y: 0 };

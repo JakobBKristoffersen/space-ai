@@ -7,6 +7,7 @@ import { ScriptLibraryService } from "../services/ScriptLibraryService";
 import { TelemetryService } from "../services/TelemetryService";
 import { UpgradesService } from "../services/UpgradesService";
 import { PendingUpgradesService } from "../services/PendingUpgradesService";
+import { ResearchService } from "../services/ResearchService";
 import { SimulationManager } from "../sim/SimulationManager";
 import { ToySystem } from "../config/ToySystem";
 import { DEFAULT_EXAMPLE } from "./seedScript";
@@ -14,6 +15,7 @@ import { BASE_STARTING_MONEY, seedDefaultMissions } from "../config";
 import { MissionManager } from "../../game/MissionManager";
 import { PartStore, DefaultCatalog } from "../../game/PartStore";
 import { SessionKeys } from "../services/SessionKeys";
+import { DebugService } from "../services/DebugService";
 
 export function initAppLogic(): void {
   // 1) Ensure canvas exists and is sized to CSS box
@@ -32,6 +34,7 @@ export function initAppLogic(): void {
   const telemetrySvc = new TelemetryService();
   const upgrades = new UpgradesService();
   const pending = new PendingUpgradesService();
+  const research = new ResearchService();
 
   // 3) Build rocket from stored layout (index 0); seed default layout if absent
   let layout = layoutSvc.loadLayout();
@@ -54,10 +57,13 @@ export function initAppLogic(): void {
   });
 
   // 5) Missions + money + store
-  let missionMgr = new MissionManager();
+  let missionMgr = new MissionManager(research);
   seedDefaultMissions(missionMgr);
   let money: number = (window as any).__money ?? (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
   const store = new PartStore(DefaultCatalog);
+
+  // Debug Service
+  const debugSvc = new DebugService(research, missionMgr, pending, (v) => { money = v; });
 
   // Rewards flow on post-tick
   manager.onPostTick(() => {
@@ -65,10 +71,10 @@ export function initAppLogic(): void {
       const env = manager.getEnvironment();
       const newly = missionMgr.tick(env.snapshot());
       if (newly.length > 0) {
-        let gained = 0; for (const m of newly) gained += m.reward();
+        let gained = 0; for (const m of newly) gained += m.reward().money;
         money += gained;
       }
-    } catch {}
+    } catch { }
   });
 
   // 6) Seed example script if library empty (read from session first)
@@ -76,7 +82,7 @@ export function initAppLogic(): void {
     const existing = sessionStorage.getItem(SessionKeys.SCRIPT);
     const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'function update(api){}');
     scriptLib.seedIfEmpty(seed, "TakeOff.js");
-  } catch {}
+  } catch { }
 
   // 7) Expose globals for React pages
   try {
@@ -86,20 +92,25 @@ export function initAppLogic(): void {
       scripts: scriptLib,
       telemetrySvc,
       upgrades,
+      research,
       pending,
+      debug: debugSvc, // Expose for UI
       // Missions
       getMissions: () => { try { return missionMgr.describeAll(manager.getEnvironment().snapshot()); } catch { return []; } },
       getCompleted: () => missionMgr.getCompletedMissionIds(),
       // Money
       getMoney: () => money,
       setMoney: (v: number) => { money = Math.max(0, Number(v) || 0); },
+      getResearchPoints: () => research.system.points,
+      getReceivedPackets: () => manager.getReceivedPackets(),
       // Store helpers
       getAvailableIds: () => {
-        try { return store.listAvailable(missionMgr.getCompletedMissionIds()).map(p => p.id); } catch { return []; }
+        try { return store.listAvailable(missionMgr.getCompletedMissionIds(), research.system.unlockedTechs).map(p => p.id); } catch { return []; }
       },
       purchasePart: (partId: string) => {
         try {
-          const available = store.listAvailable(missionMgr.getCompletedMissionIds());
+          const techs = research.system.unlockedTechs;
+          const available = store.listAvailable(missionMgr.getCompletedMissionIds(), techs);
           const part: any = available.find(p => p.id === partId);
           if (!part) return { ok: false, reason: "locked" };
           if (money < part.price) return { ok: false, reason: "insufficient", price: part.price, balance: money };
@@ -109,47 +120,22 @@ export function initAppLogic(): void {
           return { ok: false, reason: "error", message: e?.message ?? String(e) };
         }
       },
-      // Reset All
+      // Reset All - NUCLEAR OPTION
       resetAll: () => {
-        try { manager.pause(); } catch {}
-        // Clear layouts (legacy + namespaced), scripts, slot assigns
+        if (!confirm("Are you sure you want to completely reset all progress and data? This cannot be undone.")) return;
+        try { manager.pause(); } catch { }
         try {
-          sessionStorage.removeItem(SessionKeys.LAYOUT);
-          const toDel: string[] = [];
-          for (let i = 0; i < sessionStorage.length; i++) {
-            const k = sessionStorage.key(i)!; if (k && k.startsWith(SessionKeys.LAYOUT + ":")) toDel.push(k);
-          }
-          for (const k of toDel) sessionStorage.removeItem(k);
-          sessionStorage.removeItem(SessionKeys.SCRIPTS);
-          sessionStorage.removeItem(SessionKeys.CPU_SLOTS);
-          sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, "TakeOff.js");
-        } catch {}
-        try { upgrades.clearAll(); } catch {}
-        try { pending.clear(); } catch {}
-        // Reseed scripts
-        try {
-          const seed = (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'function update(api){}');
-          scriptLib.seedIfEmpty(seed, "TakeOff.js");
-        } catch {}
-        // Recreate rocket to default and persist
-        const fresh = layoutSvc.buildDefaultRocket();
-        layoutSvc.saveLayout(fresh);
-        try { manager.recreateFromLayout(layoutSvc.getLayoutFromRocket(fresh)); } catch {}
-        try { manager.resetGameClock(); } catch {}
-        // Reset money
-        money = (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
-        // Reset missions progression
-        try {
-          missionMgr = new MissionManager();
-          seedDefaultMissions(missionMgr);
-        } catch {}
-        // Publish telemetry keys for editor
-        try { manager.publishTelemetry(); } catch {}
+          // Clear EVERYTHING
+          localStorage.clear();
+          sessionStorage.clear();
+        } catch { }
+        location.reload();
       },
     };
-  } catch {}
+  } catch { }
 
   // 8) Start always-running simulation and publish initial telemetry
-  try { manager.start(); } catch {}
-  try { manager.publishTelemetry(); } catch {}
+  try { manager.start(); } catch { }
+  try { manager.publishTelemetry(); } catch { }
 }
+

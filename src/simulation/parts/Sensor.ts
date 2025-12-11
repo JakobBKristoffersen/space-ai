@@ -10,14 +10,28 @@ export class BasicNavigationSensor implements SensorPart {
   readonly massKg = 5;
   readonly exposes = [
     "altitude",
+    "fuelKg",
+    "batteryJoules",
+    "massKg",
+    "temperature",
+    // Basic stuff
+  ];
+}
+
+export class AdvancedNavigationSensor implements SensorPart {
+  readonly id = "sensor.nav.adv";
+  readonly name = "Advanced Navigation Sensor";
+  readonly massKg = 15;
+  readonly exposes = [
+    // Inherits basic? No, explicit list usually better or UI handles merge.
+    // Let's duplicate basic fields so installing JUST advanced works.
+    "altitude", "fuelKg", "batteryJoules", "massKg", "temperature",
+    // Advanced
     "position",
     "velocity",
-    // Orientation and simple orbital elements for autopilot logic
     "orientationRad",
-    "apAltitude",
-    "peAltitude",
-    // Atmosphere density for liftoff logic
     "airDensity",
+    "rwOmegaRadPerS",
+    "rwDesiredOmegaRadPerS", // useful for debugging autopilot
   ];
-  // TODO: In a future 3D/world model, expose latitude/longitude specifically.
 }

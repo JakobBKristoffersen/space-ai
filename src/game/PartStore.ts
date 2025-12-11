@@ -6,16 +6,22 @@
  */
 
 import { Money } from "./MissionManager";
-import { BatteryPart, EnginePart, FuelTankPart, ProcessingUnitPart, SensorPart, ReactionWheelsPart } from "../simulation/Rocket";
+import { BatteryPart, EnginePart, FuelTankPart, ProcessingUnitPart, SensorPart, ReactionWheelsPart, PayloadPart, AntennaPart, SolarPanelPart } from "../simulation/Rocket";
 import { SmallEngine } from "../simulation/parts/Engine";
-import { SmallFuelTank, LargeFuelTank } from "../simulation/parts/FuelTank";
-import { SmallBattery } from "../simulation/parts/Battery";
-import { BasicProcessingUnit } from "../simulation/parts/ProcessingUnit";
-import { BasicNavigationSensor } from "../simulation/parts/Sensor";
+import { PrecisionEngine } from "../simulation/parts/PrecisionEngine";
+import { BasicFuelTank, MediumFuelTank, LargeFuelTank, SmallFuelTank } from "../simulation/parts/FuelTank";
+import { SmallBattery, MediumBattery } from "../simulation/parts/Battery";
+import { BasicCPU, AdvancedCPU, OrbitalProcessingUnit } from "../simulation/parts/ProcessingUnit";
+import { BasicNavigationSensor, AdvancedNavigationSensor } from "../simulation/parts/Sensor";
 import { SmallReactionWheels } from "../simulation/parts/ReactionWheels";
-import { SmallAntenna } from "../simulation/parts/Antenna";
+import { SmallAntenna, MediumAntenna, RelayAntenna, DeepSpaceAntenna } from "../simulation/parts/Antenna";
+import { PartUnlockData } from "../parts/Unlocks";
+import { VacuumEngine } from "../simulation/parts/VacuumEngine";
+import { IonEngine } from "../simulation/parts/IonEngine";
+import { BasicSatellitePayload } from "../simulation/parts/Payloads";
+import { BasicSolarPanel } from "../simulation/parts/SolarPanels";
 
-export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna";
+export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna" | "payload" | "solar";
 
 export interface StorePart<T> {
   readonly id: string;
@@ -24,8 +30,8 @@ export interface StorePart<T> {
   readonly price: Money;
   /** Factory to instantiate a fresh part when purchased. */
   make(): T;
-  /** Unlock predicate: given completed missions, is this part unlocked? */
-  isUnlocked(completedMissionIds: readonly string[]): boolean;
+  /** Unlock predicate: given completed missions and unlocked techs, is this part unlocked? */
+  isUnlocked(completed: readonly string[], techs: readonly string[]): boolean;
 }
 
 export interface Catalog {
@@ -35,14 +41,16 @@ export interface Catalog {
   cpus: StorePart<ProcessingUnitPart>[];
   sensors: StorePart<SensorPart>[];
   reactionWheels: StorePart<ReactionWheelsPart>[];
-  antennas: StorePart<any>[];
+  antennas: StorePart<AntennaPart>[];
+  payloads: StorePart<PayloadPart>[];
+  solarPanels: StorePart<SolarPanelPart>[];
 }
 
 export class PartStore {
-  constructor(private readonly catalog: Catalog) {}
+  constructor(private readonly catalog: Catalog) { }
 
   /** Return all parts available to purchase given progression. */
-  listAvailable(completed: readonly string[]): StorePart<any>[] {
+  listAvailable(completed: readonly string[], techs: readonly string[]): StorePart<any>[] {
     return [
       ...this.catalog.engines,
       ...this.catalog.fuelTanks,
@@ -51,7 +59,9 @@ export class PartStore {
       ...this.catalog.sensors,
       ...this.catalog.reactionWheels,
       ...this.catalog.antennas,
-    ].filter(p => p.isUnlocked(completed));
+      ...this.catalog.payloads,
+      ...this.catalog.solarPanels,
+    ].filter(p => p.isUnlocked(completed, techs));
   }
 
   /** Attempts to purchase a part; returns the instance and new balance, or null if insufficient funds. */
@@ -59,8 +69,9 @@ export class PartStore {
     partId: string,
     balance: Money,
     completed: readonly string[],
+    techs: readonly string[],
   ): { instance: T; newBalance: Money } | null {
-    const all = this.listAvailable(completed);
+    const all = this.listAvailable(completed, techs);
     const part = all.find(p => p.id === partId) as StorePart<T> | undefined;
     if (!part) return null;
     if (balance < part.price) return null;
@@ -77,9 +88,33 @@ export const DefaultCatalog: Catalog = {
       id: "engine.small",
       name: "Small Engine",
       category: "engine",
-      price: 500,
+      price: PartUnlockData["engine.small"]?.moneyCost ?? 500,
       make: () => new SmallEngine(),
-      isUnlocked: () => true, // starter engine
+      isUnlocked: () => true,
+    },
+    {
+      id: "engine.precision",
+      name: "Precision Engine",
+      category: "engine",
+      price: PartUnlockData["engine.precision"]?.moneyCost ?? 1500,
+      make: () => new PrecisionEngine(),
+      isUnlocked: (_c, t) => t.includes("tech.propulsion_prec"),
+    },
+    {
+      id: "engine.vacuum",
+      name: "Vacuum Engine",
+      category: "engine",
+      price: 2500,
+      make: () => new VacuumEngine(),
+      isUnlocked: (_c, t) => t.includes("tech.propulsion_adv"),
+    },
+    {
+      id: "engine.ion",
+      name: "Ion Thruster",
+      category: "engine",
+      price: 5000,
+      make: () => new IonEngine(),
+      isUnlocked: (_c, t) => t.includes("tech.ion"),
     },
   ],
   fuelTanks: [
@@ -87,17 +122,25 @@ export const DefaultCatalog: Catalog = {
       id: "fueltank.small",
       name: "Small Fuel Tank",
       category: "fuel",
-      price: 200,
+      price: PartUnlockData["fueltank.small"]?.moneyCost ?? 200,
       make: () => new SmallFuelTank(),
       isUnlocked: () => true,
+    },
+    {
+      id: "fueltank.medium",
+      name: "Medium Fuel Tank",
+      category: "fuel",
+      price: 500,
+      make: () => new MediumFuelTank(),
+      isUnlocked: (_c, t) => t.includes("tech.batteries_med"), // Reusing logic or new tech?
     },
     {
       id: "fueltank.large",
       name: "Large Fuel Tank",
       category: "fuel",
-      price: 800,
+      price: PartUnlockData["fueltank.large"]?.moneyCost ?? 800,
       make: () => new LargeFuelTank(),
-      isUnlocked: (completed) => completed.includes("mission.reach.500m"),
+      isUnlocked: (_c, t) => t.includes("tech.batteries_med"),
     },
   ],
   batteries: [
@@ -105,9 +148,17 @@ export const DefaultCatalog: Catalog = {
       id: "battery.small",
       name: "Small Battery",
       category: "battery",
-      price: 150,
+      price: PartUnlockData["battery.small"]?.moneyCost ?? 150,
       make: () => new SmallBattery(),
       isUnlocked: () => true,
+    },
+    {
+      id: "battery.medium",
+      name: "Medium Battery",
+      category: "battery",
+      price: 400,
+      make: () => new MediumBattery(),
+      isUnlocked: (_c, t) => t.includes("tech.batteries_med"),
     },
   ],
   cpus: [
@@ -115,36 +166,25 @@ export const DefaultCatalog: Catalog = {
       id: "cpu.basic",
       name: "Basic Guidance System",
       category: "cpu",
-      price: 400,
-      make: () => new BasicProcessingUnit(),
+      price: PartUnlockData["cpu.basic"]?.moneyCost ?? 400,
+      make: () => new BasicCPU(),
       isUnlocked: () => true,
     },
-    // Example upgrade unlocked by mission completion
     {
       id: "cpu.advanced",
       name: "Advanced Guidance System",
       category: "cpu",
-      price: 1200,
-      make: () => ({
-        id: "cpu.advanced",
-        name: "Advanced Guidance System",
-        massKg: 10,
-        maxScriptChars: 12_000,
-        processingBudgetPerTick: 350,
-        energyPerTickJ: 120,
-        scriptSlots: 2,
-        processingIntervalSeconds: 1,
-        exposes: [
-          "cpuName",
-          "cpuProcessingBudgetPerTick",
-          "cpuMaxScriptChars",
-          "cpuSlotCount",
-          "cpuCostUsedLastTick",
-          "cpuEnergyUsedLastTick",
-          "cpuProcessingIntervalSeconds",
-        ],
-      } as ProcessingUnitPart),
-      isUnlocked: (completed) => completed.includes("mission.reach.1km"),
+      price: PartUnlockData["cpu.advanced"]?.moneyCost ?? 1200,
+      make: () => new AdvancedCPU(),
+      isUnlocked: (_c, t) => t.includes(PartUnlockData["cpu.advanced"]?.techRequired || "tech.guidance_adv"),
+    },
+    {
+      id: "cpu.orbital",
+      name: "Orbital Computer",
+      category: "cpu",
+      price: 3000,
+      make: () => new OrbitalProcessingUnit(),
+      isUnlocked: (_c, t) => t.includes("tech.cpu_orbital"),
     },
   ],
   sensors: [
@@ -152,9 +192,17 @@ export const DefaultCatalog: Catalog = {
       id: "sensor.nav.basic",
       name: "Basic Navigation Sensor",
       category: "sensor",
-      price: 100,
+      price: PartUnlockData["sensor.nav.basic"]?.moneyCost ?? 100,
       make: () => new BasicNavigationSensor(),
       isUnlocked: () => true,
+    },
+    {
+      id: "sensor.nav.adv",
+      name: "Advanced Navigation Sensor",
+      category: "sensor",
+      price: 500,
+      make: () => new AdvancedNavigationSensor(),
+      isUnlocked: (_c, t) => t.includes("tech.guidance_adv"),
     },
   ],
   reactionWheels: [
@@ -162,7 +210,7 @@ export const DefaultCatalog: Catalog = {
       id: "rw.small",
       name: "Small Reaction Wheels",
       category: "reactionWheels",
-      price: 300,
+      price: PartUnlockData["rw.small"]?.moneyCost ?? 300,
       make: () => new SmallReactionWheels(),
       isUnlocked: () => true,
     },
@@ -172,9 +220,53 @@ export const DefaultCatalog: Catalog = {
       id: "antenna.small",
       name: "Small Antenna",
       category: "antenna",
-      price: 250,
+      price: PartUnlockData["antenna.small"]?.moneyCost ?? 250,
       make: () => new SmallAntenna(),
       isUnlocked: () => true,
     },
+    {
+      id: "antenna.medium",
+      name: "Medium Antenna",
+      category: "antenna",
+      price: 600,
+      make: () => new MediumAntenna(),
+      isUnlocked: (_c, t) => t.includes("tech.comms_tracking"),
+    },
+    {
+      id: "antenna.relay",
+      name: "Relay Dish",
+      category: "antenna",
+      price: 1500,
+      make: () => new RelayAntenna(),
+      isUnlocked: (_c, t) => t.includes("tech.comms_tracking"),
+    },
+    {
+      id: "antenna.deep",
+      name: "Deep Space Dish",
+      category: "antenna",
+      price: 3000,
+      make: () => new DeepSpaceAntenna(),
+      isUnlocked: (_c, t) => t.includes("tech.comms_deep"),
+    },
   ],
+  payloads: [
+    {
+      id: "payload.sat.basic",
+      name: "CubeSat Deployer",
+      category: "payload",
+      price: 1000,
+      make: () => new BasicSatellitePayload(),
+      isUnlocked: (_c, t) => t.includes("tech.satellite"),
+    }
+  ],
+  solarPanels: [
+    {
+      id: "solar.basic",
+      name: "Basic Solar Panel",
+      category: "solar",
+      price: 300,
+      make: () => new BasicSolarPanel(),
+      isUnlocked: (_c, t) => t.includes("tech.solar_basic"),
+    }
+  ]
 };

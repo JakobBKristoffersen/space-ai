@@ -1,0 +1,81 @@
+import { TechDefinition } from "./ResearchSystem";
+
+export const TechTree: TechDefinition[] = [
+    {
+        id: "tech.batteries_med",
+        name: "Enhanced Storage",
+        costRP: 10,
+        description: "Larger batteries and fuel tanks for longer missions.",
+        unlocksParts: ["battery.medium", "fueltank.medium"],
+    },
+    {
+        id: "tech.guidance_adv",
+        name: "Advanced Guidance",
+        costRP: 25,
+        description: "Better CPUs with more memory and basic telemetry access (Tier 1).",
+        unlocksParts: ["cpu.advanced", "sensor.nav.adv"],
+    },
+    {
+        id: "tech.propulsion_prec",
+        name: "Precision Propulsion",
+        costRP: 40,
+        description: "Engines with better control and efficiency.",
+        unlocksParts: ["engine.precision", "rw.medium"],
+    },
+    {
+        id: "tech.comms_basic",
+        name: "Basic Communications",
+        costRP: 50,
+        description: "Longer range antennas for orbital operations.",
+        unlocksParts: ["antenna.medium"],
+    },
+    {
+        id: "tech.solar",
+        name: "Solar Power",
+        costRP: 100,
+        description: "Generate power from starlight. Essential for long-term missions.",
+        unlocksParts: ["solar.basic"],
+    },
+    {
+        id: "tech.satellite",
+        name: "Miniaturized Systems",
+        costRP: 75,
+        description: "Standardized cube-sat formats for deployable payloads.",
+        unlocksParts: ["payload.sat.basic"],
+    },
+    {
+        id: "tech.orbital_comp",
+        name: "Orbital Computing",
+        costRP: 150,
+        description: "Tier 2 CPUs capable of calculating orbital parameters.",
+        unlocksParts: ["cpu.orbital"],
+    },
+    {
+        id: "tech.comms_relay",
+        name: "Relay Networks",
+        costRP: 200,
+        description: "High-power logic for relay satellites.",
+        unlocksParts: ["antenna.relay"],
+    },
+    {
+        id: "tech.propulsion_vac",
+        name: "High Vacuum Engines",
+        costRP: 300,
+        description: "Engines optimized for the void.",
+        unlocksParts: ["engine.vacuum"],
+    },
+    {
+        id: "tech.deep_space",
+        name: "Deep Space Comms",
+        costRP: 500,
+        description: "Antennas that can reach the Moon and beyond.",
+        unlocksParts: ["antenna.deep"],
+    },
+    {
+        id: "tech.ion",
+        name: "Ion Propulsion",
+        costRP: 1000,
+        description: "Low thrust, incredibly high efficiency.",
+        unlocksParts: ["engine.ion"],
+    },
+];

@@ -1,72 +1,16 @@
-import { MissionManager, ReachAltitudeMission, ReachSpeedMission, ReachSpaceMission, CircularizeOrbitMission, EnterSoIMission, StayAloftMission } from "../../game/MissionManager";
+import { MissionManager, GenericMission } from "../../game/MissionManager";
+import { MissionList } from "../../missions/MissionData";
 
 /**
  * Seeds the default set of missions into a MissionManager instance.
- * Keeping mission definitions in config centralizes setup and avoids duplication.
+ * Loads missions from MissionData definitions.
  */
 export function seedDefaultMissions(missionMgr: MissionManager): void {
-  missionMgr.addMission(new ReachAltitudeMission(
-    "mission.reach.500m",
-    "Reach 500 m",
-    "Climb to 500 meters altitude to earn $1000 and unlock larger tanks.",
-    500,
-    1000,
-  ));
-  missionMgr.addMission(new ReachAltitudeMission(
-    "mission.reach.1km",
-    "Reach 1 km",
-    "Climb to 1,000 meters altitude to earn $1500 and unlock advanced guidance.",
-    1000,
-    1500,
-  ));
-  missionMgr.addMission(new ReachAltitudeMission(
-    "mission.reach.2km",
-    "Reach 2 km",
-    "Climb to 2,000 meters altitude to earn $2000.",
-    2000,
-    2000,
-  ));
-  missionMgr.addMission(new ReachSpeedMission(
-    "mission.speed.100",
-    "Hit 100 m/s",
-    "Accelerate to a speed of 100 m/s.",
-    100,
-    800,
-  ));
-  missionMgr.addMission(new ReachSpeedMission(
-    "mission.speed.200",
-    "Hit 200 m/s",
-    "Accelerate to a speed of 200 m/s.",
-    200,
-    1200,
-  ));
-  missionMgr.addMission(new ReachSpaceMission(
-    "mission.reach.space",
-    "Reach Space",
-    "Leave the atmosphere (air density reaches zero).",
-    2500,
-  ));
-  missionMgr.addMission(new CircularizeOrbitMission(
-    "mission.orbit.2km",
-    "Circularize ~2 km",
-    "Achieve a near-circular orbit with Ap >= 2 km and Pe >= 2 km.",
-    2000,
-    2000,
-    0.1,
-  ));
-  missionMgr.addMission(new EnterSoIMission(
-    "mission.soi.moon",
-    "Enter Moon SOI",
-    "Enter the sphere of influence of the Moon.",
-    "moon",
-    5000,
-  ));
-  missionMgr.addMission(new StayAloftMission(
-    "mission.stay.200m.30s",
-    "Stay above 200 m for 30 s",
-    "Remain above 200 meters altitude continuously for at least 30 seconds.",
-    200,
-    30,
-    600,
-  ));
+  for (const def of MissionList) {
+    if (def.state !== 'locked' && def.state !== 'available') continue; // Only add base available/locked missions? Or add all?
+    // Actually we should add all defined missions so manager tracks them.
+    // Init state logic should probably handle unlocking.
+    // For now, just add them ALL.
+    missionMgr.addMission(new GenericMission(def));
+  }
 }

@@ -12,6 +12,7 @@
 import { SimulationLoop, type TickListener, type RenderListener } from "../../core/SimulationLoop";
 import { Environment, AtmosphereWithCutoff, QuadraticDrag, SimpleHeating, type CelestialSystemDef } from "../../simulation/Environment";
 import { Rocket, SimpleQueue, type RocketCommand, type RocketCommandQueue } from "../../simulation/Rocket";
+import { CommSystem } from "../../comms/CommSystem";
 import { Renderer } from "../../rendering/Renderer";
 import { CelestialScene } from "../../rendering/CelestialScene";
 import { ScriptRunner, type ScriptRunnerOptions } from "../../scripting/ScriptRunner";
@@ -52,9 +53,10 @@ export class SimulationManager {
   private loop: SimulationLoop;
   private runner: ScriptRunner;
   private readonly manualQueue = new SimpleQueue();
+  private commSystem = new CommSystem();
 
   private postTickListeners = new Set<PostTickListener>();
-  
+
   // Launch gating per rocket: scripts cannot power engines until takeOff() is called for that rocket
   private launchedByIndex: boolean[] = [];
   private postRenderListeners = new Set<PostRenderListener>();
@@ -120,11 +122,26 @@ export class SimulationManager {
         },
       };
       this.env.tick(dt, i, combined);
+
+      // Update Communication Network
+      try {
+        const snap = this.env.snapshot();
+        // Assume base is at 0,0 relative to primary start, but primary moves? 
+        // Base is structure on primary.
+        // CommSystem expects absolute positions.
+        // Rocket positions are absolute.
+        // Base structure in snap has absolute position.
+        const baseStruct = snap.structures?.find(s => s.id === "base");
+        const basePos = baseStruct ? baseStruct.position : { x: 0, y: 0 };
+        // We pass ReadonlyArray<BodyState> as BodyState[] - safeish for read access
+        this.commSystem.update(dt, this.env.getRockets() as Rocket[], snap.bodies as any[], basePos);
+      } catch (e) { console.warn("Comm update failed", e); }
+
       // Advance game clock (1 sim sec = 60 game secs by default)
       this.simGameSeconds += dt * this.gameTimeScale;
       // Notify UI subscribers after the environment advances
       this.postTickListeners.forEach((fn) => {
-        try { fn(this.env, i); } catch {}
+        try { fn(this.env, i); } catch { }
       });
     });
 
@@ -137,7 +154,7 @@ export class SimulationManager {
       }
       this.renderer.render(alpha, now);
       this.postRenderListeners.forEach((fn) => {
-        try { fn(alpha, now); } catch {}
+        try { fn(alpha, now); } catch { }
       });
     });
   }
@@ -159,7 +176,7 @@ export class SimulationManager {
     const now = performance.now();
     this.renderer.render(0, now);
     this.postRenderListeners.forEach((fn) => {
-      try { fn(0, now); } catch {}
+      try { fn(0, now); } catch { }
     });
   }
 
@@ -184,12 +201,15 @@ export class SimulationManager {
     try {
       const ai = (this.env as any).getActiveRocketIndex?.() ?? 0;
       this.launchedByIndex[ai] = true;
-    } catch {}
+    } catch { }
     // Start engines on next tick
     this.manualQueue.enqueue({ type: "setEnginePower", value: 1 });
   }
 
   getActiveRocketIndex(): number { try { return (this.env as any).getActiveRocketIndex?.() ?? 0; } catch { return 0; } }
+
+  // Expose CommSystem packets for UI
+  getReceivedPackets() { return this.commSystem.receivedPackets; }
 
   // --- Fleet naming (persisted to session) ---
   private get namesKey(): string { return "session:rocket-names"; }
@@ -210,10 +230,10 @@ export class SimulationManager {
           return arr;
         }
       }
-    } catch {}
+    } catch { }
     const count = (this.env as any).getRockets?.().length ?? 1;
     const base = this.defaultNames(count);
-    try { sessionStorage.setItem(this.namesKey, JSON.stringify(base)); } catch {}
+    try { sessionStorage.setItem(this.namesKey, JSON.stringify(base)); } catch { }
     return base;
   }
   setRocketName(index: number, name: string): void {
@@ -221,9 +241,9 @@ export class SimulationManager {
     const idx = Math.max(0, Math.min(Math.floor(index), count - 1));
     const arr = this.getRocketNames();
     arr[idx] = String(name || '').trim() || this.defaultNames(count)[idx];
-    try { sessionStorage.setItem(this.namesKey, JSON.stringify(arr)); } catch {}
+    try { sessionStorage.setItem(this.namesKey, JSON.stringify(arr)); } catch { }
   }
-  private defaultNames(count: number): string[] { return new Array(Math.max(1, count)).fill(0).map((_, i) => `Rocket ${i+1}`); }
+  private defaultNames(count: number): string[] { return new Array(Math.max(1, count)).fill(0).map((_, i) => `Rocket ${i + 1}`); }
 
   private syncLaunchFlagsToEnv(): void {
     try {
@@ -233,16 +253,16 @@ export class SimulationManager {
         this.launchedByIndex = new Array(count).fill(false);
         for (let i = 0; i < Math.min(prev.length, count); i++) this.launchedByIndex[i] = prev[i];
       }
-    } catch {}
+    } catch { }
   }
 
   /** Switch which rocket is active (controlled and surfaced in snapshot.rocket). */
   setActiveRocketIndex(i: number): void {
-    try { (this.env as any).setActiveRocketIndex?.(i); } catch {}
+    try { (this.env as any).setActiveRocketIndex?.(i); } catch { }
     // Keep launch flags array in sync with current environment
     this.syncLaunchFlagsToEnv();
     // Update active rocket alias
-    try { this.rocket = (this.env as any).getActiveRocket?.() ?? this.rocket; } catch {}
+    try { this.rocket = (this.env as any).getActiveRocket?.() ?? this.rocket; } catch { }
     // Recreate runner bound to the active rocket
     this.runner = new ScriptRunner(this.rocket);
     // Reinstall assigned scripts and publish telemetry for editor
@@ -299,7 +319,7 @@ export class SimulationManager {
     // Replace active rocket only
     const newRocket = this.opts.layoutSvc.buildRocketFromLayout(layout);
     for (const e of newRocket.engines) e.power = 0;
-    try { (this.env as any).replaceActiveRocket?.(newRocket); } catch {}
+    try { (this.env as any).replaceActiveRocket?.(newRocket); } catch { }
     this.rocket = newRocket;
 
     // Recreate runner bound to the active rocket
@@ -329,13 +349,13 @@ export class SimulationManager {
       ? (this.opts.pending as any).consumeIntoLayout(effective, ai)
       : (this.opts.pending ? this.opts.pending.consumeIntoLayout(effective) : effective);
     // Reset launch gating for the active rocket so user must press Take Off again
-    try { this.launchedByIndex[ai] = false; } catch {}
+    try { this.launchedByIndex[ai] = false; } catch { }
     this.recreateFromLayout(merged);
     // Persist the newly applied layout for this specific rocket index
     try {
       if ((this.opts.layoutSvc as any).saveLayoutFor) (this.opts.layoutSvc as any).saveLayoutFor(ai, this.rocket as any);
       else this.opts.layoutSvc.saveLayout(this.rocket as any);
-    } catch {}
+    } catch { }
   }
 
   /**
@@ -352,9 +372,9 @@ export class SimulationManager {
       if (a.slot < 0 || a.slot >= (this.rocket.cpu.scriptSlots || 1)) continue;
       const s = this.opts.scriptLib.getById(a.scriptId || undefined as any);
       if (s) {
-        try { this.runner.installScriptToSlot(s.code, this.opts.defaultScriptRunnerOpts, a.slot, s.name); } catch {}
+        try { this.runner.installScriptToSlot(s.code, this.opts.defaultScriptRunnerOpts, a.slot, s.name); } catch { }
       }
-      try { this.runner.setSlotEnabled?.(a.slot, !!a.enabled); } catch {}
+      try { this.runner.setSlotEnabled?.(a.slot, !!a.enabled); } catch { }
     }
   }
 

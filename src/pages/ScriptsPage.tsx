@@ -27,7 +27,7 @@ export default function ScriptsPage() {
         setCurrentName(list[0].name);
         setCode(list[0].code);
       }
-    } catch {}
+    } catch { }
   }, [lib]);
 
   // Telemetry keys for autocompletion
@@ -49,7 +49,7 @@ export default function ScriptsPage() {
     try {
       sessionStorage.setItem("session:user-script", item.code);
       sessionStorage.setItem("session:current-script-name", item.name);
-    } catch {}
+    } catch { }
   };
 
   const createNew = () => {
@@ -76,6 +76,20 @@ export default function ScriptsPage() {
     if (next.length) selectFile(next[0].id); else { setCurrentId(null); setCurrentName(""); setCode(""); }
   };
 
+  const duplicateCurrent = () => {
+    if (!lib || !currentId) return;
+    const base = currentName;
+    let name = `${base} (copy)`;
+    const existing = lib.list();
+    let n = 1;
+    while (existing.some((s: any) => s.name === name)) {
+      name = `${base} (copy) (${n++})`;
+    }
+    const item = lib.upsertByName(name, code);
+    setFiles(lib.list());
+    selectFile(item.id);
+  };
+
   const save = () => {
     if (!lib) return;
     const name = currentName?.trim() || "Untitled.js";
@@ -100,6 +114,7 @@ export default function ScriptsPage() {
             <Heading size="sm">Scripts</Heading>
             <HStack gap={2}>
               <Button size="xs" onClick={createNew}>Create New</Button>
+              <Button size="xs" variant="outline" onClick={duplicateCurrent} disabled={!currentId}>Duplicate</Button>
               <Button size="xs" variant="outline" onClick={deleteCurrent} disabled={!currentId}>Delete</Button>
             </HStack>
           </HStack>
@@ -136,7 +151,7 @@ export default function ScriptsPage() {
               telemetryKeys={telemetryKeys}
               onChange={(v) => {
                 setCode(v);
-                try { sessionStorage.setItem("session:user-script", v); } catch {}
+                try { sessionStorage.setItem("session:user-script", v); } catch { }
               }}
               onCompile={compile}
               theme={useColorModeValue("light", "dark") === "dark" ? "dark" : "light"}

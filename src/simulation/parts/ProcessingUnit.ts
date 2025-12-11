@@ -1,27 +1,47 @@
 /**
- * Processing unit parts.
- * BasicProcessingUnit limits script size and per-tick processing.
+ * Processing Units
+ * - Basic: Low power, slow
+ * - Advanced: Better
+ * - Orbital CPU: High memory, fast interval, exposes orbital elements.
  */
 import { ProcessingUnitPart } from "../Rocket";
 
-export class BasicProcessingUnit implements ProcessingUnitPart {
+export class BasicCPU implements ProcessingUnitPart {
   readonly id = "cpu.basic";
-  readonly name = "Basic Guidance System";
-  readonly massKg = 8;
-  readonly maxScriptChars = 40_000; // characters
-  readonly processingBudgetPerTick = 100; // abstract cost units
-  readonly energyPerTickJ = 50; // joules per tick per running script
+  readonly name = "Basic CPU";
+  readonly massKg = 5;
+  readonly maxScriptChars = 2000;
+  readonly processingBudgetPerTick = 50;
+  readonly energyPerTickJ = 2;
   readonly scriptSlots = 1;
-  /** Run user scripts once every N seconds. */
-  readonly processingIntervalSeconds = 2;
+  readonly processingIntervalSeconds = 0.5; // Slow updates
+}
+export { BasicCPU as BasicProcessingUnit };
+
+export class AdvancedCPU implements ProcessingUnitPart {
+  readonly id = "cpu.advanced";
+  readonly name = "Advanced CPU";
+  readonly massKg = 10;
+  readonly maxScriptChars = 8000;
+  readonly processingBudgetPerTick = 100;
+  readonly energyPerTickJ = 5;
+  readonly scriptSlots = 2;
+  readonly processingIntervalSeconds = 0.2;
+}
+
+export class OrbitalProcessingUnit implements ProcessingUnitPart {
+  readonly id = "cpu.orbital";
+  readonly name = "Orbital Computer";
+  readonly massKg = 20;
+  readonly maxScriptChars = 32000;
+  readonly processingBudgetPerTick = 250;
+  readonly energyPerTickJ = 25; // High power
+  readonly scriptSlots = 4;
+  readonly processingIntervalSeconds = 0.1; // Fast updates
+
   readonly exposes = [
-    "cpuName",
-    "cpuProcessingBudgetPerTick",
-    "cpuMaxScriptChars",
-    "cpuSlotCount",
-    "cpuCostUsedLastTick",
-    "cpuEnergyUsedLastTick",
-    "cpuProcessingIntervalSeconds",
+    "apAltitude",
+    "peAltitude",
+    "soiBodyId",
   ];
-  // TODO: Add thermal throttling and error handling features.
 }

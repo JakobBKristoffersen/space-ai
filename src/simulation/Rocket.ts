@@ -85,10 +85,14 @@ export interface RocketSnapshot {
   commsBytesSentPerS?: number;
   /** Measured bytes received from base per second. */
   commsBytesRecvPerS?: number;
+  /** Type of the last packet successfully sent (persists until next packet). */
+  lastPacketSentType?: string;
+  /** List of keys that are actively exposed by installed sensors/parts. */
+  exposedKeys?: string[];
 }
 
 export type RocketCommand =
-  | { type: "setEnginePower"; value: 0 | 1 }
+  | { type: "setEnginePower"; value: number }
   | { type: "turnLeft"; value: number }
   | { type: "turnRight"; value: number };
 
@@ -104,8 +108,8 @@ export interface EnginePart {
   readonly dryMassKg: number;
   /** maximum thrust in Newtons at full power */
   readonly maxThrustN: number;
-  /** simple 0 or 1 throttle model */
-  power: 0 | 1;
+  /** Throttle level 0.0 to 1.0 */
+  power: number;
   /** fuel consumption rate (kg/s) at full power */
   readonly fuelBurnRateKgPerS: number;
   /** Additional thrust fraction at vacuum relative to sea level (e.g., 0.25 => +25% at vacuum). */
@@ -190,10 +194,36 @@ export interface AntennaPart {
   readonly exposes?: string[];
 }
 
+/** Payload part that can be deployed as a separate entity. */
+export interface PayloadPart {
+  readonly id: string;
+  readonly name: string;
+  readonly massKg: number;
+  /** Config for the new rocket spawned from this payload. */
+  readonly satelliteConfig: {
+    name: string;
+    parts: {
+      sensors: SensorPart[];
+      antennas: AntennaPart[];
+      batteries: BatteryPart[];
+      solar: any[]; // future proof
+    }
+  };
+  readonly exposes?: string[];
+}
+
 export class SimpleQueue implements RocketCommandQueue {
   private q: RocketCommand[] = [];
   enqueue(cmd: RocketCommand): void { this.q.push(cmd); }
   drain(): RocketCommand[] { const c = this.q; this.q = []; return c; }
+}
+
+export interface SolarPanelPart {
+  readonly id: string;
+  readonly name: string;
+  readonly massKg: number;
+  readonly generationWatts: number;
+  readonly exposes?: string[];
 }
 
 export class Rocket {
@@ -208,6 +238,24 @@ export class Rocket {
     temperature: 293, // ~20 C in K-ish units
   };
 
+  /** Unique identifier for this rocket (assigned by SimulationManager). */
+  id: string = "";
+
+  /** Communication State (updated by CommSystem). */
+  commState: {
+    connected: boolean;
+    hops: number;
+    path: string[];
+    latencyMs: number;
+    signalStrength: number;
+  } = { connected: false, hops: 0, path: [], latencyMs: 0, signalStrength: 0 };
+
+  /** Data packets waiting to be sent. */
+  packetQueue: any[] = []; // Typed as DataPacket[] in CommSystem context
+
+  /** Queue of new rockets spawned this tick (handled by Environment). */
+  spawnQueue: Rocket[] = [];
+
   // Composition
   engines: EnginePart[] = [];
   fuelTanks: FuelTankPart[] = [];
@@ -218,6 +266,8 @@ export class Rocket {
   antennas: AntennaPart[] = [];
   cpu: ProcessingUnitPart | null = null;
   sensors: SensorPart[] = [];
+  payloads: PayloadPart[] = [];
+  solarPanels: SolarPanelPart[] = [];
 
   // Internal state derived from commands
   private angularVelocityRadPerS = 0; // actual angular rate applied (rad/s)
@@ -238,12 +288,14 @@ export class Rocket {
           const v = Math.max(0, Math.abs(cmd.value));
           this.desiredAngularVelocityRadPerS = -v;
           if (v === 0) this.desiredAngularVelocityRadPerS = 0;
-          break; }
+          break;
+        }
         case "turnRight": {
           const v = Math.max(0, Math.abs(cmd.value));
           this.desiredAngularVelocityRadPerS = v;
           if (v === 0) this.desiredAngularVelocityRadPerS = 0;
-          break; }
+          break;
+        }
       }
     }
     // Actual angular velocity will be computed in Environment based on reaction wheels and available energy.
@@ -305,7 +357,47 @@ export class Rocket {
     const cpu = this.cpu?.massKg ?? 0;
     const sensors = this.sensors.reduce((m, s) => m + s.massKg, 0);
     const antennas = (this as any).antennas ? (this as any).antennas.reduce((m: number, a: any) => m + (a?.massKg || 0), 0) : 0;
-    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas;
+    const payloads = this.payloads.reduce((m, p) => m + p.massKg, 0);
+    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas + payloads;
+  }
+
+  /**
+   * Deploy a payload part as a new separate rocket entity.
+   * Returns the ID of the new rocket if successful, or null if failed.
+   */
+  deployPayload(payloadId: string): string | null {
+    const idx = this.payloads.findIndex(p => p.id === payloadId);
+    if (idx === -1) return null;
+    const payload = this.payloads[idx];
+
+    // Create new rocket with payload config
+    const sat = new Rocket();
+    // Assign a temp ID (Environment/Manager should re-assign unique ID or we use random)
+    sat.id = `sat-${Math.floor(Math.random() * 1000000)}`;
+
+    // Copy kinematic state
+    sat.state.position = { ...this.state.position };
+    sat.state.velocity = { ...this.state.velocity };
+    sat.state.orientationRad = this.state.orientationRad;
+    sat.state.temperature = this.state.temperature;
+
+    // Apply small separation impulse (0.5 m/s forward)
+    const sepSpeed = 0.5;
+    sat.state.velocity.x += Math.cos(this.state.orientationRad) * sepSpeed;
+    sat.state.velocity.y += Math.sin(this.state.orientationRad) * sepSpeed;
+
+    // Install parts from payload config
+    sat.sensors = [...payload.satelliteConfig.parts.sensors];
+    sat.antennas = [...payload.satelliteConfig.parts.antennas];
+    sat.batteries = [...payload.satelliteConfig.parts.batteries];
+    // sat.solar = ...
+
+    // Remove payload from this rocket
+    this.payloads.splice(idx, 1);
+
+    // Queue for spawning
+    this.spawnQueue.push(sat);
+    return sat.id;
   }
 
   availableFuelKg(): number {
@@ -442,6 +534,18 @@ export class Rocket {
       commsRocketRangeMeters: this._commsRocketRangeM,
       commsBytesSentPerS: this._commsSentPerS,
       commsBytesRecvPerS: this._commsRecvPerS,
+      lastPacketSentType: (this as any)._lastPacketSentType,
+      exposedKeys: Array.from(new Set([
+        ...(this.sensors.flatMap(s => s.exposes || [])),
+        ...(this.engines.flatMap(e => e.exposes || [])),
+        ...(this.fuelTanks.flatMap(t => t.exposes || [])),
+        ...(this.batteries.flatMap(b => b.exposes || [])),
+        ...(this.cpu?.exposes || []),
+        ...(this.reactionWheels.flatMap(r => r.exposes || [])),
+        ...(this.antennas.flatMap(a => a.exposes || [])),
+        ...(this.payloads.flatMap(p => p.exposes || [])),
+        ...(this.solarPanels.flatMap(s => s.exposes || [])),
+      ])),
     };
   }
 }

@@ -1,4 +1,4 @@
-import React, {useEffect, useMemo, useRef, useState} from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
     Box,
     Button,
@@ -16,8 +16,8 @@ import {
     Text,
     VStack
 } from "@chakra-ui/react";
-import {useAppCore} from "../app/AppContext";
-import {estimateDeltaV, mag2} from "../app/utils/rocketPerf";
+import { useAppCore } from "../app/AppContext";
+import { estimateDeltaV, mag2 } from "../app/utils/rocketPerf";
 
 // --- Orbital helpers (primary body approximation) ---
 function computeOrbit(primary: any, rocket: any) {
@@ -26,8 +26,8 @@ function computeOrbit(primary: any, rocket: any) {
     const ry = rocket.position?.y ?? 0;
     const vx = rocket.velocity?.x ?? 0;
     const vy = rocket.velocity?.y ?? 0;
-    const rvec = {x: rx - primary.position.x, y: ry - primary.position.y};
-    const vvec = {x: vx, y: vy};
+    const rvec = { x: rx - primary.position.x, y: ry - primary.position.y };
+    const vvec = { x: vx, y: vy };
 
     const r = Math.hypot(rvec.x, rvec.y);
     const v2 = vvec.x * vvec.x + vvec.y * vvec.y;
@@ -49,9 +49,9 @@ function computeOrbit(primary: any, rocket: any) {
         const ra = a * (1 + e);
         const peAlt = rp - primary.radiusMeters;
         const apAlt = ra - primary.radiusMeters;
-        return {a, e, argPeri, apAlt, peAlt};
+        return { a, e, argPeri, apAlt, peAlt };
     }
-    return {a: Number.NaN, e, argPeri, apAlt: Number.NaN, peAlt: Number.NaN};
+    return { a: Number.NaN, e, argPeri, apAlt: Number.NaN, peAlt: Number.NaN };
 }
 
 function fmt(n: number, digits = 2): string {
@@ -63,7 +63,7 @@ function fmt(n: number, digits = 2): string {
 }
 
 export default function WorldScenePage() {
-    const {manager, services} = useAppCore();
+    const { manager, services } = useAppCore();
     const [running, setRunning] = useState<boolean>(false);
     const [speed, setSpeed] = useState<number>(1);
     const [now, setNow] = useState<number>(performance.now());
@@ -73,10 +73,10 @@ export default function WorldScenePage() {
     // Chakra UI v3 Select collection for speed options
     const speedOptions = useMemo(() => createListCollection({
         items: [
-            {label: "0.5x", value: "0.5"},
-            {label: "1x", value: "1"},
-            {label: "2x", value: "2"},
-            {label: "4x", value: "4"},
+            { label: "0.5x", value: "0.5" },
+            { label: "1x", value: "1" },
+            { label: "2x", value: "2" },
+            { label: "4x", value: "4" },
         ],
     }), []);
 
@@ -91,7 +91,7 @@ export default function WorldScenePage() {
         const sync = () => {
             setRunning(manager.isRunning());
             setSpeed(manager.getSpeedMultiplier ? manager.getSpeedMultiplier() : 1);
-            try { setLaunched(!!manager.hasLaunched?.()); } catch {}
+            try { setLaunched(!!manager.hasLaunched?.()); } catch { }
         };
         const unsub = manager.onPostRender((_alpha, ts) => {
             setNow(ts);
@@ -181,7 +181,7 @@ export default function WorldScenePage() {
             if (dist > maxDist) maxDist = dist;
         }
         maxDist = Math.max(maxDist, primary.radiusMeters * 2);
-        const bounds = {minX: -maxDist, maxX: maxDist, minY: -maxDist, maxY: maxDist};
+        const bounds = { minX: -maxDist, maxX: maxDist, minY: -maxDist, maxY: maxDist };
         const worldW = Math.max(1, bounds.maxX - bounds.minX);
         const worldH = Math.max(1, bounds.maxY - bounds.minY);
         const scale = Math.min((w - 4) / worldW, (h - 4) / worldH);
@@ -237,7 +237,7 @@ export default function WorldScenePage() {
         // Predicted elliptical trajectory around the body with strongest gravity (SOI) if bound
         try {
             const soiId = (rocketSnap as any)?.soiBodyId ?? envSnap.primaryId;
-            const baseBody = envSnap.bodies.find((b:any) => b.id === soiId) ?? primary;
+            const baseBody = envSnap.bodies.find((b: any) => b.id === soiId) ?? primary;
             const orb = computeOrbit(baseBody, envSnap.rocket);
             if (orb && isFinite(orb.a) && orb.e < 1 && orb.a > 0) {
                 const a = orb.a;
@@ -286,9 +286,9 @@ export default function WorldScenePage() {
             if (Array.isArray(names) && names.length) {
                 return createListCollection({ items: names.map((label: string, i: number) => ({ label, value: String(i) })) });
             }
-        } catch {}
+        } catch { }
         const count = envSnap?.rockets?.length ?? 1;
-        const items = new Array(count).fill(0).map((_, i) => ({ label: `Rocket ${i+1}`, value: String(i) }));
+        const items = new Array(count).fill(0).map((_, i) => ({ label: `Rocket ${i + 1}`, value: String(i) }));
         return createListCollection({ items });
     }, [manager, envSnap?.rockets?.length, snapKey]);
     const [activeIdx, setActiveIdx] = useState<number>(0);
@@ -303,16 +303,16 @@ export default function WorldScenePage() {
             <HStack justify="space-between">
                 <HStack gap={2}>
                     <Button onClick={onPlayPause}
-                            colorScheme={running ? "yellow" : "green"}>{running ? "Pause" : "Play"}</Button>
+                        colorScheme={running ? "yellow" : "green"}>{running ? "Pause" : "Play"}</Button>
                     <Select.Root size="sm" minW={32} collection={speedOptions} value={[String(speed)]}
-                                 onValueChange={(d: any) => onSpeedChangeValue(Array.isArray(d?.value) ? d.value[0] : d?.value)}>
-                        <Select.HiddenSelect/>
+                        onValueChange={(d: any) => onSpeedChangeValue(Array.isArray(d?.value) ? d.value[0] : d?.value)}>
+                        <Select.HiddenSelect />
                         <Select.Control>
                             <Select.Trigger>
-                                <Select.ValueText placeholder="Speed"/>
+                                <Select.ValueText placeholder="Speed" />
                             </Select.Trigger>
                             <Select.IndicatorGroup>
-                                <Select.Indicator/>
+                                <Select.Indicator />
                             </Select.IndicatorGroup>
                         </Select.Control>
                         <Portal>
@@ -321,7 +321,7 @@ export default function WorldScenePage() {
                                     {speedOptions.items.map((opt: any) => (
                                         <Select.Item item={opt} key={opt.value}>
                                             {opt.label}
-                                            <Select.ItemIndicator/>
+                                            <Select.ItemIndicator />
                                         </Select.Item>
                                     ))}
                                 </Select.Content>
@@ -329,17 +329,17 @@ export default function WorldScenePage() {
                         </Portal>
                     </Select.Root>
                     {!launched ? (
-                        <Button onClick={() => { try { manager?.takeOff?.(); } catch {} }} colorScheme="green">Take Off</Button>
+                        <Button onClick={() => { try { manager?.takeOff?.(); } catch { } }} colorScheme="green">Take Off</Button>
                     ) : (
                         <Button onClick={onResetRocket} variant="outline" colorScheme="orange">Reset Rocket</Button>
                     )}
                     <Select.Root size="sm" minW={32} collection={rocketOptions} value={[String(activeIdx)]}
-                                  onValueChange={(d: any) => {
-                                      const v = Array.isArray(d?.value) ? d.value[0] : d?.value;
-                                      const idx = Number(v) | 0;
-                                      setActiveIdx(idx);
-                                      try { manager?.setActiveRocketIndex?.(idx); } catch {}
-                                  }}>
+                        onValueChange={(d: any) => {
+                            const v = Array.isArray(d?.value) ? d.value[0] : d?.value;
+                            const idx = Number(v) | 0;
+                            setActiveIdx(idx);
+                            try { manager?.setActiveRocketIndex?.(idx); } catch { }
+                        }}>
                         <Select.HiddenSelect />
                         <Select.Control>
                             <Select.Trigger>
@@ -371,21 +371,36 @@ export default function WorldScenePage() {
                         <Card.Header><Heading size="sm">Navigation</Heading></Card.Header>
                         <Card.Body>
                             <VStack align="stretch" fontFamily="mono" fontSize="sm">
-                                <Text>Altitude: {fmt(rocketSnap?.altitude ?? 0)} m</Text>
-                                <Text>Position: x={fmt(rocketSnap?.position?.x ?? 0)} m,
-                                    y={fmt(rocketSnap?.position?.y ?? 0)} m</Text>
-                                <Text>Velocity: x={fmt(rocketSnap?.velocity?.x ?? 0)} m/s,
-                                    y={fmt(rocketSnap?.velocity?.y ?? 0)} m/s, |v|={fmt(speedMag)} m/s</Text>
-                                <Text>Orientation: {fmt(((rocketSnap?.orientationRad ?? 0) * 180) / Math.PI, 1)}°</Text>
-                                <Text>Turn rate: {fmt(rocketSnap?.rwOmegaRadPerS ?? 0, 3)} rad/s ({fmt(((rocketSnap?.rwOmegaRadPerS ?? 0) * 180) / Math.PI, 1)} °/s)</Text>
-                                {typeof rocketSnap?.rwDesiredOmegaRadPerS === 'number' && (
-                                  <Text color="gray.500">Desired turn rate: {fmt(rocketSnap?.rwDesiredOmegaRadPerS ?? 0, 3)} rad/s ({fmt(((rocketSnap?.rwDesiredOmegaRadPerS ?? 0) * 180) / Math.PI, 1)} °/s)</Text>
+                                <Text>Altitude: {rocketSnap?.exposedKeys?.includes('altitude') ? fmt(rocketSnap?.altitude ?? 0) + ' m' : 'N/A'}</Text>
+
+                                {rocketSnap?.exposedKeys?.includes('position') && (
+                                    <Text>Position: x={fmt(rocketSnap?.position?.x ?? 0)} m,
+                                        y={fmt(rocketSnap?.position?.y ?? 0)} m</Text>
                                 )}
-                                <Text>Apoapsis
-                                    (Ap): {orbit && isFinite(orbit.apAlt) ? fmt(orbit.apAlt) + ' m' : '-'}</Text>
-                                <Text>Periapsis
-                                    (Pe): {orbit && isFinite(orbit.peAlt) ? fmt(orbit.peAlt) + ' m' : '-'}</Text>
-                                {typeof rocketSnap?.airDensity === 'number' && (
+
+                                {rocketSnap?.exposedKeys?.includes('velocity') && (
+                                    <Text>Velocity: x={fmt(rocketSnap?.velocity?.x ?? 0)} m/s,
+                                        y={fmt(rocketSnap?.velocity?.y ?? 0)} m/s, |v|={fmt(speedMag)} m/s</Text>
+                                )}
+
+                                {rocketSnap?.exposedKeys?.includes('orientationRad') && (
+                                    <>
+                                        <Text>Orientation: {fmt(((rocketSnap?.orientationRad ?? 0) * 180) / Math.PI, 1)}°</Text>
+                                        <Text>Turn rate: {fmt(rocketSnap?.rwOmegaRadPerS ?? 0, 3)} rad/s ({fmt(((rocketSnap?.rwOmegaRadPerS ?? 0) * 180) / Math.PI, 1)} °/s)</Text>
+                                        {typeof rocketSnap?.rwDesiredOmegaRadPerS === 'number' && (
+                                            <Text color="gray.500">Desired turn rate: {fmt(rocketSnap?.rwDesiredOmegaRadPerS ?? 0, 3)} rad/s ({fmt(((rocketSnap?.rwDesiredOmegaRadPerS ?? 0) * 180) / Math.PI, 1)} °/s)</Text>
+                                        )}
+                                    </>
+                                )}
+
+                                {rocketSnap?.exposedKeys?.includes('apAltitude') && (
+                                    <Text>Apoapsis (Ap): {orbit && isFinite(orbit.apAlt) ? fmt(orbit.apAlt) + ' m' : '-'}</Text>
+                                )}
+                                {rocketSnap?.exposedKeys?.includes('peAltitude') && (
+                                    <Text>Periapsis (Pe): {orbit && isFinite(orbit.peAlt) ? fmt(orbit.peAlt) + ' m' : '-'}</Text>
+                                )}
+
+                                {rocketSnap?.exposedKeys?.includes('airDensity') && typeof rocketSnap?.airDensity === 'number' && (
                                     <Text>Air density: {fmt(Number(rocketSnap?.airDensity || 0), 3)} kg/m³ {rocketSnap?.inAtmosphere ? '' : '(space)'}</Text>
                                 )}
                             </VStack>
@@ -403,10 +418,10 @@ export default function WorldScenePage() {
                                     <HStack gap="5">
                                         <Progress.Label>Battery</Progress.Label>
                                         <Progress.Track flex="1">
-                                            <Progress.Range/>
+                                            <Progress.Range />
                                         </Progress.Track>
                                         <Progress.ValueText> <Text fontFamily="mono"
-                                                                   fontSize="sm">{fmt(rocketSnap?.batteryJoules ?? 0)} J
+                                            fontSize="sm">{fmt(rocketSnap?.batteryJoules ?? 0)} J
                                             / {fmt(rocketSnap?.batteryCapacityJoules ?? 0)} J
                                             ({fmt(batteryPct, 1)}%)</Text></Progress.ValueText>
                                     </HStack>
@@ -424,21 +439,22 @@ export default function WorldScenePage() {
                 {/* Canvas */}
                 <GridItem colSpan={2} rowSpan={1}>
                     <Box display="flex" alignItems="center" justifyContent="center" minH="320px" borderWidth="0px"
-                         rounded="md">
-                        <Box as="canvas" id="game" width={900} height={600}/>
+                        rounded="md">
+                        <Box as="canvas" id="game" width={900} height={600} />
                     </Box>
                 </GridItem>
 
+                {/* Minimap */}
                 <GridItem colSpan={1} >
-                    {/* Minimap */}
-                    {/*<Card.Root variant="subtle">                        */}
-                    {/*    <Card.Body>*/}
-                            <Center>
-                                <Box as="canvas" ref={miniRef} width="400" height="400"
-                                     style={{width: 400, height: 400}}/>
-                            </Center>
-                        {/*</Card.Body>*/}
-                    {/*</Card.Root>*/}
+                    <Center>
+                        <Box as="canvas" ref={miniRef} width="400" height="400"
+                            style={{ width: 400, height: 400 }} />
+                    </Center>
+                </GridItem>
+
+                {/* Base Station Panel */}
+                <GridItem colSpan={1}>
+                    <BaseStationPanel />
                 </GridItem>
 
                 {/* Processing Unit */}
@@ -490,17 +506,53 @@ export default function WorldScenePage() {
 
                 {/* Script Logs */}
                 <GridItem colSpan={2}>
-                    <ScriptLogsPanel/>
+                    <ScriptLogsPanel />
                 </GridItem>
             </Grid>
         </VStack>
     );
 }
 
+// --- Base Station Panel ---
+function BaseStationPanel() {
+    const { services } = useAppCore();
+    const [packets, setPackets] = useState<any[]>([]);
 
-// --- Script Logs Panel (World Scene) ---
+    useEffect(() => {
+        const id = setInterval(() => {
+            const list = (services as any).getReceivedPackets ? (services as any).getReceivedPackets() : [];
+            // Update if changed (shallow compare length or last id)
+            setPackets(prev => {
+                if (prev.length === list.length && prev[prev.length - 1]?.id === list[list.length - 1]?.id) return prev;
+                return [...list];
+            });
+        }, 500);
+        return () => clearInterval(id);
+    }, [services]);
+
+    return (
+        <Card.Root variant="subtle">
+            <Card.Header><Heading size="sm">Base Station (Received Data)</Heading></Card.Header>
+            <Card.Body>
+                <VStack align="stretch" maxH="220px" overflowY="auto" fontFamily="mono" fontSize="xs" gap={1}>
+                    {packets.length === 0 && <Text color="gray.500">No data received.</Text>}
+                    {packets.slice().reverse().map((p) => (
+                        <Box key={p.id} p={1} borderWidth="1px" rounded="sm" bg={{ base: "gray.50", _dark: "gray.800/50" }}>
+                            <HStack justify="space-between">
+                                <Text fontWeight="bold" color="cyan.400">{p.type.toUpperCase()}</Text>
+                                <Text color="gray.500">{p.sizeKb}kb</Text>
+                            </HStack>
+                            <Text lineClamp={2} color="gray.500">{JSON.stringify(p.data)}</Text>
+                            <Text fontSize="xx-small" color="gray.400">via {p.sourceId} &rarr; {p.targetId}</Text>
+                        </Box>
+                    ))}
+                </VStack>
+            </Card.Body>
+        </Card.Root>
+    );
+}
 function ScriptLogsPanel() {
-    const {manager} = useAppCore();
+    const { manager } = useAppCore();
     const [activeTab, setActiveTab] = useState<string>("0");
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
@@ -537,7 +589,7 @@ function ScriptLogsPanel() {
 
     const renderLogBox = (idx: number) => (
         <Box ref={idx === Number(activeTab) ? scrollRef : undefined}
-             borderWidth="1px" rounded="md" p={2} maxH="220px" overflowY="auto" fontFamily="mono" fontSize="xs" bg={{_dark: 'gray.800', base: 'white'}}>
+            borderWidth="1px" rounded="md" p={2} maxH="220px" overflowY="auto" fontFamily="mono" fontSize="xs" bg={{ _dark: 'gray.800', base: 'white' }}>
             {linesFor(idx).length === 0 && <Text color="gray.500">No logs yet.</Text>}
             {linesFor(idx).map((ln: string, i: number) => (
                 <Text key={i} whiteSpace="pre-wrap">{ln}</Text>
@@ -560,12 +612,12 @@ function ScriptLogsPanel() {
                 {slotInfo.length <= 1 ? (
                     <VStack align="stretch">
                         <Text fontSize="sm"
-                              color="gray.500">{slotInfo[0]?.name || "Slot 1"}{slotInfo[0]?.enabled ? " (enabled)" : " (disabled)"}</Text>
+                            color="gray.500">{slotInfo[0]?.name || "Slot 1"}{slotInfo[0]?.enabled ? " (enabled)" : " (disabled)"}</Text>
                         {renderLogBox(0)}
                     </VStack>
                 ) : (
                     <Tabs.Root value={activeTab}
-                               onValueChange={(d: any) => setActiveTab(String(Array.isArray(d?.value) ? d.value[0] : d?.value ?? "0"))}>
+                        onValueChange={(d: any) => setActiveTab(String(Array.isArray(d?.value) ? d.value[0] : d?.value ?? "0"))}>
                         <Tabs.List>
                             {slotInfo.map((s, i) => (
                                 <Tabs.Trigger key={i} value={String(i)}>
@@ -577,7 +629,7 @@ function ScriptLogsPanel() {
                             <Tabs.Content key={i} value={String(i)}>
                                 <VStack align="stretch" gap={1} mt={2}>
                                     <Text fontSize="sm"
-                                          color="gray.500">{s.enabled ? "Enabled" : "Disabled"} • {s.hasScript ? "Has script" : "No script"}</Text>
+                                        color="gray.500">{s.enabled ? "Enabled" : "Disabled"} • {s.hasScript ? "Has script" : "No script"}</Text>
                                     {renderLogBox(i)}
                                 </VStack>
                             </Tabs.Content>

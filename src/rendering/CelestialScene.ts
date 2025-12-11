@@ -25,7 +25,7 @@ export class CelestialScene implements SceneLike {
   private readonly maxTrailAgeSec = 12; // seconds to keep in trail
   private readonly trailMinSpacingMeters = 80; // add a point only if moved this far
 
-  constructor(private readonly opts: CelestialSceneOptions) {}
+  constructor(private readonly opts: CelestialSceneOptions) { }
 
   private initMiniMapBounds(snap: EnvironmentSnapshot): void {
     if (this.miniMapBounds) return;
@@ -50,8 +50,8 @@ export class CelestialScene implements SceneLike {
     this.miniMapBounds = { minX: -maxDist, maxX: maxDist, minY: -maxDist, maxY: maxDist };
   }
 
-  onAttach(): void {}
-  onDetach(): void {}
+  onAttach(): void { }
+  onDetach(): void { }
 
   render({ ctx }: RenderContext): void {
     if (!ctx) return;
@@ -203,57 +203,93 @@ export class CelestialScene implements SceneLike {
     }
 
     // Minimap: top-right corner
-    // this.drawMiniMap(ctx, snap, width, height);
+    this.drawMiniMap(ctx, snap, width, height);
   }
   //
-  // private drawMiniMap(ctx: CanvasRenderingContext2D, snap: EnvironmentSnapshot, width: number, height: number) {
-  //   const pad = 8;
-  //   const w = 160;
-  //   const h = 120;
-  //   const x0 = width - w - pad;
-  //   const y0 = pad;
-  //
-  //   // Initialize fixed bounds once so the minimap stays still (no panning/zooming)
-  //   this.initMiniMapBounds(snap);
-  //   const bounds = this.miniMapBounds!;
-  //   const worldW = Math.max(1, bounds.maxX - bounds.minX);
-  //   const worldH = Math.max(1, bounds.maxY - bounds.minY);
-  //   const scale = Math.min(w / worldW, h / worldH);
-  //   // Center the world inside the minimap rectangle
-  //   const ox = x0 + (w - worldW * scale) / 2;
-  //   const oy = y0 + (h - worldH * scale) / 2;
-  //
-  //   const toMini = (x: number, y: number) => ({
-  //     x: ox + (x - bounds.minX) * scale,
-  //     y: oy + worldH * scale - (y - bounds.minY) * scale,
-  //   });
-  //
-  //   // Backdrop
-  //   ctx.save();
-  //   // Use broadly supported RGBA color (avoid 4-digit hex with alpha like "#0008")
-  //   ctx.fillStyle = "rgba(0,0,0,0.9)";
-  //   ctx.fillRect(x0 - 1, y0 - 1, w + 2, h + 2);
-  //   // Add a subtle border to ensure the minimap is visible on all backgrounds
-  //   ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  //   ctx.lineWidth = 1;
-  //   ctx.strokeRect(x0 - 1 + 0.5, y0 - 1 + 0.5, w + 2 - 1, h + 2 - 1);
-  //
-  //   // Bodies
-  //   for (const b of snap.bodies) {
-  //     const c = toMini(b.position.x, b.position.y);
-  //     const R = Math.max(1, b.radiusMeters * scale);
-  //     ctx.beginPath();
-  //     ctx.fillStyle = (b.id === snap.primaryId ? (b.color || "#2e5d2e") : (b.color || "#888"));
-  //     ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
-  //     ctx.fill();
-  //   }
-  //
-  //   // Rocket
-  //   const r = toMini(snap.rocket.position.x, snap.rocket.position.y);
-  //   ctx.fillStyle = "#ffcc00";
-  //   ctx.beginPath();
-  //   ctx.arc(r.x, r.y, 2, 0, Math.PI * 2);
-  //   ctx.fill();
-  //   ctx.restore();
-  // }
+  private drawMiniMap(ctx: CanvasRenderingContext2D, snap: EnvironmentSnapshot, width: number, height: number) {
+    const pad = 8;
+    const w = 160;
+    const h = 120;
+    const x0 = width - w - pad;
+    const y0 = pad;
+
+    // Initialize fixed bounds once so the minimap stays still (no panning/zooming)
+    this.initMiniMapBounds(snap);
+    const bounds = this.miniMapBounds!;
+    const worldW = Math.max(1, bounds.maxX - bounds.minX);
+    const worldH = Math.max(1, bounds.maxY - bounds.minY);
+    const scale = Math.min(w / worldW, h / worldH);
+    // Center the world inside the minimap rectangle
+    const ox = x0 + (w - worldW * scale) / 2;
+    const oy = y0 + (h - worldH * scale) / 2;
+
+    const toMini = (x: number, y: number) => ({
+      x: ox + (x - bounds.minX) * scale,
+      y: oy + worldH * scale - (y - bounds.minY) * scale,
+    });
+
+    // Backdrop
+    ctx.save();
+    // Use broadly supported RGBA color (avoid 4-digit hex with alpha like "#0008")
+    ctx.fillStyle = "rgba(0,0,0,0.9)";
+    ctx.fillRect(x0 - 1, y0 - 1, w + 2, h + 2);
+    // Add a subtle border to ensure the minimap is visible on all backgrounds
+    ctx.strokeStyle = "rgba(255,255,255,0.35)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 - 1 + 0.5, y0 - 1 + 0.5, w + 2 - 1, h + 2 - 1);
+
+    // Comm Network Lines
+    ctx.lineWidth = 1;
+    const findPos = (id: string): { x: number, y: number } | undefined => {
+      const b = snap.bodies.find(x => x.id === id);
+      if (b) return b.position;
+      const s = (snap.structures as any[]).find(x => x.id === id);
+      if (s) return s.position;
+      const r = (snap as any).rockets?.find((x: any) => x.id === id) ?? ((snap.rocket as any).id === id ? snap.rocket : undefined);
+      if (r) return r.position;
+      return undefined;
+    };
+
+    const rockets = Array.isArray((snap as any).rockets) ? (snap as any).rockets : [snap.rocket];
+    for (const r of rockets) {
+      if (r.commState?.connected && r.commState.path.length > 1) {
+        ctx.strokeStyle = "#00ff00"; // Green for connected
+        ctx.beginPath();
+        let first = true;
+        for (const nodeId of r.commState.path) {
+          const pos = findPos(nodeId);
+          if (pos) {
+            const sc = toMini(pos.x, pos.y);
+            if (first) { ctx.moveTo(sc.x, sc.y); first = false; }
+            else ctx.lineTo(sc.x, sc.y);
+          }
+        }
+        ctx.stroke();
+      } else if (!r.commState?.connected) {
+        // Optional: draw red line to nearest? Hard to know nearest here without logic.
+        // Just draw a red X on the rocket itself in the loop below?
+      }
+    }
+
+    // Bodies
+    for (const b of snap.bodies) {
+      const c = toMini(b.position.x, b.position.y);
+      const R = Math.max(1, b.radiusMeters * scale);
+      ctx.beginPath();
+      ctx.fillStyle = (b.id === snap.primaryId ? (b.color || "#2e5d2e") : (b.color || "#888"));
+      ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    // Rockets (draw all)
+    for (const r of rockets) {
+      const pos = toMini(r.position.x, r.position.y);
+      ctx.fillStyle = r.commState?.connected ? "#00ff00" : "#ff0000"; // Green if connected, Red if not
+      ctx.beginPath();
+      ctx.arc(pos.x, pos.y, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
 }

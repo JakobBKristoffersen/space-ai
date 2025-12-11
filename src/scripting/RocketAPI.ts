@@ -9,6 +9,7 @@
  */
 import { DefaultCostModel, CostModel } from "./CostModel";
 import { Rocket, RocketCommand, RocketCommandQueue, RocketSnapshot } from "../simulation/Rocket";
+import { CPUTier, getCPUTier } from "../simulation/CPUTier";
 
 export interface RocketAPICreationOptions {
   costModel?: CostModel;
@@ -22,7 +23,7 @@ export interface TickBudgetContext {
 }
 
 export class SimpleTickBudget implements TickBudgetContext {
-  constructor(public remainingCost: number) {}
+  constructor(public remainingCost: number) { }
   charge(cost: number): void {
     if (cost < 0) return;
     if (this.remainingCost - cost < 0) {
@@ -143,11 +144,13 @@ export class RocketAPI {
   }
 
   /**
-   * Set engine power to 0 or 1 (binary throttle per spec).
+   * Set engine power (throttle).
+   * - For basic engines, value is clamped to 0 or 1.
+   * - For advanced engines, value is clamped between 0 and 1.
    */
-  setEnginePower(value: 0 | 1): void {
+  setEnginePower(value: number): void {
     this.charge(this.cost.setEnginePower);
-    this.cmdQueue.enqueue({ type: "setEnginePower", value });
+    this.cmdQueue.enqueue({ type: "setEnginePower", value: Math.max(0, Math.min(1, Number(value))) });
   }
 
   /**
@@ -190,4 +193,137 @@ export class RocketAPI {
     if (r > 0) this.cmdQueue.enqueue({ type: "turnRight", value: mag });
     else this.cmdQueue.enqueue({ type: "turnLeft", value: mag });
   }
+
+  // --- Tier 1: Telemetry (Requires Advanced Guidance or better) ---
+
+  private _checkTier(tier: CPUTier, name: string) {
+    const installed = this.rocket.cpu ? getCPUTier(this.rocket.cpu.id) : CPUTier.BASIC;
+    if (installed < tier) {
+      // For now, return NaN or log warning. Throwing might crash user script loop hard.
+      // Spec says: "return NaN or throw/log"
+      this.log(`[System] Error: ${name} requires CPU Tier ${tier} (installed: ${installed}). Upgrade Guidance System.`);
+      return false;
+    }
+    return true;
+  }
+
+  private _checkSensor(key: string, name: string) {
+    const keys = this.rocket.snapshot().exposedKeys || [];
+    if (!keys.includes(key)) {
+      // Sensor not installed or doesn't expose this metric
+      // We don't log here to avoid spamming logs per tick, just return false
+      return false;
+    }
+    return true;
+  }
+
+  getAltitude(): number {
+    this.charge(1);
+    if (!this._checkTier(CPUTier.TELEMETRY, 'getAltitude')) return Number.NaN;
+    if (!this._checkSensor('altitude', 'getAltitude')) return Number.NaN;
+    return this.rocket.snapshot().altitude;
+  }
+
+  getVelocity(): { x: number; y: number } {
+    this.charge(1);
+    if (!this._checkTier(CPUTier.TELEMETRY, 'getVelocity')) return { x: NaN, y: NaN };
+    if (!this._checkSensor('velocity', 'getVelocity')) return { x: NaN, y: NaN };
+    const s = this.rocket.snapshot();
+    return { x: s.velocity.x, y: s.velocity.y };
+  }
+
+  getPosition(): { x: number; y: number } {
+    this.charge(1);
+    if (!this._checkTier(CPUTier.TELEMETRY, 'getPosition')) return { x: NaN, y: NaN };
+    if (!this._checkSensor('position', 'getPosition')) return { x: NaN, y: NaN };
+    const s = this.rocket.snapshot();
+    return { x: s.position.x, y: s.position.y };
+  }
+
+  getHeading(): number {
+    this.charge(1);
+    if (!this._checkTier(CPUTier.TELEMETRY, 'getHeading')) return Number.NaN;
+    if (!this._checkSensor('orientationRad', 'getHeading')) return Number.NaN;
+    return this.rocket.snapshot().orientationRad;
+  }
+
+  // --- Tier 2: Orbital (Requires Orbital Computer) ---
+
+  getApoapsis(): number {
+    this.charge(5);
+    if (!this._checkTier(CPUTier.ORBITAL, 'getApoapsis')) return Number.NaN;
+    // Ap/Pe might not be "sensors" but "CPU" calculations. 
+    // However, we can say the CPU "exposes" them.
+    if (!this._checkSensor('apAltitude', 'getApoapsis')) return Number.NaN;
+    return this.rocket.snapshot().apAltitude ?? Number.NaN;
+  }
+
+  getPeriapsis(): number {
+    this.charge(5);
+    if (!this._checkTier(CPUTier.ORBITAL, 'getPeriapsis')) return Number.NaN;
+    if (!this._checkSensor('peAltitude', 'getPeriapsis')) return Number.NaN;
+    return this.rocket.snapshot().peAltitude ?? Number.NaN;
+  }
+
+  // --- Tier 3: Network (Requires Comm Network / Advanced) ---
+
+  getCommState(): { connected: boolean; signal: number } {
+    this.charge(2);
+    if (!this._checkTier(CPUTier.NETWORK, 'getCommState')) return { connected: false, signal: 0 };
+    const s = (this.rocket as any).commState; // Accessed via any for now or need to update Rocket typings imported
+    return { connected: !!s?.connected, signal: s?.signalStrength ?? 0 };
+  }
+
+  sendDataPacket(type: string, sizeKb: number, data: any): void {
+    this.charge(10);
+    // Spec says: Rockets can queue data packets when disconnected.
+    // But maybe we need Tier 3 to *initiate* complex transmission?
+    // Let's assume sending basic packets needs basic comms but special types need Network tier?
+    // Spec says "Tier 3: Comm network status...".
+    // "Send Atmospheric Profile Data Packet" is Tier 1 Mission.
+    // So sendDataPacket should probably be available earlier?
+    // Let's set it to Tier 1 for basic packets, or check based on type?
+    // Actually, "Transmit first telemetry packet" is Tier 0 mission.
+    // Wait, "Tier 0... Transmit first telemetry packet".
+    // But Tier 0 is "Blind Flight".
+    // Maybe the mission triggers automatically? Or user script does it?
+    // If user script does it, it needs API.
+    // If Tier 0 has NO data, how can it send packet?
+    // Maybe `sendDataPacket` is allowed in Tier 0 but it sends "blind" data?
+    // Let's implement it as Tier 0 accessible but dependent on Comm System connection (which manages the queue).
+    // Actually, let's stick to the prompt's explicit list:
+    // Tier 1: "Send Atmospheric Profile Data Packet".
+    // Tier 0: "Reach 100m... Transmit first telemetry packet".
+    // This implies Tier 0 needs `sendDataPacket`. 
+    // I will allow `sendDataPacket` at Tier 0/Basic, but `getCommState` (checking if connected) is Tier 3 (Advanced).
+    // This creates fun gameplay: "Blindly send data and hope you are in range".
+
+    // Check connection first? "Rockets can queue data packets when disconnected" - existing design.
+    this.rocket.packetQueue.push({
+      id: Math.random().toString(36).slice(2),
+      type: type as any,
+      sizeKb,
+      progressKb: 0,
+      sourceId: this.rocket.id,
+      targetId: 'base',
+      data
+    });
+    this.log(`[Comms] Queued packet ${type} (${sizeKb}kb)`);
+  }
+
+  /**
+   * Deploy a payload by ID.
+   * Returns the ID of the new rocket if successful, or null/empty if failed.
+   */
+  deployPayload(payloadId: string): string | null {
+    this.charge(50); // Expensive operation
+    const newId = this.rocket.deployPayload(payloadId);
+    if (newId) {
+      this.log(`[System] Deployed payload: ${newId}`);
+    } else {
+      this.log(`[System] Failed to deploy payload: ${payloadId} not found`);
+    }
+    return newId;
+  }
 }
+
