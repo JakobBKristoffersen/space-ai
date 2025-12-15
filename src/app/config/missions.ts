@@ -1,5 +1,5 @@
 import { MissionManager, GenericMission } from "../../game/MissionManager";
-import { MissionList } from "../../missions/MissionData";
+import { MissionList } from "../../game/missions/MissionData";
 
 /**
  * Seeds the default set of missions into a MissionManager instance.

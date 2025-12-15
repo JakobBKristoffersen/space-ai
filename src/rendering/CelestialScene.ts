@@ -17,7 +17,7 @@ export interface CelestialSceneOptions {
 }
 
 export class CelestialScene implements SceneLike {
-  private miniMapBounds?: { minX: number; maxX: number; minY: number; maxY: number };
+
   // Engine-on trail state (world-space positions with timestamps)
   private thrustTrail: { x: number; y: number; t: number }[] = [];
   private lastTrailX: number | null = null;
@@ -27,28 +27,7 @@ export class CelestialScene implements SceneLike {
 
   constructor(private readonly opts: CelestialSceneOptions) { }
 
-  private initMiniMapBounds(snap: EnvironmentSnapshot): void {
-    if (this.miniMapBounds) return;
-    const primary = snap.bodies.find(b => b.id === snap.primaryId)!;
-    let maxDist = 0;
-    // Include all bodies
-    for (const b of snap.bodies) {
-      const dx = b.position.x - primary.position.x;
-      const dy = b.position.y - primary.position.y;
-      const dist = Math.hypot(dx, dy) + b.radiusMeters;
-      if (dist > maxDist) maxDist = dist;
-    }
-    // Include rocket position (as a point) with a small margin
-    {
-      const dx = snap.rocket.position.x - primary.position.x;
-      const dy = snap.rocket.position.y - primary.position.y;
-      const dist = Math.hypot(dx, dy) + primary.radiusMeters * 0.1; // margin
-      if (dist > maxDist) maxDist = dist;
-    }
-    // Ensure there is always some minimal size
-    maxDist = Math.max(maxDist, primary.radiusMeters * 2);
-    this.miniMapBounds = { minX: -maxDist, maxX: maxDist, minY: -maxDist, maxY: maxDist };
-  }
+
 
   onAttach(): void { }
   onDetach(): void { }
@@ -76,8 +55,20 @@ export class CelestialScene implements SceneLike {
     const pxPerMeter = 1 / metersPerPx;
 
     // World-to-screen mapping with rocket-centered camera.
-    const camX = snap.rocket.position.x;
-    const camY = snap.rocket.position.y;
+    // World-to-screen mapping with rocket-centered camera (or primary body if no rocket).
+    // World-to-screen mapping with rocket-centered camera (or Base if no rocket).
+    let camX = primary.position.x;
+    let camY = primary.position.y;
+    if (snap.rocket) {
+      camX = snap.rocket.position.x;
+      camY = snap.rocket.position.y;
+    } else if (Array.isArray((snap as any).structures)) {
+      const base = (snap as any).structures.find((s: any) => s.id === "base");
+      if (base) {
+        camX = base.position.x;
+        camY = base.position.y;
+      }
+    }
     const toScreen = (x: number, y: number) => ({
       x: (x - camX) * pxPerMeter + width * 0.5,
       y: height * 0.5 - (y - camY) * pxPerMeter,
@@ -85,8 +76,8 @@ export class CelestialScene implements SceneLike {
 
     // Update engine-on trail (store world positions while engines burn)
     const nowT = snap.timeSeconds;
-    const burning = (snap.rocket.fuelConsumptionKgPerS ?? 0) > 1e-3;
-    {
+    if (snap.rocket) {
+      const burning = (snap.rocket.fuelConsumptionKgPerS ?? 0) > 1e-3;
       const res = updateTrail(
         this.thrustTrail,
         nowT,
@@ -103,7 +94,20 @@ export class CelestialScene implements SceneLike {
     }
 
     // Draw atmosphere glow via helper
-    drawAtmosphereGlow(ctx, snap, pxPerMeter, toScreen)
+    drawAtmosphereGlow(ctx, snap, pxPerMeter, toScreen);
+
+    // Draw Atmosphere Limit Line
+    if (primary && primary.atmosphereScaleHeightMeters > 0 && (snap as any).atmosphereCutoffAltitudeMeters) {
+      const center = toScreen(primary.position.x, primary.position.y);
+      const Rcutoff = (primary.radiusMeters + Number((snap as any).atmosphereCutoffAltitudeMeters)) * pxPerMeter;
+      ctx.strokeStyle = "rgba(135, 206, 235, 0.3)";
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 10]);
+      ctx.beginPath();
+      ctx.arc(center.x, center.y, Rcutoff, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
 
     // Draw primary planet disk
     {
@@ -199,97 +203,14 @@ export class CelestialScene implements SceneLike {
       }
 
       // Draw active rocket with full styling and plume/trail as before
-      drawRocketHelper(ctx, snap.timeSeconds, snap.rocket as any, toScreen, snap.destroyed ? "#444" : "#e74c3c", burning);
-    }
-
-    // Minimap: top-right corner
-    this.drawMiniMap(ctx, snap, width, height);
-  }
-  //
-  private drawMiniMap(ctx: CanvasRenderingContext2D, snap: EnvironmentSnapshot, width: number, height: number) {
-    const pad = 8;
-    const w = 160;
-    const h = 120;
-    const x0 = width - w - pad;
-    const y0 = pad;
-
-    // Initialize fixed bounds once so the minimap stays still (no panning/zooming)
-    this.initMiniMapBounds(snap);
-    const bounds = this.miniMapBounds!;
-    const worldW = Math.max(1, bounds.maxX - bounds.minX);
-    const worldH = Math.max(1, bounds.maxY - bounds.minY);
-    const scale = Math.min(w / worldW, h / worldH);
-    // Center the world inside the minimap rectangle
-    const ox = x0 + (w - worldW * scale) / 2;
-    const oy = y0 + (h - worldH * scale) / 2;
-
-    const toMini = (x: number, y: number) => ({
-      x: ox + (x - bounds.minX) * scale,
-      y: oy + worldH * scale - (y - bounds.minY) * scale,
-    });
-
-    // Backdrop
-    ctx.save();
-    // Use broadly supported RGBA color (avoid 4-digit hex with alpha like "#0008")
-    ctx.fillStyle = "rgba(0,0,0,0.9)";
-    ctx.fillRect(x0 - 1, y0 - 1, w + 2, h + 2);
-    // Add a subtle border to ensure the minimap is visible on all backgrounds
-    ctx.strokeStyle = "rgba(255,255,255,0.35)";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x0 - 1 + 0.5, y0 - 1 + 0.5, w + 2 - 1, h + 2 - 1);
-
-    // Comm Network Lines
-    ctx.lineWidth = 1;
-    const findPos = (id: string): { x: number, y: number } | undefined => {
-      const b = snap.bodies.find(x => x.id === id);
-      if (b) return b.position;
-      const s = (snap.structures as any[]).find(x => x.id === id);
-      if (s) return s.position;
-      const r = (snap as any).rockets?.find((x: any) => x.id === id) ?? ((snap.rocket as any).id === id ? snap.rocket : undefined);
-      if (r) return r.position;
-      return undefined;
-    };
-
-    const rockets = Array.isArray((snap as any).rockets) ? (snap as any).rockets : [snap.rocket];
-    for (const r of rockets) {
-      if (r.commState?.connected && r.commState.path.length > 1) {
-        ctx.strokeStyle = "#00ff00"; // Green for connected
-        ctx.beginPath();
-        let first = true;
-        for (const nodeId of r.commState.path) {
-          const pos = findPos(nodeId);
-          if (pos) {
-            const sc = toMini(pos.x, pos.y);
-            if (first) { ctx.moveTo(sc.x, sc.y); first = false; }
-            else ctx.lineTo(sc.x, sc.y);
-          }
-        }
-        ctx.stroke();
-      } else if (!r.commState?.connected) {
-        // Optional: draw red line to nearest? Hard to know nearest here without logic.
-        // Just draw a red X on the rocket itself in the loop below?
+      if (snap.rocket) {
+        const burning = (snap.rocket.fuelConsumptionKgPerS ?? 0) > 1e-3;
+        drawRocketHelper(ctx, snap.timeSeconds, snap.rocket as any, toScreen, snap.destroyed ? "#444" : "#e74c3c", burning);
       }
     }
 
-    // Bodies
-    for (const b of snap.bodies) {
-      const c = toMini(b.position.x, b.position.y);
-      const R = Math.max(1, b.radiusMeters * scale);
-      ctx.beginPath();
-      ctx.fillStyle = (b.id === snap.primaryId ? (b.color || "#2e5d2e") : (b.color || "#888"));
-      ctx.arc(c.x, c.y, R, 0, Math.PI * 2);
-      ctx.fill();
-    }
 
-    // Rockets (draw all)
-    for (const r of rockets) {
-      const pos = toMini(r.position.x, r.position.y);
-      ctx.fillStyle = r.commState?.connected ? "#00ff00" : "#ff0000"; // Green if connected, Red if not
-      ctx.beginPath();
-      ctx.arc(pos.x, pos.y, 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-
-    ctx.restore();
   }
+  //
+
 }

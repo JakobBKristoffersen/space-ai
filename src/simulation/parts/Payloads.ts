@@ -24,7 +24,7 @@ export class BasicSatellitePayload implements PayloadPart {
             sensors: [new BasicNavigationSensor()],
             antennas: [new SmallAntenna()],
             batteries: [new SmallBattery()],
-            solarPanels: [], // Add solar panels if I can import them, otherwise empty
+            solar: [], // Add solar panels if I can import them, otherwise empty
         }
     };
 

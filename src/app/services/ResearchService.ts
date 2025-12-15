@@ -1,4 +1,4 @@
-import { ResearchSystem, ResearchState } from "../../research/ResearchSystem";
+import { ResearchSystem, ResearchState } from "../../game/research/ResearchSystem";
 
 const KEY = "session:research";
 

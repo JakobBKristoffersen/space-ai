@@ -1,6 +1,22 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
-import { Box, Button, Card, HStack, Heading, Progress, Select, SimpleGrid, Text, VStack, Portal, createListCollection } from "@chakra-ui/react";
-
+import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
+import { FaSatelliteDish } from "react-icons/fa";
+import {
+  HStack,
+  VStack,
+  Heading,
+  Text,
+  Button,
+  Icon,
+  Box,
+  Card,
+  Select,
+  Portal,
+  SimpleGrid,
+  Badge,
+  Progress,
+  createListCollection
+} from "@chakra-ui/react";
+import { useState, useRef, useEffect, useMemo } from "react";
 interface MissionRow {
   id: string;
   name: string;
@@ -18,7 +34,11 @@ function fmtReward(r: { money: number; rp: number }) {
   return parts.join(" + ");
 }
 
-export default function MissionsPage() {
+interface Props {
+  onNavigate: (view: string) => void;
+}
+
+export default function MissionsPage({ onNavigate }: Props) {
   const [rows, setRows] = useState<MissionRow[]>([]);
   const rowsRef = useRef<MissionRow[]>([]);
   useEffect(() => { rowsRef.current = rows; }, [rows]);
@@ -114,10 +134,14 @@ export default function MissionsPage() {
   }, [shown]);
 
   return (
-    <VStack align="stretch" gap={4} p={3}>
-      <HStack justify="space-between">
-        <Heading size="sm">Missions</Heading>
-        <Select.Root size="sm" collection={filters} value={[filter]} onValueChange={(d: any) => setFilter(Array.isArray(d?.value) ? d.value[0] : d?.value)}>
+    <VStack align="stretch" gap={4} p={6} bg="gray.900" minH="100%">
+      <SpaceCenterHeader
+        title="Mission Control"
+        icon={FaSatelliteDish}
+        description="Manage active contracts and view progress."
+        onBack={() => onNavigate("space_center")}
+      >
+        <Select.Root size="sm" collection={filters} value={[filter]} onValueChange={(d: any) => setFilter(Array.isArray(d?.value) ? d.value[0] : d?.value)} width="150px">
           <Select.HiddenSelect />
           <Select.Control>
             <Select.Trigger>
@@ -137,7 +161,7 @@ export default function MissionsPage() {
             </Select.Positioner>
           </Portal>
         </Select.Root>
-      </HStack>
+      </SpaceCenterHeader>
 
       {shown.length === 0 && (
         <Card.Root variant="subtle">
@@ -160,7 +184,7 @@ export default function MissionsPage() {
               <VStack align="stretch" gap={2}>
                 <Text fontSize="sm" color="gray.500">{m.description}</Text>
                 <HStack justify="space-between">
-                  <Text fontFamily="mono" fontSize="sm">Reward: {fmtMoney(m.reward)}</Text>
+                  <Text fontFamily="mono" fontSize="sm">Reward: {fmtReward(m.reward)}</Text>
                   <Text fontFamily="mono" fontSize="sm">{Math.max(0, Math.min(100, Math.round(((Number.isFinite(m.progress) ? m.progress : 0) * 100))))}%</Text>
                 </HStack>
                 <Progress.Root value={Math.max(0, Math.min(100, Math.floor(((Number.isFinite(m.progress) ? m.progress : 0) * 100))))} max={100}>

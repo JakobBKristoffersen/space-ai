@@ -23,7 +23,7 @@ import type { PendingUpgradesService } from "../services/PendingUpgradesService"
 
 export interface SimulationManagerOptions {
   /** Initial rocket instance (usually built from a stored layout). */
-  rocket: Rocket;
+  rocket?: Rocket;
   /** Celestial system definition for the Environment. */
   system: CelestialSystemDef;
   /** Optional 2D canvas context for Renderer. */
@@ -46,7 +46,7 @@ export class SimulationManager {
   // Game clock: counts in-game seconds (scaled from simulation seconds). 1 sim sec = 60 game secs by default.
   private simGameSeconds = 0;
   private readonly gameTimeScale = 60; // every real simulated second advances 1 in-game minute
-  private rocket: Rocket;
+  private rocket: Rocket | undefined;
   private env: Environment;
   private renderer: Renderer;
   private scene: CelestialScene;
@@ -64,17 +64,14 @@ export class SimulationManager {
   constructor(private readonly opts: SimulationManagerOptions) {
     this.rocket = opts.rocket;
     const primaryDef = opts.system.bodies.find(b => b.id === opts.system.primaryId)!;
-    // Create additional rockets from stored layouts (index-aware) for a multi-rocket world
-    const layout1 = this.opts.layoutSvc.loadLayoutFor ? this.opts.layoutSvc.loadLayoutFor(1) : null;
-    const secondRocket = this.opts.layoutSvc.buildRocketFromLayout(layout1 ?? null);
-    for (const e of secondRocket.engines) e.power = 0; // start idle
 
+    // Create environment with the single primary rocket (or undefined)
     this.env = new Environment(this.rocket, {
       system: opts.system,
       atmosphere: new AtmosphereWithCutoff({ scaleHeightMeters: primaryDef.atmosphereScaleHeightMeters ?? 200, rho0: 1.225, cutoffFactor: 7 }),
       drag: QuadraticDrag,
       heating: SimpleHeating,
-      rockets: [secondRocket],
+      rockets: this.rocket ? [this.rocket] : [],
       activeRocketIndex: 0,
       structures: [
         { id: "base", name: "Base", bodyId: opts.system.primaryId, angleRad: Math.PI / 2 },
@@ -83,11 +80,12 @@ export class SimulationManager {
 
     // Initialize per-rocket launch flags
     try {
-      const count = (this.env as any).getRockets?.().length ?? 1;
-      this.launchedByIndex = new Array(Math.max(1, count)).fill(false);
+      const count = (this.env as any).getRockets?.().length ?? 0;
+      this.launchedByIndex = new Array(Math.max(0, count)).fill(false);
     } catch {
-      this.launchedByIndex = [false];
+      this.launchedByIndex = [];
     }
+
 
     this.runner = new ScriptRunner(this.rocket);
     this.renderer = new Renderer({ ctx: opts.ctx });
@@ -107,7 +105,9 @@ export class SimulationManager {
           let allowEngineOn = true;
           try {
             const ai = (this.env as any).getActiveRocketIndex?.() ?? 0;
-            allowEngineOn = !!this.launchedByIndex[ai];
+            // Guard against out of bounds if empty
+            if (ai < 0 || ai >= this.launchedByIndex.length) allowEngineOn = false;
+            else allowEngineOn = !!this.launchedByIndex[ai];
           } catch { allowEngineOn = true; }
           if (!allowEngineOn) {
             // Block engine-on until takeOff() is called for the active rocket; allow engine-off and turning.
@@ -184,8 +184,8 @@ export class SimulationManager {
   enqueue(cmd: RocketCommand): void { this.manualQueue.enqueue(cmd); }
 
   // State accessors
-  getRocket(): Rocket { return this.rocket; }
-  getRockets(): ReadonlyArray<Rocket> { try { return (this.env as any).getRockets?.() ?? [this.rocket]; } catch { return [this.rocket]; } }
+  getRocket(): Rocket | undefined { return this.rocket; }
+  getRockets(): ReadonlyArray<Rocket> { try { return (this.env as any).getRockets?.() ?? (this.rocket ? [this.rocket] : []); } catch { return this.rocket ? [this.rocket] : []; } }
   getEnvironment(): Environment { return this.env; }
   getRunner(): ScriptRunner { return this.runner; }
   getRenderer(): Renderer { return this.renderer; }
@@ -211,43 +211,25 @@ export class SimulationManager {
   // Expose CommSystem packets for UI
   getReceivedPackets() { return this.commSystem.receivedPackets; }
 
-  // --- Fleet naming (persisted to session) ---
-  private get namesKey(): string { return "session:rocket-names"; }
+  // --- Fleet naming ---
   getRocketNames(): string[] {
     try {
-      const raw = sessionStorage.getItem(this.namesKey);
-      if (raw) {
-        const arr = JSON.parse(raw);
-        if (Array.isArray(arr)) {
-          // Ensure length matches current rockets
-          const count = (this.env as any).getRockets?.().length ?? 1;
-          if (arr.length !== count) {
-            const base = this.defaultNames(count);
-            const merged = base.map((n, i) => (typeof arr[i] === "string" && arr[i].trim().length ? arr[i] : n));
-            sessionStorage.setItem(this.namesKey, JSON.stringify(merged));
-            return merged;
-          }
-          return arr;
-        }
-      }
-    } catch { }
-    const count = (this.env as any).getRockets?.().length ?? 1;
-    const base = this.defaultNames(count);
-    try { sessionStorage.setItem(this.namesKey, JSON.stringify(base)); } catch { }
-    return base;
+      return (this.env as any).getRockets?.().map((r: Rocket) => r.name) ?? [];
+    } catch { return []; }
   }
+
   setRocketName(index: number, name: string): void {
-    const count = (this.env as any).getRockets?.().length ?? 1;
-    const idx = Math.max(0, Math.min(Math.floor(index), count - 1));
-    const arr = this.getRocketNames();
-    arr[idx] = String(name || '').trim() || this.defaultNames(count)[idx];
-    try { sessionStorage.setItem(this.namesKey, JSON.stringify(arr)); } catch { }
+    const rockets = (this.env as any).getRockets?.() ?? [];
+    if (!rockets[index]) return;
+    rockets[index].name = name;
+    // We should ideally persist this change to the underlying layout if possible?
+    // Or we rely on the next 'save' or 'launch' to persist it.
+    // For now, in-memory is the source of truth for the session.
   }
-  private defaultNames(count: number): string[] { return new Array(Math.max(1, count)).fill(0).map((_, i) => `Rocket ${i + 1}`); }
 
   private syncLaunchFlagsToEnv(): void {
     try {
-      const count = (this.env as any).getRockets?.().length ?? 1;
+      const count = (this.env as any).getRockets?.().length ?? 0;
       if (this.launchedByIndex.length !== count) {
         const prev = this.launchedByIndex;
         this.launchedByIndex = new Array(count).fill(false);
@@ -332,8 +314,11 @@ export class SimulationManager {
     this.scene = new CelestialScene({ provider: { get: () => this.env.snapshot() } });
     this.renderer.attachScene(this.scene);
 
+    // Sync Rocket Name if present in layout
+    if (layout.name) newRocket.name = layout.name;
+
     // Reinstall any assigned scripts
-    this.reinstallAssignedScripts();
+    this.reinstallAssignedScripts(layout.scriptId);
 
     // Publish telemetry keys for the new composition
     this.publishTelemetry();
@@ -344,17 +329,46 @@ export class SimulationManager {
     // Determine active rocket index
     const ai = (() => { try { return (this.env as any).getActiveRocketIndex?.() ?? 0; } catch { return 0; } })();
     const stored = (this.opts.layoutSvc as any).loadLayoutFor ? (this.opts.layoutSvc as any).loadLayoutFor(ai) : this.opts.layoutSvc.loadLayout();
-    const effective = stored ?? this.opts.layoutSvc.getLayoutFromRocket(this.rocket);
-    const merged = this.opts.pending && (this.opts.pending as any).consumeIntoLayout
+    const effective = stored ?? (this.rocket ? this.opts.layoutSvc.getLayoutFromRocket(this.rocket) : null);
+
+    // If we have no stored layout and no rocket, default to basic layout?
+    // Or do we start empty? User wants FIRST rocket built in VAB.
+    // So if nothing exists, we might recreate from null? 
+    // recreateFromLayout handles logic? 
+    // If effective is null, we build Default default?
+    // LayoutSvc.buildRocketFromLayout(null) -> buildDefaultRocket().
+    // We want to avoid default rocket if user wants 0.
+
+    // But resetSimulationOnly is explicitly called to Reset/Apply Changes.
+    // If I just deleted the rocket, effective is null.
+    // The previous behavior was: buildDefaultRocket().
+    // If I want to allow 0 rockets, I should check if we WANT a rocket.
+    // Typically reset is "I built something, put it on pad".
+    // So we assume we want a rocket.
+
+    const merged = effective && this.opts.pending && (this.opts.pending as any).consumeIntoLayout
       ? (this.opts.pending as any).consumeIntoLayout(effective, ai)
-      : (this.opts.pending ? this.opts.pending.consumeIntoLayout(effective) : effective);
+      : (effective && this.opts.pending ? this.opts.pending.consumeIntoLayout(effective) : effective);
+
     // Reset launch gating for the active rocket so user must press Take Off again
     try { this.launchedByIndex[ai] = false; } catch { }
-    this.recreateFromLayout(merged);
+
+    if (merged) {
+      this.recreateFromLayout(merged);
+    } else {
+      // If no layout, do we create default?
+      // LayoutSvc checks if (!layout) return this.buildDefaultRocket();
+      // So recreateFromLayout(null) -> default rocket.
+      // We probably want this for "Reset".
+      this.recreateFromLayout(effective as any);
+    }
+
     // Persist the newly applied layout for this specific rocket index
     try {
-      if ((this.opts.layoutSvc as any).saveLayoutFor) (this.opts.layoutSvc as any).saveLayoutFor(ai, this.rocket as any);
-      else this.opts.layoutSvc.saveLayout(this.rocket as any);
+      if (this.rocket) {
+        if ((this.opts.layoutSvc as any).saveLayoutFor) (this.opts.layoutSvc as any).saveLayoutFor(ai, effective as any); // Use effective/merged
+        else this.opts.layoutSvc.saveLayout(effective as any);
+      }
     } catch { }
   }
 
@@ -362,24 +376,42 @@ export class SimulationManager {
    * Reinstall scripts assigned to CPU slots, restoring enabled flags.
    * Uses ScriptLibraryService for persistence.
    */
-  reinstallAssignedScripts(): void {
+  reinstallAssignedScripts(fallbackScriptId?: string): void {
     const assigns = this.opts.scriptLib.loadAssignments();
-    if (!this.rocket.cpu) return;
+    if (!this.rocket || !this.rocket.cpu) return;
     const ai = (() => { try { return (this.env as any).getActiveRocketIndex?.() ?? 0; } catch { return 0; } })();
+
+    let installedAny = false;
     for (const a of assigns) {
       const rx = (a as any).rocketIndex ?? 0;
       if (rx !== ai) continue; // only install scripts for the active rocket
       if (a.slot < 0 || a.slot >= (this.rocket.cpu.scriptSlots || 1)) continue;
       const s = this.opts.scriptLib.getById(a.scriptId || undefined as any);
       if (s) {
-        try { this.runner.installScriptToSlot(s.code, this.opts.defaultScriptRunnerOpts, a.slot, s.name); } catch { }
+        try {
+          const code = (s as any).compiledCode || s.code;
+          this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, a.slot, s.name);
+          installedAny = true;
+        } catch { }
       }
       try { this.runner.setSlotEnabled?.(a.slot, !!a.enabled); } catch { }
+    }
+
+    // Fallback: If no explicit assignment found, use layout script ID
+    if (!installedAny && fallbackScriptId) {
+      const s = this.opts.scriptLib.getById(fallbackScriptId);
+      if (s) {
+        try {
+          const code = (s as any).compiledCode || s.code;
+          this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, 0, s.name);
+        } catch { }
+      }
     }
   }
 
   /** Compute and publish telemetry keys for editor autocomplete. */
   publishTelemetry(): void {
+    if (!this.rocket) return;
     const keys = this.opts.telemetry.currentKeys(this.rocket);
     this.opts.telemetry.publish(keys);
   }

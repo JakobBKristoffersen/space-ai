@@ -14,6 +14,9 @@ export class BasicNavigationSensor implements SensorPart {
     "batteryJoules",
     "massKg",
     "temperature",
+    "velocity",
+    "position",
+    "orientationRad",
     // Basic stuff
   ];
 }

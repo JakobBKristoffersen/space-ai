@@ -6,43 +6,105 @@ import { BasicProcessingUnit } from "../../simulation/parts/ProcessingUnit";
 import { BasicNavigationSensor } from "../../simulation/parts/Sensor";
 import { SmallReactionWheels } from "../../simulation/parts/ReactionWheels";
 import { SmallAntenna } from "../../simulation/parts/Antenna";
-import { DefaultCatalog } from "../../game/PartStore";
+import { DefaultCatalog, PartCategory } from "../../game/PartStore";
 import { SessionKeys } from "./SessionKeys";
+import { ROCKET_TEMPLATES, RocketTemplate } from "../../game/RocketTemplates";
 
 export type StoredLayout = {
-  engines: string[];
-  fuelTanks: string[];
-  batteries: string[];
-  sensors: string[];
-  reactionWheels: string[];
-  antennas: string[];
+  templateId?: string;
+  name?: string;
+  slots: Record<string, string>; // slotId -> partId
+  // Legacy fields for backward compatibility (optional)
+  engines?: string[];
+  fuelTanks?: string[];
+  batteries?: string[];
+  sensors?: string[];
+  reactionWheels?: string[];
+  antennas?: string[];
   cpu?: string | null;
+  scriptId?: string; // ID of script to run on the main CPU
 };
 
 export class LayoutService {
   buildDefaultRocket(): Rocket {
+    // Default to Basic template with basic parts
     const r = new Rocket();
-    r.engines.push(new SmallEngine());
-    r.fuelTanks.push(new SmallFuelTank());
-    r.batteries.push(new SmallBattery());
-    r.reactionWheels.push(new SmallReactionWheels());
-    // Starter comms antenna
-    (r as any).antennas?.push?.(new SmallAntenna());
-    r.cpu = new BasicProcessingUnit();
-    r.sensors.push(new BasicNavigationSensor());
-    return r;
-    }
+    // Use the new template logic to build default if possible, or manual fallback
+    const layout: StoredLayout = {
+      templateId: "template.basic",
+      slots: {
+        "slot.nose.cone": "cone.basic",
+        "slot.nose.cpu": "cpu.basic",
+        "slot.nose.sci": "science.basic",
+        "slot.nose.antenna": "antenna.small",
+        "slot.nose.chute": "parachute.basic",
+        "slot.body.tank": "fueltank.small",
+        "slot.body.battery": "battery.small",
+        "slot.body.fin": "fin.basic",
+        "slot.tail.engine": "engine.small"
+      }
+    };
+    return this.buildRocketFromLayout(layout);
+  }
 
   getLayoutFromRocket(r: Rocket): StoredLayout {
-    return {
-      engines: r.engines.map(e => e.id),
-      fuelTanks: r.fuelTanks.map(t => t.id),
-      batteries: r.batteries.map(b => b.id),
-      sensors: r.sensors.map(s => s.id),
-      reactionWheels: r.reactionWheels.map(rw => rw.id),
-      antennas: ((r as any).antennas ?? []).map((a: any) => a.id),
-      cpu: r.cpu?.id ?? null,
-    };
+    // Attempt to reverse-engineer the layout.
+    // Heuristic: Try all templates, pick the one that accommodates the most installed parts.
+
+    let bestLayout: StoredLayout = { templateId: "template.basic", slots: {} };
+    let bestScore = -1;
+
+    for (const template of ROCKET_TEMPLATES) {
+      // Clone available inventory from rocket
+      const inventory: Record<PartCategory, any[]> = {
+        engine: [...r.engines],
+        fuel: [...r.fuelTanks],
+        battery: [...r.batteries],
+        cpu: r.cpu ? [r.cpu] : [],
+        sensor: [...r.sensors],
+        reactionWheels: [...r.reactionWheels],
+        antenna: [...r.antennas],
+        payload: [...r.payloads],
+        solar: [...r.solarPanels],
+        cone: [...r.noseCones],
+        fin: [...r.fins],
+        parachute: [...r.parachutes],
+        heatShield: [...r.heatShields],
+        science: [...r.science],
+      };
+
+      const slots: Record<string, string> = {};
+      let score = 0;
+
+      // Fill slots
+      for (const stage of template.stages) {
+        for (const slot of stage.slots) {
+          // Try to find a part for this slot
+          for (const cat of slot.allowedCategories) {
+            const available = inventory[cat];
+            if (available && available.length > 0) {
+              // Take first
+              const p = available.shift();
+              slots[slot.id] = p.id;
+              score++;
+              break; // Filled slot
+            }
+          }
+        }
+      }
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestLayout = { templateId: template.id, slots };
+      }
+    }
+
+    // Preserve script ID if possible (from CPU? Rocket doesn't store script ID directly, usually scriptLib manages running scripts)
+    // We can't easily recover script ID unless we store it on Rocket.
+    // But we can check running scripts? 
+    // Rocket doesn't persist script ID string, it has `cpu` with memory. 
+    // We'll leave scriptId blank or undefined.
+    return bestLayout;
   }
 
   private findMake<T>(id: string | undefined | null, all: { id: string; make: () => T }[]): T | null {
@@ -51,54 +113,90 @@ export class LayoutService {
     return p ? p.make() : null;
   }
 
+  private getCategoryParts(cat: PartCategory): { id: string, make: () => any }[] {
+    switch (cat) {
+      case "engine": return DefaultCatalog.engines;
+      case "fuel": return DefaultCatalog.fuelTanks;
+      case "battery": return DefaultCatalog.batteries;
+      case "cpu": return DefaultCatalog.cpus;
+      case "sensor": return DefaultCatalog.sensors;
+      case "reactionWheels": return DefaultCatalog.reactionWheels;
+      case "antenna": return DefaultCatalog.antennas;
+      case "payload": return DefaultCatalog.payloads;
+      case "solar": return DefaultCatalog.solarPanels;
+      case "cone": return DefaultCatalog.cones;
+      case "fin": return DefaultCatalog.fins;
+      case "parachute": return DefaultCatalog.parachutes;
+      case "heatShield": return DefaultCatalog.heatShields;
+      case "science": return DefaultCatalog.science;
+    }
+    return [];
+  }
+
   buildRocketFromLayout(layout: StoredLayout | null | undefined): Rocket {
     if (!layout) return this.buildDefaultRocket();
+
+    // 1. Identify Template
+    const templateId = layout.templateId || "template.basic";
+    const template = ROCKET_TEMPLATES.find(t => t.id === templateId) || ROCKET_TEMPLATES[0];
+
     const r = new Rocket();
-    // Engines
-    for (const id of layout.engines || []) {
-      const inst = this.findMake(id, DefaultCatalog.engines);
-      if (inst) (r.engines as any).push(inst);
+
+    // 2. Iterate Template Slots and fill
+    for (const stage of template.stages) {
+      for (const slot of stage.slots) {
+        const assignedId = (layout.slots || {})[slot.id];
+        if (!assignedId) continue; // Empty slot
+
+        // We assume single part assignment per slot as per current design
+        for (const cat of slot.allowedCategories) {
+          const partDef = this.findMake(assignedId, this.getCategoryParts(cat));
+          if (partDef) {
+            this.installPart(r, partDef, cat);
+            break; // Found matching part in this category
+          }
+        }
+      }
     }
-    // Fuel tanks
-    for (const id of layout.fuelTanks || []) {
-      const inst = this.findMake(id, DefaultCatalog.fuelTanks);
-      if (inst) (r.fuelTanks as any).push(inst);
+
+    // 3. Backward compatibility (Legacy arrays)
+    // If we have legacy arrays and NO template slots filled (migration), maybe add them?
+    // For now, let's assume legacy is dead or migrated via default.
+    // But if explicit arrays exist, we might want to respect them if the slot system failed.
+    if (!layout.slots || Object.keys(layout.slots).length === 0) {
+      if (layout.engines?.length) layout.engines.forEach(id => this.installPart(r, this.findMake(id, DefaultCatalog.engines), "engine"));
+      if (layout.fuelTanks?.length) layout.fuelTanks.forEach(id => this.installPart(r, this.findMake(id, DefaultCatalog.fuelTanks), "fuel"));
+      if (layout.batteries?.length) layout.batteries.forEach(id => this.installPart(r, this.findMake(id, DefaultCatalog.batteries), "battery"));
+      if (layout.sensors?.length) layout.sensors.forEach(id => this.installPart(r, this.findMake(id, DefaultCatalog.sensors), "sensor"));
+      if (layout.cpu) this.installPart(r, this.findMake(layout.cpu, DefaultCatalog.cpus), "cpu");
     }
-    // Batteries
-    for (const id of layout.batteries || []) {
-      const inst = this.findMake(id, DefaultCatalog.batteries);
-      if (inst) (r.batteries as any).push(inst);
-    }
-    // Reaction wheels
-    for (const id of layout.reactionWheels || []) {
-      const inst = this.findMake(id, (DefaultCatalog as any).reactionWheels);
-      if (inst) (r.reactionWheels as any).push(inst);
-    }
-    // Antennas
-    for (const id of (layout as any).antennas || []) {
-      const inst = this.findMake(id, (DefaultCatalog as any).antennas);
-      if (inst) (r as any).antennas.push(inst as any);
-    }
-    // Fallback: ensure reaction wheels exist for attitude control if layout missing them
-    if (r.reactionWheels.length === 0) {
-      r.reactionWheels.push(new SmallReactionWheels());
-    }
-    // CPU
-    r.cpu = this.findMake(layout.cpu ?? null, DefaultCatalog.cpus) as any;
-    // Sensors
-    for (const id of layout.sensors || []) {
-      const inst = this.findMake(id, DefaultCatalog.sensors);
-      if (inst) (r.sensors as any).push(inst);
-    }
-    // Ensure at least a nav sensor exists
-    if (r.sensors.length === 0) {
-      r.sensors.push(new BasicNavigationSensor());
-    }
-    // If nothing important installed, fall back to default starter kit
-    if (r.engines.length === 0 && r.fuelTanks.length === 0 && r.batteries.length === 0 && r.reactionWheels.length === 0 && !r.cpu) {
-      return this.buildDefaultRocket();
-    }
+
+    // Default fallbacks
+    if (r.reactionWheels.length === 0) r.reactionWheels.push(new SmallReactionWheels());
+    if (r.sensors.length === 0) r.sensors.push(new BasicNavigationSensor());
+    if (!r.cpu) r.cpu = new BasicProcessingUnit();
+
     return r;
+  }
+
+  private installPart(r: Rocket, part: any, category: PartCategory) {
+    if (!part) return;
+    switch (category) {
+      case "engine": r.engines.push(part); break;
+      case "fuel": r.fuelTanks.push(part); break;
+      case "battery": r.batteries.push(part); break;
+      case "cpu": r.cpu = part; break;
+      case "sensor": r.sensors.push(part); break;
+      case "reactionWheels": r.reactionWheels.push(part); break;
+      case "antenna": r.antennas.push(part); break;
+      case "payload": r.payloads.push(part); break;
+      case "solar": r.solarPanels.push(part); break;
+      case "cone": r.noseCones.push(part); break;
+      case "fin": r.fins.push(part); break;
+      case "parachute": r.parachutes.push(part); break;
+      case "heatShield": r.heatShields.push(part); break;
+      case "science": r.science.push(part); break;
+    }
   }
 
   // --- Per-rocket layout storage (index-aware) ---
@@ -107,18 +205,17 @@ export class LayoutService {
     return `${SessionKeys.LAYOUT}:${idx}`;
   }
 
-  saveLayoutFor(index: number, r: Rocket): void {
-    try { sessionStorage.setItem(this.keyFor(index), JSON.stringify(this.getLayoutFromRocket(r))); } catch {}
+  saveLayoutFor(index: number, layout: StoredLayout): void {
+    try { sessionStorage.setItem(this.keyFor(index), JSON.stringify(layout)); } catch { }
   }
+  // Changed signature to take layout object instead of Rocket, because Rocket doesn't store slot info anymore
+  saveLayout(layout: StoredLayout): void { this.saveLayoutFor(0, layout); }
+
   loadLayoutFor(index: number): StoredLayout | null {
     try {
-      // Back-compat: index 0 can read legacy key if namespaced missing
       const raw = sessionStorage.getItem(this.keyFor(index)) ?? (index === 0 ? sessionStorage.getItem(SessionKeys.LAYOUT) : null);
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   }
-
-  // Legacy wrappers (default to index 0)
-  saveLayout(r: Rocket): void { this.saveLayoutFor(0, r); }
   loadLayout(): StoredLayout | null { return this.loadLayoutFor(0); }
 }

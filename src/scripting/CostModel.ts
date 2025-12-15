@@ -14,6 +14,8 @@ export interface CostModel {
   readonly memoryClear: number;
   // Logging
   readonly log: number;
+  // Assist / Helpers
+  readonly assistBase: number;
 }
 
 export const DefaultCostModel: CostModel = {
@@ -25,4 +27,5 @@ export const DefaultCostModel: CostModel = {
   memoryRemove: 3,
   memoryClear: 3,
   log: 1,
+  assistBase: 2,
 };

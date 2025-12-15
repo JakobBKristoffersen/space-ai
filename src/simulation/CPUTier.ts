@@ -19,7 +19,7 @@ export const CPUTierDefs = {
     [CPUTier.TELEMETRY]: {
         name: "Telemetry",
         description: "Access to altitude, velocity, and heating data.",
-        api: ["getAltitude", "getVelocity", "getPosition", "getHeading", "getMaxHeat", "getHeat"],
+        api: ["getAltitude", "getVelocity", "getPosition", "getHeading", "getMaxHeat", "getHeat", "getPrograde", "getRetrograde", "alignTo", "angleDiff"],
     },
     [CPUTier.ORBITAL]: {
         name: "Orbital",

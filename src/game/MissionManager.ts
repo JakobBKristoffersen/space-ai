@@ -1,7 +1,7 @@
 import { EnvironmentSnapshot } from "../simulation/Environment";
 import type { ResearchService } from "../app/services/ResearchService";
-import { MissionDef, MissionObjective } from "../missions/MissionData";
-import { Briefings } from "../story/Briefings";
+import { MissionDef, MissionObjective } from "./missions/MissionData";
+import { Briefings } from "./story/Briefings";
 
 export type Money = number;
 

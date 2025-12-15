@@ -1,490 +1,543 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Button, Card, HStack, Heading, Select, SimpleGrid, Text, VStack, Portal, createListCollection } from "@chakra-ui/react";
+import { useState, useEffect, useMemo } from "react";
+import {
+  Box,
+  Grid,
+  GridItem,
+  VStack,
+  HStack,
+  Button,
+  Icon,
+  Card,
+  Heading,
+  Text,
+  Select,
+  Input,
+  Portal,
+  Separator,
+  Badge,
+  Flex,
+  Dialog,
+  createListCollection,
+} from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
-import { DefaultCatalog } from "../game/PartStore";
+import { DefaultCatalog, PartCategory } from "../game/PartStore";
+import { ROCKET_TEMPLATES, RocketTemplate, RocketSlot } from "../game/RocketTemplates";
+import { StoredLayout } from "../app/services/LayoutService";
+import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
+import { FaTrash, FaInfoCircle, FaBolt, FaWeightHanging, FaDollarSign, FaFire, FaTools, FaChevronLeft, FaFlask, FaPlus } from "react-icons/fa";
 
-function fmt(n: number, d = 2) {
-  if (!Number.isFinite(n)) return "-";
-  const a = Math.abs(n); if (a >= 10000) return n.toFixed(0); if (a >= 1000) return n.toFixed(1); return n.toFixed(d);
-}
+// ... (helpers) ...
 
-export default function BuildPage() {
+export default function BuildPage({ onNavigate }: { onNavigate: (view: string) => void }) {
   const { manager, services } = useAppCore();
-  const scripts = services.scripts as any;
-  const layout = services.layout;
-  const upgrades = services.upgrades;
-  const pendingSvc: any = services.pending;
-
-  const [running, setRunning] = useState<boolean>(false);
-  const [money, setMoney] = useState<number>(0);
-
+  // --- State ---
+  const [templateId, setTemplateId] = useState<string>("template.basic");
+  const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [activeSlot, setActiveSlot] = useState<RocketSlot | null>(null);
   const [scriptId, setScriptId] = useState<string>("");
-  const [enabled, setEnabled] = useState<boolean>(false);
-  const [scriptList, setScriptList] = useState<{ id: string; name: string }[]>([]);
+  const [rocketName, setRocketName] = useState<string>("My Rocket");
+  const [availableScripts, setAvailableScripts] = useState<{ label: string, value: string }[]>([]);
 
-  useEffect(() => {
-    if (!scripts) return;
-    try {
-      setScriptList(scripts.list().map((s: any) => ({ id: s.id, name: s.name })));
-      const assigns = scripts.loadAssignments();
-      const s0 = assigns.find((a: any) => a.slot === 0);
-      if (s0) { setScriptId(s0.scriptId || ""); setEnabled(!!s0.enabled); }
-    } catch {}
-  }, [scripts]);
+  // Collections
+  const templatesCollection = useMemo(() => createListCollection({
+    items: ROCKET_TEMPLATES.map(t => ({ label: t.name, value: t.id, description: t.description }))
+  }), []);
 
   const scriptsCollection = useMemo(() => createListCollection({
-    items: scriptList.map((s) => ({ label: s.name, value: s.id })),
-  }), [scriptList]);
+    items: availableScripts
+  }), [availableScripts]);
 
-  const cpuCollection = useMemo(() => createListCollection({ items: DefaultCatalog.cpus.map((c) => ({ label: `${c.name} — $${c.price}`, value: c.id })) }), []);
-  const sensorsCollection = useMemo(() => createListCollection({ items: DefaultCatalog.sensors.map((s) => ({ label: `${s.name} — $${s.price}`, value: s.id })) }), []);
-  const batteriesCollection = useMemo(() => createListCollection({ items: DefaultCatalog.batteries.map((b) => ({ label: `${b.name} — $${b.price}`, value: b.id })) }), []);
-  const tanksCollection = useMemo(() => createListCollection({ items: DefaultCatalog.fuelTanks.map((t) => ({ label: `${t.name} — $${t.price}`, value: t.id })) }), []);
-  const enginesCollection = useMemo(() => createListCollection({ items: DefaultCatalog.engines.map((e) => ({ label: `${e.name} — $${e.price}`, value: e.id })) }), []);
-  const reactionCollection = useMemo(() => createListCollection({ items: (DefaultCatalog as any).reactionWheels.map((rw: any) => ({ label: `${rw.name} — $${rw.price}`, value: rw.id })) }), []);
-
-  const [cpuSel, setCpuSel] = useState<string>("");
-  const [sensorSel, setSensorSel] = useState<string>("");
-  const [batterySel, setBatterySel] = useState<string>("");
-  const [tankSel, setTankSel] = useState<string>("");
-  const [engineSel, setEngineSel] = useState<string>("");
-  const [reactionSel, setReactionSel] = useState<string>("");
-
-  const rocket = manager?.getRocket();
-
-  // Running state and money/availability
   useEffect(() => {
-    setRunning(!!manager?.isRunning?.());
-    const unsub = manager?.onPostRender?.(() => {
-      setRunning(!!manager?.isRunning?.());
+    if (services.scripts) {
+      const list = services.scripts.list();
+      setAvailableScripts(list.map(s => ({ label: s.name, value: s.id })));
+    }
+  }, [services.scripts]);
+
+  // Resources & Limits
+  const [money, setMoney] = useState<number>(0);
+  const [padLevel, setPadLevel] = useState<number>(1);
+  const [maxMassKg, setMaxMassKg] = useState<number>(30_000);
+  const [maxActiveRockets, setMaxActiveRockets] = useState<number>(1);
+
+  // Sync with Global State
+  useEffect(() => {
+    const sync = () => {
       try {
-        const svcs: any = (window as any).__services;
-        if (svcs?.getMoney) setMoney(Number(svcs.getMoney()) || 0);
-      } catch {}
-    });
-    // Init money once
-    try { const svcs: any = (window as any).__services; if (svcs?.getMoney) setMoney(Number(svcs.getMoney()) || 0); } catch {}
-    return () => { try { unsub?.(); } catch {} };
-  }, [manager]);
+        setMoney((window as any).__services?.getMoney?.() || 0);
+        const upg = services.upgrades;
+        if (upg) {
+          const lvl = upg.getLevel("launchPad");
+          setPadLevel(lvl);
+          setMaxMassKg(upg.getMaxLaunchMass(lvl));
 
-  // Available ids & pending summary
-  const [availableIds, setAvailableIds] = useState<string[]>([]);
-  const [pending, setPending] = useState<any>(() => pendingSvc?.load?.() ?? {});
-  useEffect(() => {
-    const tick = () => {
-      try { const svcs: any = (window as any).__services; if (svcs?.getAvailableIds) setAvailableIds(svcs.getAvailableIds()); } catch {}
-      try { setPending(pendingSvc?.load?.() ?? {}); } catch {}
+          const tsLvl = upg.getLevel("trackingStation");
+          setMaxActiveRockets(upg.getMaxActiveRockets(tsLvl));
+        }
+      } catch { }
     };
-    tick();
-    const unsub = manager?.onPostRender?.(() => tick());
-    return () => { try { unsub?.(); } catch {} };
-  }, [manager, pendingSvc]);
+    sync();
+    const id = setInterval(sync, 1000);
+    return () => clearInterval(id);
+  }, [services]);
 
-  // Price map helpers
-  const priceById = useMemo(() => {
-    const m: Record<string, number> = {};
-    for (const a of DefaultCatalog.engines) m[a.id] = a.price;
-    for (const a of DefaultCatalog.fuelTanks) m[a.id] = a.price;
-    for (const a of DefaultCatalog.batteries) m[a.id] = a.price;
-    for (const a of DefaultCatalog.cpus) m[a.id] = a.price;
-    for (const a of DefaultCatalog.sensors) m[a.id] = a.price;
-    for (const a of (DefaultCatalog as any).reactionWheels) m[a.id] = a.price;
-    return m;
-  }, []);
+  const [isLoaded, setIsLoaded] = useState(false);
 
-  const nameById = useMemo(() => {
-    const m: Record<string, string> = {};
-    for (const a of DefaultCatalog.engines) m[a.id] = a.name;
-    for (const a of DefaultCatalog.fuelTanks) m[a.id] = a.name;
-    for (const a of DefaultCatalog.batteries) m[a.id] = a.name;
-    for (const a of DefaultCatalog.cpus) m[a.id] = a.name;
-    for (const a of DefaultCatalog.sensors) m[a.id] = a.name;
-    for (const a of (DefaultCatalog as any).reactionWheels) m[a.id] = a.name;
-    return m;
-  }, []);
-
-  const isLocked = (id: string) => !availableIds.includes(id);
-  const isUnaffordable = (id: string) => (priceById[id] ?? Infinity) > money;
-
-  // Queue purchase helper
-  const queuePurchase = (category: "cpu"|"engines"|"fuelTanks"|"batteries"|"sensors"|"reactionWheels", id: string) => {
-    if (!id) return;
+  // Load Layout
+  useEffect(() => {
     try {
-      const svcs: any = (window as any).__services;
-      if (!svcs?.purchasePart) return;
-      const res = svcs.purchasePart(id);
-      if (!res?.ok) {
-        alert(res?.reason === "insufficient" ? `Not enough money ($${res.price})` : "Upgrade locked or unavailable");
-        return;
+      const saved = services.layout?.loadLayout();
+      if (saved) {
+        if (saved.templateId) setTemplateId(saved.templateId);
+        if (saved.slots) setAssignments(saved.slots);
+        if (saved.scriptId) setScriptId(saved.scriptId);
+        if (saved.name) setRocketName(saved.name);
       }
-      pendingSvc?.queueUpgrade?.(category, id);
-      setMoney(res.newBalance ?? money);
-      setPending(pendingSvc?.load?.() ?? {});
-    } catch (e: any) {
-      alert("Error purchasing: " + (e?.message ?? String(e)));
+    } catch { }
+    setIsLoaded(true);
+  }, [services]);
+
+  // Derived
+  const template = useMemo(() => ROCKET_TEMPLATES.find(t => t.id === templateId) || ROCKET_TEMPLATES[0], [templateId]);
+
+  const getPartsByCategory = (cat: PartCategory) => {
+    switch (cat) {
+      case "engine": return DefaultCatalog.engines;
+      case "fuel": return DefaultCatalog.fuelTanks;
+      case "battery": return DefaultCatalog.batteries;
+      case "cpu": return DefaultCatalog.cpus;
+      case "sensor": return DefaultCatalog.sensors;
+      case "reactionWheels": return DefaultCatalog.reactionWheels;
+      case "antenna": return DefaultCatalog.antennas;
+      case "payload": return DefaultCatalog.payloads;
+      case "solar": return DefaultCatalog.solarPanels;
+      case "cone": return DefaultCatalog.cones;
+      case "fin": return DefaultCatalog.fins;
+      case "parachute": return DefaultCatalog.parachutes;
+      case "heatShield": return DefaultCatalog.heatShields;
+      case "science": return DefaultCatalog.science;
+      default: return [];
     }
   };
 
-  const assignToSlot0 = () => {
-    if (!manager || !scripts) return;
-    const s = scripts.getById(scriptId);
-    if (!s) return;
-    try { manager.getRunner().installScriptToSlot(s.code, { timeLimitMs: 6 }, 0, s.name); } catch (e: any) { alert("Compile error: " + (e?.message ?? String(e))); return; }
-    const assigns = scripts.loadAssignments();
-    const ex = assigns.find((a: any) => a.slot === 0);
-    if (ex) ex.scriptId = s.id; else assigns.push({ slot: 0, scriptId: s.id, enabled: false });
-    scripts.saveAssignments(assigns);
+  const getPartStats = (partId: string, cat: PartCategory) => {
+    const list = getPartsByCategory(cat);
+    const p: any = list.find(x => x.id === partId);
+    if (!p) return null;
+
+    const instance = p.make();
+
+    // Build generic stats array
+    const stats: { label: string, value: string, icon?: any }[] = [];
+
+    // Mass: Standard parts use massKg, Engines/Tanks use dryMassKg
+    const mass = (instance as any).massKg ?? (instance as any).dryMassKg;
+    if (mass !== undefined) stats.push({ label: "Mass", value: `${mass}kg`, icon: FaWeightHanging });
+
+    // Cost is only on the store item definition 'p'
+    if (p.price) stats.push({ label: "Cost", value: `$${p.price}`, icon: FaDollarSign });
+
+    // --- Specific Part Stats ---
+    const i = instance as any;
+
+    // Engine
+    if (i.maxThrustN) stats.push({ label: "Thrust", value: `${i.maxThrustN}N`, icon: FaFire });
+    if (i.vacuumBonusAtVacuum) stats.push({ label: "Vac Bonus", value: `+${(i.vacuumBonusAtVacuum * 100).toFixed(0)}%`, icon: FaFire });
+
+    // Fuel Tank
+    if (i.capacityKg) stats.push({ label: "Fuel", value: `${i.capacityKg}kg`, icon: FaFire });
+
+    // Battery
+    const capJ = i.capacityJoules ?? i.capacity;
+    if (capJ) stats.push({ label: "Cap", value: `${capJ}J`, icon: FaBolt });
+
+    // CPU
+    if (i.maxScriptChars) stats.push({ label: "Mem", value: `${(i.maxScriptChars / 1024).toFixed(1)}kb`, icon: FaTools });
+    if (i.processingBudgetPerTick) stats.push({ label: "CPU", value: `${i.processingBudgetPerTick}ops`, icon: FaTools });
+
+    // Antenna
+    const range = i.rangeMeters ?? i.antennaPower;
+    if (range) stats.push({ label: "Range", value: `${(range / 1000).toFixed(0)}km`, icon: FaBolt });
+
+    // Aero (NoseCone, Fin)
+    if (i.dragCoefficient) stats.push({ label: "Drag", value: `${i.dragCoefficient}`, icon: FaWeightHanging });
+    // Parachute
+    if (i.deployedDrag) stats.push({ label: "Chute Drag", value: `${i.deployedDrag}`, icon: FaWeightHanging });
+    // HeatShield
+    if (i.maxTemp) stats.push({ label: "MaxTemp", value: `${i.maxTemp}K`, icon: FaFire });
+
+    // Science
+    // If scienceValue exists on instance, show it (dynamic cast)
+    if (i.scienceValue) stats.push({ label: "Sci", value: `${i.scienceValue}pts`, icon: FaFlask });
+
+    return { name: p.name, price: p.price ?? p.cost ?? 0, stats };
   };
 
-  const toggleSlot0 = () => {
-    if (!manager || !scripts) return;
-    const next = !enabled;
-    try { manager.getRunner().setSlotEnabled(0, next); } catch {}
-    const assigns = scripts.loadAssignments();
-    const ex = assigns.find((a: any) => a.slot === 0);
-    if (ex) ex.enabled = next; else assigns.push({ slot: 0, scriptId: null, enabled: next });
-    scripts.saveAssignments(assigns);
-    setEnabled(next);
+  const summary = useMemo(() => {
+    let totalMass = 0;
+    let totalCost = 0;
+
+    // Sum assignments
+    Object.values(assignments).forEach((partId) => {
+      // Find definition
+      const def = Object.values(DefaultCatalog).flat().find((x: any) => x.id === partId) as any;
+      if (def) {
+        // Instantiate to get physical stats which might not be on the catalog item
+        const instance = def.make();
+        totalMass += ((instance as any).massKg ?? (instance as any).dryMassKg ?? 0);
+        totalCost += (def.price ?? def.cost ?? 0);
+      }
+    });
+
+    return { totalMass, totalCost };
+  }, [assignments]);
+
+  // Logic
+  const handleTemplateChange = (d: any) => {
+    const val = Array.isArray(d?.value) ? d.value[0] : d?.value;
+    if (val && val !== templateId) {
+      // Confirm reset?
+      if (Object.keys(assignments).length > 0 && !confirm("Switching templates will clear current assignments. Continue?")) return;
+      setTemplateId(val);
+      setAssignments({});
+    }
   };
 
-  // Upgrades: Heating Protection (levelled)
-  const [heatLevel, setHeatLevel] = useState<number>(() => upgrades?.getHeatProtectionLevel?.() ?? 0);
-  const incHeat = (d: number) => {
-    const lv = Math.max(0, (heatLevel || 0) + d); setHeatLevel(lv); upgrades?.setHeatProtectionLevel?.(lv);
+  const handlePartSelect = (partId: string) => {
+    if (!activeSlot) return;
+    setAssignments(prev => {
+      const next = { ...prev };
+      if (!partId) delete next[activeSlot.id];
+      else next[activeSlot.id] = partId;
+      // Auto-save removed; handled by effect
+      return next;
+    });
+    setActiveSlot(null);
   };
 
-  // Simple part replacement helpers (replace first item of category)
-  const replaceEngine = (id: string) => {
-    if (!manager || !layout) return;
-    const r = manager.getRocket();
-    // build new layout
-    const lay = layout.getLayoutFromRocket(r);
-    lay.engines = [id];
-    layout.saveLayout(r);
-    manager.recreateFromLayout(lay);
-    manager.publishTelemetry();
+  const handleNewRocket = () => {
+    if (Object.keys(assignments).length > 0 && !confirm("Start new rocket? Unsaved changes to current configuration will be lost.")) return;
+    setTemplateId("template.basic");
+    setAssignments({});
+    setScriptId("");
+    setRocketName("New Rocket");
   };
-  const replaceTank = (id: string) => {
-    if (!manager || !layout) return;
-    const r = manager.getRocket();
-    const lay = layout.getLayoutFromRocket(r);
-    lay.fuelTanks = [id];
-    layout.saveLayout(r);
-    manager.recreateFromLayout(lay);
-    manager.publishTelemetry();
-  };
-  const replaceBattery = (id: string) => {
-    if (!manager || !layout) return;
-    const r = manager.getRocket();
-    const lay = layout.getLayoutFromRocket(r);
-    lay.batteries = [id];
-    layout.saveLayout(r);
-    manager.recreateFromLayout(lay);
-    manager.publishTelemetry();
-  };
-  const replaceCPU = (id: string) => {
-    if (!manager || !layout) return;
-    const r = manager.getRocket();
-    const lay = layout.getLayoutFromRocket(r);
-    lay.cpu = id;
-    layout.saveLayout(r);
-    manager.recreateFromLayout(lay);
-    manager.publishTelemetry();
-  };
-  const addSensor = (id: string) => {
-    if (!manager || !layout) return;
-    const r = manager.getRocket();
-    const lay = layout.getLayoutFromRocket(r);
-    if (!lay.sensors.includes(id)) lay.sensors.push(id);
-    layout.saveLayout(r);
-    manager.recreateFromLayout(lay);
-    manager.publishTelemetry();
+
+  useEffect(() => {
+    if (isLoaded && services.layout) {
+      services.layout.saveLayout({ templateId, slots: assignments, scriptId, name: rocketName });
+    }
+  }, [templateId, assignments, scriptId, rocketName, isLoaded, services]);
+
+  const handleBuildLaunch = () => {
+    // 1. Check constraints
+    if (summary.totalCost > money) { alert("Insufficient funds!"); return; }
+    if (summary.totalMass > maxMassKg) { alert("Weight exceeds launch pad capacity!"); return; }
+
+
+    // 2. Check Active Rocket Limit / Name Collision
+    const activeCount = manager?.getRockets().length ?? 0;
+    const names = manager?.getRocketNames() ?? [];
+    const targetIdx = names.indexOf(rocketName); // -1 if new name
+    const currentIdx = manager?.getActiveRocketIndex() ?? 0;
+
+    if (targetIdx !== -1) {
+      // Name matches an existing rocket
+      if (targetIdx !== currentIdx) {
+        if (!confirm(`Overwrite existing rocket "${names[targetIdx]}"?`)) return;
+        manager?.setActiveRocketIndex(targetIdx);
+      }
+      // If matches current, we just proceed to overwrite it.
+    } else {
+      // New Name
+      if (activeCount >= maxActiveRockets) {
+        // Limit Reached. Ask to overwrite current.
+        const currentName = names[currentIdx] || "Current Rocket";
+        if (!confirm(`Tracking Station Limit Reached (${activeCount}/${maxActiveRockets}).\n\nOverwrite currently active rocket "${currentName}" with new name "${rocketName}"?`)) {
+          return;
+        }
+        // User confirmed overwrite. We proceed. 
+        // Note: The launch logic below calls `recreateFromLayout` on the active index,
+        // which will effectively rename it since we update the name in the Rocket object.
+      }
+    }
+    (window as any).__services?.setMoney?.(money - summary.totalCost);
+
+    // 4. Build Rocket Object
+    const layout: StoredLayout = { templateId, slots: assignments, scriptId, name: rocketName };
+    const rocket = services.layout?.buildRocketFromLayout(layout);
+
+    if (rocket) {
+      manager?.recreateFromLayout(layout); // Replaces active rocket
+      manager?.setRocketName(manager.getActiveRocketIndex(), rocketName);
+
+      // Install Flight Software
+      if (scriptId && services.scripts) {
+        const s = services.scripts.getById(scriptId);
+        if (s) {
+          const codeToRun = (s as any).compiledCode || s.code;
+          manager?.getRunner()?.installScriptToSlot(codeToRun, { timeLimitMs: 6 }, 0, s.name);
+
+          // Persist assignment so it survives reset/reloads
+          const ai = manager?.getActiveRocketIndex() ?? 0;
+          const assigns = services.scripts.loadAssignments().filter((a: any) => !(a.rocketIndex === ai && a.slot === 0));
+          assigns.push({ rocketIndex: ai, slot: 0, scriptId: s.id, enabled: true });
+          services.scripts.saveAssignments(assigns);
+        }
+      }
+
+      onNavigate("world_scene");
+    }
   };
 
   return (
-    <VStack align="stretch" gap={3}>
-      {/* Top: Processing Unit + Sensors */}
-      <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
-        <Card.Root variant="outline">
-          <Card.Header><Heading size="sm">Guidance System</Heading></Card.Header>
-          <Card.Body>
-            <VStack align="stretch" gap={2}>
-              <Text fontFamily="mono">Name: {rocket?.cpu?.name ?? "-"}</Text>
-              <Text fontFamily="mono">Budget/tick: {fmt(rocket?.cpu?.processingBudgetPerTick ?? 0)}</Text>
-              <Text fontFamily="mono">Max Script Chars: {fmt(rocket?.cpu?.maxScriptChars ?? 0)}</Text>
-              {/* Single-slot assignment UI */}
-              <HStack>
-                <Select.Root size="sm" collection={scriptsCollection} value={scriptId ? [scriptId] : []}
-                               onValueChange={(d: any) => setScriptId(Array.isArray(d?.value) ? d.value[0] : d?.value || "")}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="-- Select script --" />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {scriptsCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-                <Button size="sm" onClick={assignToSlot0} disabled={!scriptId}>Assign to Guidance</Button>
-                <Button size="sm" variant="outline" onClick={toggleSlot0}>{enabled ? "Disable" : "Enable"}</Button>
-              </HStack>
-              {/* CPU Upgrade */}
-              <HStack>
-                <Select.Root size="sm" collection={cpuCollection} value={cpuSel ? [cpuSel] : []}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setCpuSel(v); queuePurchase("cpu", v); setCpuSel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Upgrade Guidance..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {cpuCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-              </HStack>
-            </VStack>
-          </Card.Body>
-        </Card.Root>
+    <Flex direction="column" h="calc(100vh - 60px)" p={4} gap={4}>
+      <SpaceCenterHeader
+        title="Vehicle Assembly Building"
+        icon={FaTools}
+        description="Design and build your rockets."
+        onBack={() => onNavigate("space_center")}
+      >
+        <HStack color="green.300" fontWeight="mono" fontSize="lg">
+          <Icon as={FaDollarSign} />
+          <Text>${money.toLocaleString()}</Text>
+        </HStack>
+      </SpaceCenterHeader>
 
-        <Card.Root variant="outline">
-          <Card.Header><Heading size="sm">Sensors</Heading></Card.Header>
-          <Card.Body>
-            <VStack align="stretch" gap={2}>
-              <Text fontFamily="mono">Installed: {(rocket?.sensors ?? []).map(s => s.name).join(", ") || "(none)"}</Text>
-              <HStack>
-                <Select.Root size="sm" collection={sensorsCollection} value={sensorSel ? [sensorSel] : []}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setSensorSel(v); queuePurchase("sensors", v); setSensorSel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Add sensor..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {sensorsCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-              </HStack>
-            </VStack>
-          </Card.Body>
-        </Card.Root>
-      </SimpleGrid>
+      <Grid templateColumns="300px 1fr" gap={6} flex={1} minH={0} overflow="hidden">
 
-      {/* Mid: Battery, Fuel Tank, Reaction Wheels */}
-      <SimpleGrid columns={{ base: 1, md: 2 }} gap={3}>
-        <Card.Root variant="outline">
-          <Card.Header><Heading size="sm">Battery</Heading></Card.Header>
-          <Card.Body>
-            <VStack align="stretch" gap={2}>
-              <Text fontFamily="mono">Installed: {(rocket?.batteries ?? []).map(b => b.name).join(", ") || "(none)"}</Text>
-              <HStack>
-                <Select.Root size="sm" collection={batteriesCollection} value={batterySel ? [batterySel] : []} disabled={running}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setBatterySel(v); queuePurchase("batteries", v); setBatterySel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Upgrade battery..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {batteriesCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-              </HStack>
-            </VStack>
-          </Card.Body>
-        </Card.Root>
+        {/* SIDEBAR: Controls & Summary */}
+        <GridItem h="100%" overflowY="auto">
+          <VStack align="stretch" gap={4} h="100%">
+            {/* Removed internal back button */}
+            <Card.Root variant="elevated" bg="gray.800" borderColor="gray.700">
+              <Card.Header pb={2}>
+                <HStack justify="space-between">
+                  <Heading size="sm" color="gray.300">Design Overview</Heading>
+                  <Button size="xs" variant="ghost" colorScheme="cyan" title="Import from Active Rocket" onClick={() => {
+                    const rocket = manager?.getEnvironment().rocket;
+                    if (rocket && services.layout) {
+                      const l = services.layout.getLayoutFromRocket(rocket);
+                      if (l) {
+                        if (l.templateId) setTemplateId(l.templateId);
+                        if (l.slots) setAssignments(l.slots);
+                        // alert("Imported configuration from active rocket."); 
+                        // Silent is better or toast? Alert is fine for now.
+                      }
+                    }
+                  }}>
+                    <Icon as={FaTools} /> Import Active
+                  </Button>
+                </HStack>
+              </Card.Header>
+              <Card.Body>
+                <VStack align="stretch" gap={4}>
+                  <Box>
+                    <Text fontSize="xs" color="gray.500" mb={1}>ROCKET NAME</Text>
+                    <Input size="sm" value={rocketName} onChange={(e) => setRocketName(e.target.value)} borderColor="gray.600" />
+                  </Box>
 
-        <Card.Root variant="outline">
-          <Card.Header><Heading size="sm">Fuel Tank</Heading></Card.Header>
-          <Card.Body>
-            <VStack align="stretch" gap={2}>
-              <Text fontFamily="mono">Installed: {(rocket?.fuelTanks ?? []).map(t => t.name).join(", ") || "(none)"}</Text>
-              <HStack>
-                <Select.Root size="sm" collection={tanksCollection} value={tankSel ? [tankSel] : []} disabled={running}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setTankSel(v); queuePurchase("fuelTanks", v); setTankSel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Upgrade tank..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {tanksCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-              </HStack>
-            </VStack>
-          </Card.Body>
-        </Card.Root>
+                  <Box>
+                    <Text fontSize="xs" color="gray.500" mb={1}>CHASSIS TEMPLATE</Text>
+                    <Select.Root collection={templatesCollection} value={[templateId]} onValueChange={handleTemplateChange} size="sm">
+                      <Select.HiddenSelect />
+                      <Select.Control>
+                        <Select.Trigger>
+                          <Select.ValueText placeholder="Select template" />
+                        </Select.Trigger>
+                        <Select.IndicatorGroup><Select.Indicator /></Select.IndicatorGroup>
+                      </Select.Control>
+                      <Portal>
+                        <Select.Positioner>
+                          <Select.Content>
+                            {templatesCollection.items.map(t => (
+                              <Select.Item key={t.value} item={t}>{t.label}</Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select.Positioner>
+                      </Portal>
+                    </Select.Root>
+                    <Text fontSize="xs" color="gray.500" mt={1}>{template.description}</Text>
+                  </Box>
 
-        {/* Reaction Wheels */}
-        <Card.Root variant="outline">
-          <Card.Header><Heading size="sm">Reaction Wheels</Heading></Card.Header>
-          <Card.Body>
-            <VStack align="stretch" gap={2}>
-              <Text fontFamily="mono">Installed: {((rocket as any)?.reactionWheels ?? []).map((rw: any) => rw.name).join(", ") || "(none)"}</Text>
-              <HStack>
-                <Select.Root size="sm" collection={reactionCollection} value={reactionSel ? [reactionSel] : []}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setReactionSel(v); queuePurchase("reactionWheels", v); setReactionSel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Upgrade reaction wheels..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {reactionCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-              </HStack>
-            </VStack>
-          </Card.Body>
-        </Card.Root>
-      </SimpleGrid>
+                  <Box>
+                    <Text fontSize="xs" color="gray.500" mb={1}>FLIGHT SOFTWARE</Text>
+                    <Select.Root collection={scriptsCollection} value={[scriptId]} onValueChange={(d) => setScriptId(Array.isArray(d.value) ? d.value[0] : d.value)} size="sm">
+                      <Select.HiddenSelect />
+                      <Select.Control>
+                        <Select.Trigger>
+                          <Select.ValueText placeholder="No script assigned" />
+                        </Select.Trigger>
+                        <Select.IndicatorGroup><Select.Indicator /></Select.IndicatorGroup>
+                      </Select.Control>
+                      <Portal>
+                        <Select.Positioner>
+                          <Select.Content>
+                            <Select.Item item={{ label: "None", value: "" }} key="none">None</Select.Item>
+                            {scriptsCollection.items.map(s => (
+                              <Select.Item key={s.value} item={s}>{s.label}</Select.Item>
+                            ))}
+                          </Select.Content>
+                        </Select.Positioner>
+                      </Portal>
+                    </Select.Root>
+                  </Box>
 
-      {/* Bottom: Engines */}
-      <Card.Root variant="outline">
-        <Card.Header><Heading size="sm">Engines</Heading></Card.Header>
-        <Card.Body>
-          <VStack align="stretch" gap={2}>
-            <Text fontFamily="mono">Installed: {(rocket?.engines ?? []).map(e => e.name).join(", ") || "(none)"}</Text>
-            <HStack>
-              <Select.Root size="sm" collection={enginesCollection} value={engineSel ? [engineSel] : []} disabled={running}
-                               onValueChange={(d: any) => { const v = Array.isArray(d?.value) ? d.value[0] : d?.value; if (v) { setEngineSel(v); queuePurchase("engines", v); setEngineSel(""); } }}>
-                  <Select.HiddenSelect />
-                  <Select.Control>
-                    <Select.Trigger>
-                      <Select.ValueText placeholder="Upgrade engine..." />
-                    </Select.Trigger>
-                    <Select.IndicatorGroup>
-                      <Select.Indicator />
-                    </Select.IndicatorGroup>
-                  </Select.Control>
-                  <Portal>
-                    <Select.Positioner>
-                      <Select.Content>
-                        {enginesCollection.items.map((opt: any) => (
-                          <Select.Item item={opt} key={opt.value} disabled={isLocked(opt.value) || isUnaffordable(opt.value)}>
-                            {opt.label}
-                            <Select.ItemIndicator />
-                          </Select.Item>
-                        ))}
-                      </Select.Content>
-                    </Select.Positioner>
-                  </Portal>
-                </Select.Root>
-            </HStack>
+                  <Separator borderColor="gray.600" />
+
+                  <VStack align="stretch" gap={2}>
+                    <HStack justify="space-between">
+                      <Text color="gray.400">Total Mass</Text>
+                      {/* Display Mass Check */}
+                      <VStack align="end" gap={0}>
+                        <Text fontWeight="mono" color={summary.totalMass > maxMassKg ? "red.400" : "white"}>{summary.totalMass} kg</Text>
+                        <Text fontSize="xs" color="gray.500">Max: {maxMassKg} kg</Text>
+                      </VStack>
+                    </HStack>
+                    <HStack justify="space-between">
+                      <Text color="gray.400">Total Cost</Text>
+                      <Text fontWeight="mono" color={summary.totalCost > money ? "red.400" : "green.300"}>${summary.totalCost}</Text>
+                    </HStack>
+                    <HStack justify="space-between">
+                      <Text color="gray.400">Funds</Text>
+                      <Text fontWeight="mono" color="green.300">${money}</Text>
+                    </HStack>
+                  </VStack>
+
+                  <Button size="lg" colorScheme="blue" width="full" mt={4} onClick={handleBuildLaunch}
+                    disabled={summary.totalCost > money || summary.totalMass > maxMassKg}>
+                    Deploy to Pad
+                  </Button>
+                  {summary.totalMass > maxMassKg && <Text fontSize="xs" color="red.400" textAlign="center">Exceeds Pad Limit (Lvl {padLevel})</Text>}
+                </VStack>
+              </Card.Body>
+            </Card.Root>
           </VStack>
-        </Card.Body>
-      </Card.Root>
+        </GridItem>
 
-      {/* Pending Upgrades (installs on next Reset Rocket) */}
-      <Card.Root variant="outline">
-        <Card.Header><Heading size="sm">Pending Upgrades</Heading></Card.Header>
-        <Card.Body>
-          <VStack align="stretch" gap={1} fontFamily="mono" fontSize="sm">
-            <Text color="gray.500">These will be installed on the next Reset Rocket.</Text>
-            <Text>Guidance: {pending?.cpu ? (nameById[pending.cpu] || pending.cpu) : "(none)"}</Text>
-            <Text>Sensors: {(pending?.sensors ?? []).map((id: string) => nameById[id] || id).join(", ") || "(none)"}</Text>
-            <Text>Battery: {(pending?.batteries ?? []).map((id: string) => nameById[id] || id).join(", ") || "(none)"}</Text>
-            <Text>Fuel Tank: {(pending?.fuelTanks ?? []).map((id: string) => nameById[id] || id).join(", ") || "(none)"}</Text>
-            <Text>Reaction Wheels: {(pending?.reactionWheels ?? []).map((id: string) => nameById[id] || id).join(", ") || "(none)"}</Text>
-            <Text>Engines: {(pending?.engines ?? []).map((id: string) => nameById[id] || id).join(", ") || "(none)"}</Text>
-          </VStack>
-        </Card.Body>
-      </Card.Root>
+        {/* MAIN: Stages & Slots */}
+        <GridItem overflowY="auto" pr={2}>
+          <VStack align="stretch" gap={3}>
+            {template.stages.map((stage, i) => (
+              <Box key={stage.id} position="relative">
+                <HStack mb={1} ml={1}>
+                  <Badge colorPalette="purple" variant="solid">STAGE {template.stages.length - i}</Badge>
+                  <Text fontWeight="bold" color="gray.300">{stage.name}</Text>
+                </HStack>
 
-      {/* General upgrades */}
-      <Card.Root variant="outline">
-        <Card.Header><Heading size="sm">General Upgrades</Heading></Card.Header>
-        <Card.Body>
-          <VStack align="stretch" gap={2}>
-            <HStack justify="space-between">
-              <Text>Heating Protection Level: {heatLevel}</Text>
-              <HStack>
-                <Button size="sm" onClick={() => incHeat(-1)} disabled={heatLevel <= 0}>-</Button>
-                <Button size="sm" onClick={() => incHeat(1)}>+</Button>
-              </HStack>
-            </HStack>
-            <Text fontSize="sm" color="gray.500">Max Temperature: {(upgrades?.getMaxTemperature?.() ?? 1000)} units</Text>
+                <VStack align="stretch" gap={0} bg="gray.800" borderRadius="md" overflow="hidden" borderWidth="1px" borderColor="gray.700">
+                  {stage.slots.map((slot, idx) => {
+                    const assignedId = assignments[slot.id];
+                    let partInfo = null;
+                    if (assignedId) {
+                      // Find info
+                      for (const cat of slot.allowedCategories) {
+                        const info = getPartStats(assignedId, cat);
+                        if (info) { partInfo = info; break; }
+                      }
+                    }
+
+                    return (
+                      <Flex key={slot.id}
+                        p={3}
+                        align="center"
+                        justify="space-between"
+                        borderTopWidth={idx > 0 ? "1px" : "0"}
+                        borderColor="whiteAlpha.100"
+                        _hover={{ bg: "whiteAlpha.50", cursor: "pointer" }}
+                        onClick={() => setActiveSlot(slot)}
+                      >
+                        {/* Left: Slot Name & Requirements */}
+                        <VStack align="start" gap={0} w="150px">
+                          <Text fontWeight="medium" fontSize="sm" color="gray.200">{slot.name}</Text>
+                          <Text fontSize="xs" color="gray.500">{slot.allowedCategories.join("/")}</Text>
+                        </VStack>
+
+                        {/* Center: Assigned Part Info */}
+                        <Box flex={1}>
+                          {partInfo ? (
+                            <HStack gap={4}>
+                              <Text fontWeight="bold" color="cyan.300">{partInfo.name}</Text>
+                              {partInfo.stats.map(s => (
+                                <Badge key={s.label} variant="subtle" colorPalette="gray" fontSize="xs">
+                                  {s.icon && <Icon as={s.icon} mr={1} boxSize={3} />}
+                                  {s.label}: {s.value}
+                                </Badge>
+                              ))}
+                            </HStack>
+                          ) : (
+                            <Text color="gray.600" fontStyle="italic">Empty Slot</Text>
+                          )}
+                        </Box>
+
+                        {/* Right: Actions/Price */}
+                        <HStack>
+                          {partInfo && <Text fontSize="sm" color="gray.400">${partInfo.price}</Text>}
+                          <Icon as={FaInfoCircle} color="gray.600" />
+                        </HStack>
+                      </Flex>
+                    );
+                  })}
+                </VStack>
+              </Box>
+            ))}
           </VStack>
-        </Card.Body>
-      </Card.Root>
-    </VStack>
+        </GridItem>
+
+      </Grid>
+
+      {/* PART PICKER MODAL */}
+      <Dialog.Root open={!!activeSlot} onOpenChange={() => setActiveSlot(null)} size="lg">
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content bg="gray.900" borderColor="gray.700">
+            <Dialog.Header borderBottomWidth="1px" borderColor="gray.700" pb={2}>
+              <Dialog.Title>Select Part for {activeSlot?.name}</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Body pt={4} maxH="60vh" overflowY="auto">
+              <VStack align="stretch" gap={2}>
+                <Button variant="ghost" colorPalette="red" justifyContent="start" onClick={() => handlePartSelect("")}>
+                  <Icon as={FaTrash} mr={2} /> Unequip Current Part
+                </Button>
+
+                {activeSlot && activeSlot.allowedCategories.flatMap(cat => {
+                  return getPartsByCategory(cat).map(part => {
+                    const info = getPartStats(part.id, cat);
+                    const affordable = part.price <= money;
+                    return (
+                      <Button key={part.id}
+                        variant={assignments[activeSlot!.id] === part.id ? "solid" : "outline"}
+                        colorScheme={assignments[activeSlot!.id] === part.id ? "cyan" : "gray"}
+                        borderColor="gray.700"
+                        justifyContent="space-between"
+                        height="auto"
+                        py={3}
+                        disabled={!affordable}
+                        onClick={() => handlePartSelect(part.id)}
+                        opacity={affordable ? 1 : 0.5}
+                      >
+                        <VStack align="start" gap={1}>
+                          <Text fontWeight="bold">{part.name}</Text>
+                          <HStack gap={2} wrap="wrap">
+                            {info?.stats.map(s => (
+                              <Text key={s.label} fontSize="xs" color="gray.400">{s.label}: {s.value}</Text>
+                            ))}
+                          </HStack>
+                        </VStack>
+                        <VStack align="end" gap={0}>
+                          <Text color={affordable ? "green.300" : "red.400"} fontWeight="mono">${part.price}</Text>
+                          {!affordable && <Text fontSize="xs" color="red.400">Insufficient Funds</Text>}
+                        </VStack>
+                      </Button>
+                    );
+                  });
+                })}
+              </VStack>
+            </Dialog.Body>
+            <Dialog.CloseTrigger />
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+    </Flex>
   );
 }

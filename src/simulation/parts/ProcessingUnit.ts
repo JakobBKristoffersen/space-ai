@@ -10,7 +10,7 @@ export class BasicCPU implements ProcessingUnitPart {
   readonly id = "cpu.basic";
   readonly name = "Basic CPU";
   readonly massKg = 5;
-  readonly maxScriptChars = 2000;
+  readonly maxScriptChars = 10000;
   readonly processingBudgetPerTick = 50;
   readonly energyPerTickJ = 2;
   readonly scriptSlots = 1;
@@ -22,7 +22,7 @@ export class AdvancedCPU implements ProcessingUnitPart {
   readonly id = "cpu.advanced";
   readonly name = "Advanced CPU";
   readonly massKg = 10;
-  readonly maxScriptChars = 8000;
+  readonly maxScriptChars = 32000;
   readonly processingBudgetPerTick = 100;
   readonly energyPerTickJ = 5;
   readonly scriptSlots = 2;
@@ -33,7 +33,7 @@ export class OrbitalProcessingUnit implements ProcessingUnitPart {
   readonly id = "cpu.orbital";
   readonly name = "Orbital Computer";
   readonly massKg = 20;
-  readonly maxScriptChars = 32000;
+  readonly maxScriptChars = 64000;
   readonly processingBudgetPerTick = 250;
   readonly energyPerTickJ = 25; // High power
   readonly scriptSlots = 4;

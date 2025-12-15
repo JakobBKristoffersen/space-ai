@@ -1,14 +1,33 @@
-import React, { useEffect, useMemo, useState } from "react";
-import { Box, Button, Card, HStack, Heading, Input, SimpleGrid, Text, VStack } from "@chakra-ui/react";
-import ScriptEditor from "../ui/ScriptEditor";
+import { useState, useRef, useEffect } from "react";
+import {
+  Flex,
+  HStack,
+  Box,
+  Heading,
+  Text,
+  Button,
+  Icon,
+  Card,
+  SimpleGrid,
+  Input,
+} from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { useColorModeValue } from "@/components/ui/color-mode";
-
-interface FileItem { id: string; name: string; updatedAt: number }
-
-export default function ScriptsPage() {
+import ScriptEditor, { ScriptEditorRef } from "../ui/ScriptEditor";
+import MonacoScriptEditor, { MonacoScriptEditorRef } from "../ui/MonacoScriptEditor";
+import { AssignButton } from "./scripts/AssignButton";
+import { ScriptList, FileItem } from "./scripts/ScriptList";
+import { TemplateService } from "./scripts/scriptTemplates";
+import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
+import { FaCode, FaChevronLeft } from "react-icons/fa";
+export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) => void }) {
   const { manager, services } = useAppCore();
-  const lib = services.scripts as any;
+  const scriptLib = services.scripts as any;
+  const activeRocket = manager?.getRocket();
+
+  // Refs for both editors
+  const legacyEditorRef = useRef<any>(null);
+  const monacoEditorRef = useRef<MonacoScriptEditorRef>(null);
 
   const [files, setFiles] = useState<FileItem[]>([]);
   const [currentId, setCurrentId] = useState<string | null>(null);
@@ -16,21 +35,26 @@ export default function ScriptsPage() {
   const [code, setCode] = useState<string>("");
   const [telemetryKeys, setTelemetryKeys] = useState<string[]>([]);
 
-  // Load library initially
-  useEffect(() => {
-    if (!lib) return;
-    try {
-      const list = lib.list();
-      setFiles(list);
-      if (list.length > 0) {
-        setCurrentId(list[0].id);
-        setCurrentName(list[0].name);
-        setCode(list[0].code);
-      }
-    } catch { }
-  }, [lib]);
+  // New State
+  const [useMonaco, setUseMonaco] = useState<boolean>(true);
+  const [language, setLanguage] = useState<"typescript" | "python">("typescript");
 
-  // Telemetry keys for autocompletion
+  const refreshLib = () => {
+    if (!scriptLib) return [];
+    try {
+      const list = scriptLib.list();
+      setFiles(list);
+      return list;
+    } catch { return []; }
+  };
+
+  useEffect(() => {
+    const list = refreshLib();
+    if (list && list.length > 0 && !currentId) {
+      selectFile(list[0].id, list);
+    }
+  }, [scriptLib]);
+
   useEffect(() => {
     const onKeys = (ev: any) => {
       try { setTelemetryKeys(Array.isArray(ev?.detail?.keys) ? ev.detail.keys : []); } catch { setTelemetryKeys([]); }
@@ -39,126 +63,191 @@ export default function ScriptsPage() {
     return () => window.removeEventListener("telemetry-keys" as any, onKeys);
   }, []);
 
-  const selectFile = (id: string) => {
-    if (!lib) return;
-    const item = lib.getById(id);
+  const detectLanguage = (name: string): "typescript" | "python" => {
+    if (name.endsWith(".py")) return "python";
+    return "typescript";
+  };
+
+  const selectFile = (id: string, list = files) => {
+    const item = list.find(f => f.id === id);
     if (!item) return;
     setCurrentId(id);
     setCurrentName(item.name);
     setCode(item.code);
+    const lang = detectLanguage(item.name);
+    setLanguage(lang);
+
     try {
       sessionStorage.setItem("session:user-script", item.code);
       sessionStorage.setItem("session:current-script-name", item.name);
     } catch { }
   };
 
-  const createNew = () => {
-    if (!lib) return;
-    const base = "Untitled.js";
-    let name = base;
-    const existing = lib.list();
-    let n = 1;
-    while (existing.some((s: any) => s.name === name)) {
-      name = base.replace(/(\.\w+)?$/, (m: string) => ` (${n++})${m}`);
-    }
-    const item = lib.upsertByName(name, code || "function update(api){}\n");
-    setFiles(lib.list());
-    selectFile(item.id);
+  const createNew = (lang: "typescript" | "python") => {
+    if (!scriptLib) return;
+    const item = TemplateService.createNew(scriptLib, lang);
+    const next = refreshLib();
+    selectFile(item.id, next);
+  };
+
+  const createMultiSeed = () => {
+    if (!scriptLib) return;
+    const item = TemplateService.createMultiSeed(scriptLib);
+    const next = refreshLib();
+    if (item) selectFile(item.id, next);
   };
 
   const deleteCurrent = () => {
-    if (!lib || !currentId) return;
-    const list = lib.list();
+    if (!scriptLib || !currentId) return;
+    const list = scriptLib.list();
     const idx = list.findIndex((x: any) => x.id === currentId);
-    if (idx >= 0) { list.splice(idx, 1); lib.saveAll(list); }
-    const next = lib.list();
-    setFiles(next);
-    if (next.length) selectFile(next[0].id); else { setCurrentId(null); setCurrentName(""); setCode(""); }
+    if (idx >= 0) { list.splice(idx, 1); scriptLib.saveAll(list); }
+    const next = refreshLib();
+    if (next.length) selectFile(next[0].id, next);
+    else { setCurrentId(null); setCurrentName(""); setCode(""); }
   };
 
   const duplicateCurrent = () => {
-    if (!lib || !currentId) return;
+    if (!scriptLib || !currentId) return;
     const base = currentName;
     let name = `${base} (copy)`;
-    const existing = lib.list();
+    const existing = scriptLib.list();
     let n = 1;
     while (existing.some((s: any) => s.name === name)) {
       name = `${base} (copy) (${n++})`;
     }
-    const item = lib.upsertByName(name, code);
-    setFiles(lib.list());
-    selectFile(item.id);
+    const item = scriptLib.upsertByName(name, code);
+    const next = refreshLib();
+    selectFile(item.id, next);
   };
 
-  const save = () => {
-    if (!lib) return;
-    const name = currentName?.trim() || "Untitled.js";
-    lib.upsertByName(name, code);
-    setFiles(lib.list());
-  };
+  const save = async () => {
+    if (!scriptLib) return;
+    const name = currentName?.trim() || (language === "python" ? "Untitled.py" : "Untitled.ts");
 
-  const compile = () => {
+    let compiled: string | undefined = undefined;
     try {
-      manager?.getRunner().installScript(code, { timeLimitMs: 6 });
+      if (useMonaco && monacoEditorRef.current) {
+        compiled = await monacoEditorRef.current.compile();
+      } else if (!useMonaco && legacyEditorRef.current) {
+        compiled = await legacyEditorRef.current.compile();
+      }
+    } catch (e) {
+      console.warn("Compile error during save", e);
+    }
+
+    // For Python, or if compile returned nothing/failed (fallback to source? No, Sandbox fails on TS source)
+    if (language === "python" && !compiled) compiled = code;
+
+    scriptLib.upsertByName(name, code, compiled);
+    if (name !== currentName) setCurrentName(name);
+    refreshLib();
+  };
+
+  // Compile helper for checking errors without assigning
+  const check = async () => {
+    try {
+      let output = "";
+      if (useMonaco) {
+        output = await monacoEditorRef.current?.compile() || "";
+      } else {
+        if (language === "python") output = code;
+        else output = await legacyEditorRef.current?.compile() || code;
+      }
+
+      if (output) alert("Compilation/Analysis OK!\nLength: " + output.length);
+      else alert("No output.");
     } catch (e: any) {
-      alert("Compile error: " + (e?.message ?? String(e)));
+      alert("Check Failed: " + e.message);
     }
   };
 
-  return (
-    <SimpleGrid columns={{ base: 1, md: 5 }} gap={3}>
-      {/* Left: directory */}
-      <Card.Root gridColumn={{ base: "1/2", md: "span 2" }} variant="outline">
-        <Card.Header>
-          <HStack justify="space-between">
-            <Heading size="sm">Scripts</Heading>
-            <HStack gap={2}>
-              <Button size="xs" onClick={createNew}>Create New</Button>
-              <Button size="xs" variant="outline" onClick={duplicateCurrent} disabled={!currentId}>Duplicate</Button>
-              <Button size="xs" variant="outline" onClick={deleteCurrent} disabled={!currentId}>Delete</Button>
-            </HStack>
-          </HStack>
-        </Card.Header>
-        <Card.Body>
-          <VStack align="stretch" gap={2} maxH="60dvh" overflowY="auto">
-            {files.length === 0 && <Text color="gray.500">No scripts saved.</Text>}
-            {files.map(f => (
-              <HStack key={f.id} justify="space-between" borderWidth="1px" rounded="md" p={2} cursor="pointer" onClick={() => selectFile(f.id)} bg={f.id === currentId ? "gray.700/20" : undefined}>
-                <Text fontWeight="medium">{f.name}</Text>
-                <Text fontSize="xs" color="gray.500">{new Date(f.updatedAt).toLocaleTimeString()}</Text>
-              </HStack>
-            ))}
-          </VStack>
-        </Card.Body>
-      </Card.Root>
+  const handleAssignSuccess = () => alert("Assigned to Active Rocket!");
 
-      {/* Right: editor */}
-      <Card.Root gridColumn={{ base: "1/2", md: "span 3" }} variant="outline">
-        <Card.Header>
-          <HStack justify="space-between">
-            <Heading size="sm">Editor</Heading>
-            <HStack>
-              <Input size="sm" value={currentName} onChange={(e) => setCurrentName(e.target.value)} minW={240} placeholder="Script name" />
-              <Button size="sm" onClick={save}>Save</Button>
-              <Button size="sm" onClick={compile} colorScheme="blue">Compile</Button>
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return bytes + " B";
+    return (bytes / 1024).toFixed(1) + " KB";
+  };
+
+  const editorTheme = useColorModeValue("light", "dark") === "dark" ? "dark" : "light";
+
+  return (
+    <Flex direction="column" h="calc(100vh - 100px)" p={4} gap={4}>
+      {/* HEADER */}
+      <SpaceCenterHeader
+        title="Software Engineering"
+        icon={FaCode}
+        description="Develop and manage flight software."
+        onBack={onNavigate ? () => onNavigate("space_center") : undefined}
+      />
+
+      <SimpleGrid columns={{ base: 1, md: 5 }} gap={3} flex={1} minH={0}>
+        <ScriptList
+          files={files}
+          currentId={currentId}
+          useMonaco={useMonaco}
+          setUseMonaco={setUseMonaco}
+          onSelect={selectFile}
+          onCreateNew={createNew}
+          onCreateMultiSeed={createMultiSeed}
+          onDelete={deleteCurrent}
+          onDuplicate={duplicateCurrent}
+        />
+
+        {/* Editor */}
+        <Card.Root gridColumn={{ base: "1/2", md: "span 3" }} variant="outline" h="100%">
+          <Card.Header pb={2}>
+            <HStack justify="space-between">
+              <Input size="sm" value={currentName} onChange={(e) => setCurrentName(e.target.value)} maxW="200px" placeholder="Script Name" />
+              <Text fontSize="xs" fontFamily="mono" color="gray.500">{formatSize(code.length)}</Text>
+              <HStack>
+                <AssignButton
+                  activeRocket={activeRocket}
+                  code={code}
+                  name={currentName}
+                  language={language}
+                  useMonaco={useMonaco}
+                  monacoRef={monacoEditorRef}
+                  legacyRef={legacyEditorRef}
+                  onSuccess={handleAssignSuccess}
+                />
+                <Button size="sm" onClick={save} variant="ghost">Save</Button>
+                <Button size="sm" onClick={check} colorScheme="blue" variant="subtle">Check</Button>
+              </HStack>
             </HStack>
-          </HStack>
-        </Card.Header>
-        <Card.Body p={0}>
-          <Box h="60dvh">
-            <ScriptEditor
-              value={code}
-              telemetryKeys={telemetryKeys}
-              onChange={(v) => {
-                setCode(v);
-                try { sessionStorage.setItem("session:user-script", v); } catch { }
-              }}
-              onCompile={compile}
-              theme={useColorModeValue("light", "dark") === "dark" ? "dark" : "light"}
-            />
-          </Box>
-        </Card.Body>
-      </Card.Root>
-    </SimpleGrid>
+          </Card.Header>
+          <Card.Body p={0} flex={1} minH={0} >
+            {useMonaco ? (
+              <MonacoScriptEditor
+                ref={monacoEditorRef}
+                initialValue={code}
+                files={files}
+                currentFileName={currentName}
+                language={language}
+                telemetryKeys={telemetryKeys}
+                onChange={(v) => {
+                  setCode(v);
+                  try { sessionStorage.setItem("session:user-script", v); } catch { }
+                }}
+                onCompile={save}
+                theme={editorTheme}
+              />
+            ) : (
+              <ScriptEditor
+                ref={legacyEditorRef}
+                value={code}
+                telemetryKeys={telemetryKeys}
+                onChange={(v) => {
+                  setCode(v);
+                  try { sessionStorage.setItem("session:user-script", v); } catch { }
+                }}
+                onCompile={save}
+                theme={editorTheme}
+              />
+            )}
+          </Card.Body>
+        </Card.Root>
+      </SimpleGrid>
+    </Flex >
   );
 }

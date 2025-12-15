@@ -27,5 +27,7 @@ export class BasicSolarPanel implements SolarPanelPart {
     readonly name = "Basic Solar Panel";
     readonly massKg = 15;
     readonly generationWatts = 50; // 50 J/s
+    deployed = false;
+    readonly retractable = false;
     readonly exposes = ["solarInputWatts"];
 }

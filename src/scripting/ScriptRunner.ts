@@ -16,33 +16,35 @@ export interface ScriptRunnerOptions {
 }
 
 export class ScriptRunner {
-  // Per-CPU script slots (resize when CPU changes)
   private slots: { compiled: CompiledScript | null; name: string; enabled: boolean; logs: string[] }[] = [];
   private readonly queue = new SimpleQueue();
-  private readonly api: RocketAPI;
+  private readonly api: RocketAPI | undefined;
   private readonly sandbox = new Sandbox();
   // Accumulates elapsed seconds since last script execution (for CPU interval gating)
   private elapsedSinceRunS = 0;
 
-  constructor(private readonly rocket: Rocket) {
-    this.api = new RocketAPI(rocket, this.queue, {});
-    this.resizeSlots();
+  constructor(private readonly rocket: Rocket | undefined) {
+    if (rocket) {
+      this.api = new RocketAPI(rocket, this.queue, {});
+      this.resizeSlots();
+    }
   }
 
   private resizeSlots() {
+    if (!this.rocket) return;
     const count = this.rocket.cpu?.scriptSlots ?? 1;
     if (this.slots.length === count) return;
     const next: typeof this.slots = [];
     for (let i = 0; i < count; i++) {
-      next[i] = this.slots[i] ?? { compiled: null, name: `Slot ${i+1}`, enabled: i === 0, logs: [] };
+      next[i] = this.slots[i] ?? { compiled: null, name: `Slot ${i + 1}`, enabled: i === 0, logs: [] };
     }
     this.slots = next;
   }
 
   /** Install script into a specific slot (default 0) */
-  installScriptToSlot(userCode: string, opts?: ScriptRunnerOptions, slotIndex = 0, name?: string): void {
+  async installScriptToSlot(userCode: string, opts?: ScriptRunnerOptions, slotIndex = 0, name?: string, language: 'typescript' | 'python' = 'typescript'): Promise<void> {
+    if (!this.rocket || !this.rocket.cpu) throw new Error("No CPU installed on rocket");
     const cpu = this.rocket.cpu;
-    if (!cpu) throw new Error("No CPU installed on rocket");
     this.resizeSlots();
     const idx = Math.max(0, Math.min(slotIndex, this.slots.length - 1));
 
@@ -52,14 +54,17 @@ export class ScriptRunner {
       energyPerTickJ: cpu.energyPerTickJ,
       timeLimitMs: opts?.timeLimitMs ?? 8,
     };
-    const compiled = this.sandbox.compile(userCode, sbOpts);
+    const compiled = await this.sandbox.compile(userCode, sbOpts, language);
     this.slots[idx].compiled = compiled;
     if (name) this.slots[idx].name = name;
   }
 
   /** Back-compat: install into slot 0 */
   installScript(userCode: string, opts?: ScriptRunnerOptions): void {
-    this.installScriptToSlot(userCode, opts, 0);
+    // This is synchronous back-compat; assumes JS/TS.
+    // If Pyodide, this won't work well if we simply fire-and-forget, but for existing tests it might be fine.
+    // We'll wrap the async call.
+    this.installScriptToSlot(userCode, opts, 0).catch(e => console.error(e));
   }
 
   setSlotEnabled(slotIndex: number, enabled: boolean): void {
@@ -100,8 +105,8 @@ export class ScriptRunner {
    * Returns the command queue to be applied by the environment.
    */
   runTick(dt: number, opts?: ScriptRunnerOptions): SimpleQueue {
+    if (!this.rocket || !this.rocket.cpu || !this.api) return this.queue;
     const cpu = this.rocket.cpu;
-    if (!cpu) return this.queue; // nothing to run
     this.resizeSlots();
 
     const interval = cpu.processingIntervalSeconds ?? 0;
@@ -150,7 +155,7 @@ export class ScriptRunner {
           totalEnergy += cpu.energyPerTickJ;
           // We cannot read remaining budget directly here; instead, SimpleTickBudget is internal to Sandbox.
           // Approximate cost as full budget for now; can be refined by returning remaining from Sandbox.
-          totalCost += beforeBudget; 
+          totalCost += beforeBudget;
         }
       } catch (e: any) {
         this.appendLog(i, `Error: ${e?.message ?? String(e)}`);

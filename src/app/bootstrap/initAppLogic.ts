@@ -36,17 +36,12 @@ export function initAppLogic(): void {
   const pending = new PendingUpgradesService();
   const research = new ResearchService();
 
-  // 3) Build rocket from stored layout (index 0); seed default layout if absent
+  // 3) Build rocket from stored layout (index 0); if absent, start empty.
   let layout = layoutSvc.loadLayout();
-  if (!layout) {
-    const r0 = layoutSvc.buildDefaultRocket();
-    layoutSvc.saveLayout(r0);
-    layout = layoutSvc.getLayoutFromRocket(r0);
-  }
 
   // 4) Manager (owns Environment/Renderer/Loop)
   const manager = new SimulationManager({
-    rocket: layoutSvc.buildRocketFromLayout(layout),
+    rocket: layout ? layoutSvc.buildRocketFromLayout(layout) : undefined,
     system: ToySystem,
     ctx,
     layoutSvc,
@@ -56,6 +51,11 @@ export function initAppLogic(): void {
     defaultScriptRunnerOpts: { timeLimitMs: 6 },
   });
 
+  // Sync initial rocket name if available from stored layout
+  if (layout && layout.name) {
+    try { manager.setRocketName(0, layout.name); } catch { }
+  }
+
   // 5) Missions + money + store
   let missionMgr = new MissionManager(research);
   seedDefaultMissions(missionMgr);
@@ -63,7 +63,7 @@ export function initAppLogic(): void {
   const store = new PartStore(DefaultCatalog);
 
   // Debug Service
-  const debugSvc = new DebugService(research, missionMgr, pending, (v) => { money = v; });
+  const debugSvc = new DebugService(research, missionMgr, pending, layoutSvc, manager, (v) => { money = v; });
 
   // Rewards flow on post-tick
   manager.onPostTick(() => {

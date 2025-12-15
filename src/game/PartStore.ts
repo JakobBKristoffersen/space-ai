@@ -15,13 +15,15 @@ import { BasicCPU, AdvancedCPU, OrbitalProcessingUnit } from "../simulation/part
 import { BasicNavigationSensor, AdvancedNavigationSensor } from "../simulation/parts/Sensor";
 import { SmallReactionWheels } from "../simulation/parts/ReactionWheels";
 import { SmallAntenna, MediumAntenna, RelayAntenna, DeepSpaceAntenna } from "../simulation/parts/Antenna";
-import { PartUnlockData } from "../parts/Unlocks";
+import { PartUnlockData } from "./Unlocks";
 import { VacuumEngine } from "../simulation/parts/VacuumEngine";
 import { IonEngine } from "../simulation/parts/IonEngine";
 import { BasicSatellitePayload } from "../simulation/parts/Payloads";
 import { BasicSolarPanel } from "../simulation/parts/SolarPanels";
+import { NoseCone, Fin, Parachute, HeatShield } from "../simulation/parts/Aerodynamics";
+import { ScienceExperiment } from "../simulation/parts/Science";
 
-export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna" | "payload" | "solar";
+export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna" | "payload" | "solar" | "cone" | "fin" | "parachute" | "heatShield" | "science";
 
 export interface StorePart<T> {
   readonly id: string;
@@ -44,6 +46,11 @@ export interface Catalog {
   antennas: StorePart<AntennaPart>[];
   payloads: StorePart<PayloadPart>[];
   solarPanels: StorePart<SolarPanelPart>[];
+  cones: StorePart<any>[];
+  fins: StorePart<any>[];
+  parachutes: StorePart<any>[];
+  heatShields: StorePart<any>[];
+  science: StorePart<any>[];
 }
 
 export class PartStore {
@@ -61,6 +68,11 @@ export class PartStore {
       ...this.catalog.antennas,
       ...this.catalog.payloads,
       ...this.catalog.solarPanels,
+      ...this.catalog.cones,
+      ...this.catalog.fins,
+      ...this.catalog.parachutes,
+      ...this.catalog.heatShields,
+      ...this.catalog.science,
     ].filter(p => p.isUnlocked(completed, techs));
   }
 
@@ -267,6 +279,56 @@ export const DefaultCatalog: Catalog = {
       price: 300,
       make: () => new BasicSolarPanel(),
       isUnlocked: (_c, t) => t.includes("tech.solar_basic"),
+    }
+  ],
+  cones: [
+    {
+      id: "cone.basic",
+      name: "Nose Cone",
+      category: "cone",
+      price: 150,
+      make: () => new NoseCone(),
+      isUnlocked: () => true,
+    }
+  ],
+  fins: [
+    {
+      id: "fin.basic",
+      name: "Aerodynamic Fin",
+      category: "fin",
+      price: 100,
+      make: () => new Fin(),
+      isUnlocked: () => true,
+    }
+  ],
+  parachutes: [
+    {
+      id: "parachute.basic",
+      name: "Parachute",
+      category: "parachute",
+      price: 400,
+      make: () => new Parachute(),
+      isUnlocked: () => true,
+    }
+  ],
+  heatShields: [
+    {
+      id: "heatshield.basic",
+      name: "Heat Shield",
+      category: "heatShield",
+      price: 500,
+      make: () => new HeatShield(),
+      isUnlocked: () => true,
+    }
+  ],
+  science: [
+    {
+      id: "science.basic",
+      name: "Science Experiment",
+      category: "science",
+      price: 800,
+      make: () => new ScienceExperiment(),
+      isUnlocked: () => true,
     }
   ]
 };

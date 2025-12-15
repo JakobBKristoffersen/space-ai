@@ -23,17 +23,6 @@ function update(api) {
     api.memory.set("__lastPing", now);
   }
   // ---------------------
-
-  // --- Telemetry Ping ---
-  // Send a packet every 2 seconds if valid
-  const lastPing = Number(api.memory.get("__lastPing") || 0);
-  const now = Date.now();
-  if (now - lastPing > 2000) {
-    // Check if we can send (e.g. valid tiers?); api.sendDataPacket checks internally or just charges
-    api.sendDataPacket("telemetry", 2, { alt: Math.floor(Number(api.getSnapshot().data.altitude||0)), phase: api.memory.get("phase") });
-    api.memory.set("__lastPing", now);
-  }
-
   const s = api.getSnapshot().data;
   const alt = Number(s.altitude ?? 0);
   const v = s.velocity || { x: 0, y: 0 };
@@ -59,18 +48,7 @@ function update(api) {
 
   // Helpers
   function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-  function angleWrap(a) { const TWO = Math.PI * 2; let x = a % TWO; if (x < 0) x += TWO; return x; }
-  function angDiff(a, b) { // shortest signed difference a - b in [-pi, pi]
-    let d = angleWrap(a) - angleWrap(b);
-    if (d > Math.PI) d -= 2*Math.PI; else if (d < -Math.PI) d += 2*Math.PI; return d;
-  }
-  function progradeAngle() { return Math.atan2(vy, vx); }
-  function alignTo(targetAngle) {
-    const err = angDiff(targetAngle, orient);
-    if (Math.abs(err) <= alignTol) { api.setTurnRate(0); return true; }
-    api.setTurnRate(err > 0 ? +alignRate : -alignRate);
-    return false;
-  }
+
   function reportProgress(label, p){
     p = clamp01(p);
     const lastPhase = api.memory.get("__progressPhase") || "";
@@ -97,7 +75,10 @@ function update(api) {
     if (!isFinite(rho0) && isFinite(rho)) { rho0 = rho; api.memory.set("rho0", rho0); }
     // Align to local vertical (outward normal): orientation should be pi/2 at launch; keep correcting just in case.
     const upAngle = Math.PI / 2;
-    alignTo(upAngle);
+    // Use API assist if available (Advanced CPU), else manual logic would fail without helpers but we assume Advanced/Orbital for this profile
+    if (api.alignTo) api.alignTo(upAngle); 
+    else api.setTurnRate(0); // Fallback for basic CPU
+
     api.setEnginePower(1);
     if (isFinite(rho0) && isFinite(rho)) {
       const target = 0.5 * rho0;
@@ -124,23 +105,25 @@ function update(api) {
     const vhor = Math.abs(vx);
     const usePrograde = vhor > 20; // m/s horizontal threshold
 
-    // Diagnostics to understand why we might not be turning
-    try {
-      const errDeg = (angDiff(usePrograde ? progradeAngle() : desired, orient) * 180) / Math.PI;
-      const desRW = Number(s.rwDesiredOmegaRadPerS ?? NaN);
-      const actRW = Number(s.rwOmegaRadPerS ?? NaN);
-      api.log("[raise_ap] tilt=" + tilt.toFixed(2) + " rad, aim=" + (usePrograde ? "prograde" : "gravity-turn") + " orientDeg=" + ((orient*180)/Math.PI).toFixed(1) + ", errDeg=" + errDeg.toFixed(1) + ", vhor=" + vhor.toFixed(1) + " m/s, desRW=" + (isFinite(desRW)? desRW.toFixed(3) : "-") + " rad/s, actRW=" + (isFinite(actRW)? actRW.toFixed(3) : "-") + " rad/s");
-    } catch {}
-
     if (usePrograde) {
       // Align to prograde when we have meaningful horizontal speed
-      const aim = progradeAngle();
-      const aligned = alignTo(aim);
-      try { api.log("[raise_ap] prograde align aligned=" + (aligned ? "true" : "false")); } catch {}
+      // Use API assist to find prograde angle
+      if (api.getPrograde && api.alignTo) {
+        const aim = api.getPrograde();
+        const aligned = api.alignTo(aim);
+        try { api.log("[raise_ap] prograde align aligned=" + (aligned ? "true" : "false")); } catch {}
+      }
     } else {
       // During the gravity-turn phase, command a steady rightward turn rate so we visibly tip over
-      api.setTurnRate(-alignRate); // negative = left (CCW) in our convention toward +X when starting at +Y
-      try { api.log("[raise_ap] gravity-turn cmdRate=" + (-alignRate).toFixed(2) + " rad/s"); } catch {}
+      // Manual turn because we want specific rate, or we could use alignTo(desired) if we trust it
+      // The original script used manual turn rate because it's a "gravity turn" (open loop-ish)
+      // modifying it to use alignTo for the "desired" angle might be cleaner but "gravity turn" usually implies loose coupling.
+      // However, the original code used api.setTurnRate(-alignRate) which is a fixed turn.
+      // Let's stick to fixed turn for gravity turn phase or use alignTo?
+      // "command a steady rightward turn rate so we visibly tip over" -> keep manual rate.
+      api.setTurnRate(-0.25); // negative = left (CCW) in our convention toward +X when starting at +Y. Wait, original was -alignRate.
+      // alignRate was 0.25. So -0.25.
+      try { api.log("[raise_ap] gravity-turn cmdRate=-0.25 rad/s"); } catch {}
     }
 
     api.setEnginePower(1);
@@ -167,8 +150,10 @@ function update(api) {
     }
   } else if (phase === "circularize") {
     // At/near Ap: burn prograde to raise Periapsis to target band
-    const aim = progradeAngle();
-    const aligned = alignTo(aim);
+    if (api.getPrograde && api.alignTo) {
+        const aim = api.getPrograde();
+        api.alignTo(aim);
+    }
     
     api.log('close to prograde burning to Pe and mainting prograde')
     api.setEnginePower(1);  

@@ -8,7 +8,7 @@
  * This module contains no rendering or physics logic.
  */
 import { DefaultCostModel, CostModel } from "./CostModel";
-import { Rocket, RocketCommand, RocketCommandQueue, RocketSnapshot } from "../simulation/Rocket";
+import { Rocket, RocketCommand, RocketCommandQueue, RocketSnapshot, ParachutePart, SolarPanelPart } from "../simulation/Rocket";
 import { CPUTier, getCPUTier } from "../simulation/CPUTier";
 
 export interface RocketAPICreationOptions {
@@ -47,12 +47,24 @@ export class RocketAPI {
   /** Optional logger provided by ScriptRunner to route script logs per slot. */
   private logger: ((msg: string) => void) | null = null;
 
+  // --- Modules ---
+  readonly control: RocketControlAPI;
+  readonly telemetry: RocketTelemetryAPI;
+  readonly nav: RocketNavigationAPI;
+  readonly comms: RocketCommsAPI;
+
   constructor(
-    private readonly rocket: Rocket,
-    private readonly cmdQueue: { enqueue(cmd: RocketCommand): void } & RocketCommandQueue,
+    public readonly rocket: Rocket,
+    public readonly cmdQueue: { enqueue(cmd: RocketCommand): void } & RocketCommandQueue,
     opts?: RocketAPICreationOptions
   ) {
     this.cost = opts?.costModel ?? DefaultCostModel;
+
+    // Initialize modules
+    this.control = new RocketControlAPI(this);
+    this.telemetry = new RocketTelemetryAPI(this);
+    this.nav = new RocketNavigationAPI(this);
+    this.comms = new RocketCommsAPI(this);
   }
 
   /** Called by the ScriptRunner/Sandbox at the start of a script tick. */
@@ -63,11 +75,13 @@ export class RocketAPI {
   /** Internal: set logger callback for current slot. */
   _setLogger(fn: ((msg: string) => void) | null) { this.logger = fn; }
 
-  private charge(cost: number): void {
+  charge(cost: number): void {
     const b = this.currentBudget;
     if (!b) throw new Error("RocketAPI used outside of a script tick context");
     b.charge(cost);
   }
+
+  getCostModel() { return this.cost; }
 
   // --- Memory API (ephemeral per ScriptRunner instance) ---
   /**
@@ -112,216 +126,229 @@ export class RocketAPI {
     const text = typeof msg === "string" ? msg : (() => { try { return JSON.stringify(msg); } catch { return String(msg); } })();
     this.logger?.(String(text));
   }
+}
+
+// --- Sub-Modules ---
+
+class RocketControlAPI {
+  constructor(private api: RocketAPI) { }
 
   /**
-   * Returns a filtered snapshot limited by installed sensors.
+   * Set engine throttle. 0.0 to 1.0.
+   * Requires at least one Engine.
    */
-  getSnapshot(): FilteredSnapshot {
-    this.charge(this.cost.getSnapshotBase);
-    const snap: RocketSnapshot = this.rocket.snapshot();
-
-    const allowed = new Set<string>();
-    // Exposes from sensors (e.g., navigation)
-    for (const s of this.rocket.sensors) for (const k of s.exposes) allowed.add(k);
-    // Exposes from parts
-    for (const e of this.rocket.engines) if (e.exposes) for (const k of e.exposes) allowed.add(k);
-    for (const t of this.rocket.fuelTanks) if (t.exposes) for (const k of t.exposes) allowed.add(k);
-    for (const b of this.rocket.batteries) if (b.exposes) for (const k of b.exposes) allowed.add(k);
-    const rws: any[] = (this.rocket as any).reactionWheels ?? [];
-    for (const rw of rws) if ((rw as any).exposes) for (const k of (rw as any).exposes) allowed.add(k);
-    if (this.rocket.cpu?.exposes) for (const k of this.rocket.cpu.exposes) allowed.add(k);
-
-    const filtered: Record<string, unknown> = {};
-    for (const key of allowed) {
-      // Only copy known keys from snapshot
-      if ((snap as any)[key] !== undefined) {
-        // Deep copy for objects
-        const val = (snap as any)[key];
-        filtered[key] = typeof val === "object" ? JSON.parse(JSON.stringify(val)) : val;
-      }
-    }
-    return { data: filtered };
+  throttle(value: number): void {
+    if (this.api.rocket.engines.length === 0) throw new Error("Control.throttle: No engines installed");
+    this.api.charge(this.api.getCostModel().setEnginePower);
+    this.api.cmdQueue.enqueue({ type: "setEnginePower", value: Math.max(0, Math.min(1, Number(value))) });
   }
 
   /**
-   * Set engine power (throttle).
-   * - For basic engines, value is clamped to 0 or 1.
-   * - For advanced engines, value is clamped between 0 and 1.
+   * Set desired turn rate in radians per second.
+   * Requires Reaction Wheels or Fins (aerodynamic control not fully impl yet, usually RW).
    */
-  setEnginePower(value: number): void {
-    this.charge(this.cost.setEnginePower);
-    this.cmdQueue.enqueue({ type: "setEnginePower", value: Math.max(0, Math.min(1, Number(value))) });
-  }
+  turn(rateRadPerS: number): void {
+    // Check for ability to turn?
+    // Reaction wheels or Fins.
+    const hasRW = this.api.rocket.reactionWheels.length > 0;
+    const hasFins = this.api.rocket.fins.length > 0; // Fins might provide passive stability or active control? Assuming active for now if we want to allow it.
+    // Actually, let's strictly require Reaction Wheels for precise "setTurnRate" in space.
+    // Fins only work in atmo.
+    // Using a generic check:
+    if (!hasRW && !hasFins) throw new Error("Control.turn: No reaction wheels or fins installed");
 
-  /**
-   * Turn left by a small angle (radians). Positive values only; clamped.
-   * Note: In this simulation, turning commands set a persistent angular rate (rad/s)
-   * capped by reaction wheels. This method is kept for compatibility.
-   * @deprecated Use setTurnRate(rateRadPerS) instead to set a persistent angular velocity.
-   */
-  turnLeft(deltaRad: number): void {
-    this.charge(this.cost.turn);
-    const v = Math.max(0, Math.min(Math.abs(deltaRad), Math.PI / 8));
-    this.cmdQueue.enqueue({ type: "turnLeft", value: v });
-  }
-
-  /**
-   * Turn right by a small angle (radians). Positive values only; clamped.
-   * Note: In this simulation, turning commands set a persistent angular rate (rad/s)
-   * capped by reaction wheels. This method is kept for compatibility.
-   */
-  turnRight(deltaRad: number): void {
-    this.charge(this.cost.turn);
-    const v = Math.max(0, Math.min(Math.abs(deltaRad), Math.PI / 8));
-    this.cmdQueue.enqueue({ type: "turnRight", value: v });
-  }
-
-  /**
-   * Set desired turn rate in radians per second. Positive = right (clockwise), negative = left.
-   * Pass 0 to stop turning. Magnitude is clamped to a safe maximum.
-   */
-  setTurnRate(rateRadPerS: number): void {
-    this.charge(this.cost.turn);
+    this.api.charge(this.api.getCostModel().turn);
     const r = Number(rateRadPerS);
     if (!Number.isFinite(r)) return;
     const mag = Math.max(0, Math.min(Math.abs(r), Math.PI / 8));
     if (mag === 0) {
-      // send a zero right command to explicitly stop
-      this.cmdQueue.enqueue({ type: "turnRight", value: 0 });
+      this.api.cmdQueue.enqueue({ type: "turnRight", value: 0 }); // stop
       return;
     }
-    if (r > 0) this.cmdQueue.enqueue({ type: "turnRight", value: mag });
-    else this.cmdQueue.enqueue({ type: "turnLeft", value: mag });
+    if (r > 0) this.api.cmdQueue.enqueue({ type: "turnRight", value: mag });
+    else this.api.cmdQueue.enqueue({ type: "turnLeft", value: mag });
   }
 
-  // --- Tier 1: Telemetry (Requires Advanced Guidance or better) ---
-
-  private _checkTier(tier: CPUTier, name: string) {
-    const installed = this.rocket.cpu ? getCPUTier(this.rocket.cpu.id) : CPUTier.BASIC;
-    if (installed < tier) {
-      // For now, return NaN or log warning. Throwing might crash user script loop hard.
-      // Spec says: "return NaN or throw/log"
-      this.log(`[System] Error: ${name} requires CPU Tier ${tier} (installed: ${installed}). Upgrade Guidance System.`);
-      return false;
-    }
-    return true;
+  deployParachute(): void {
+    if (this.api.rocket.parachutes.length === 0) throw new Error("Control.deployParachute: No parachutes installed");
+    this.api.charge(10);
+    this.api.cmdQueue.enqueue({ type: "deployParachute" });
   }
+
+  deploySolar(): void {
+    if (this.api.rocket.solarPanels.length === 0) throw new Error("Control.deploySolar: No solar panels installed");
+    this.api.charge(10);
+    this.api.cmdQueue.enqueue({ type: "deploySolar" });
+  }
+
+  retractSolar(): void {
+    const panels = this.api.rocket.solarPanels;
+    if (panels.length === 0) throw new Error("Control.retractSolar: No solar panels installed");
+    // Check if any retractable
+    if (!panels.some(p => p.retractable)) throw new Error("Control.retractSolar: Installed panels are not retractable");
+    this.api.charge(10);
+    this.api.cmdQueue.enqueue({ type: "retractSolar" });
+  }
+}
+
+class RocketTelemetryAPI {
+  constructor(private api: RocketAPI) { }
 
   private _checkSensor(key: string, name: string) {
-    const keys = this.rocket.snapshot().exposedKeys || [];
+    const keys = this.api.rocket.snapshot().exposedKeys || [];
     if (!keys.includes(key)) {
-      // Sensor not installed or doesn't expose this metric
-      // We don't log here to avoid spamming logs per tick, just return false
-      return false;
+      throw new Error(`Telemetry.${name}: Sensor for '${key}' not found or installed.`);
     }
-    return true;
   }
 
-  getAltitude(): number {
-    this.charge(1);
-    if (!this._checkTier(CPUTier.TELEMETRY, 'getAltitude')) return Number.NaN;
-    if (!this._checkSensor('altitude', 'getAltitude')) return Number.NaN;
-    return this.rocket.snapshot().altitude;
+  private _checkTier(tier: CPUTier, name: string) {
+    const installed = this.api.rocket.cpu ? getCPUTier(this.api.rocket.cpu.id) : CPUTier.BASIC;
+    if (installed < tier) {
+      throw new Error(`Telemetry.${name}: Requires CPU Tier ${tier} (installed: ${installed}). Upgrade Guidance System.`);
+    }
   }
 
-  getVelocity(): { x: number; y: number } {
-    this.charge(1);
-    if (!this._checkTier(CPUTier.TELEMETRY, 'getVelocity')) return { x: NaN, y: NaN };
-    if (!this._checkSensor('velocity', 'getVelocity')) return { x: NaN, y: NaN };
-    const s = this.rocket.snapshot();
+  get altitude(): number {
+    this.api.charge(1);
+    this._checkTier(CPUTier.TELEMETRY, 'altitude'); // Altitude usually needs basic telemetry or altimeter
+    // Actually, 'altitude' is a sensor key.
+    this._checkSensor('altitude', 'altitude');
+    return this.api.rocket.snapshot().altitude;
+  }
+
+  get velocity(): { x: number; y: number } {
+    this.api.charge(1);
+    this._checkTier(CPUTier.TELEMETRY, 'velocity');
+    this._checkSensor('velocity', 'velocity');
+    const s = this.api.rocket.snapshot();
     return { x: s.velocity.x, y: s.velocity.y };
   }
 
-  getPosition(): { x: number; y: number } {
-    this.charge(1);
-    if (!this._checkTier(CPUTier.TELEMETRY, 'getPosition')) return { x: NaN, y: NaN };
-    if (!this._checkSensor('position', 'getPosition')) return { x: NaN, y: NaN };
-    const s = this.rocket.snapshot();
+  get position(): { x: number; y: number } {
+    this.api.charge(1);
+    this._checkTier(CPUTier.TELEMETRY, 'position');
+    this._checkSensor('position', 'position');
+    const s = this.api.rocket.snapshot();
     return { x: s.position.x, y: s.position.y };
   }
 
-  getHeading(): number {
-    this.charge(1);
-    if (!this._checkTier(CPUTier.TELEMETRY, 'getHeading')) return Number.NaN;
-    if (!this._checkSensor('orientationRad', 'getHeading')) return Number.NaN;
-    return this.rocket.snapshot().orientationRad;
+  get speed(): number {
+    const v = this.velocity; // pays charge & checks
+    return Math.sqrt(v.x * v.x + v.y * v.y);
   }
 
-  // --- Tier 2: Orbital (Requires Orbital Computer) ---
-
-  getApoapsis(): number {
-    this.charge(5);
-    if (!this._checkTier(CPUTier.ORBITAL, 'getApoapsis')) return Number.NaN;
-    // Ap/Pe might not be "sensors" but "CPU" calculations. 
-    // However, we can say the CPU "exposes" them.
-    if (!this._checkSensor('apAltitude', 'getApoapsis')) return Number.NaN;
-    return this.rocket.snapshot().apAltitude ?? Number.NaN;
+  get apoapsis(): number {
+    this.api.charge(5);
+    this._checkTier(CPUTier.ORBITAL, 'apoapsis');
+    // Using checkSensor for 'apAltitude' matching existing logic
+    this._checkSensor('apAltitude', 'apoapsis');
+    return this.api.rocket.snapshot().apAltitude ?? Number.NaN;
   }
 
-  getPeriapsis(): number {
-    this.charge(5);
-    if (!this._checkTier(CPUTier.ORBITAL, 'getPeriapsis')) return Number.NaN;
-    if (!this._checkSensor('peAltitude', 'getPeriapsis')) return Number.NaN;
-    return this.rocket.snapshot().peAltitude ?? Number.NaN;
+  get periapsis(): number {
+    this.api.charge(5);
+    this._checkTier(CPUTier.ORBITAL, 'periapsis');
+    this._checkSensor('peAltitude', 'periapsis');
+    return this.api.rocket.snapshot().peAltitude ?? Number.NaN;
+  }
+}
+
+class RocketNavigationAPI {
+  constructor(private api: RocketAPI) { }
+
+  private _checkTier(tier: CPUTier, name: string) {
+    const installed = this.api.rocket.cpu ? getCPUTier(this.api.rocket.cpu.id) : CPUTier.BASIC;
+    if (installed < tier) {
+      throw new Error(`Navigation.${name}: Requires CPU Tier ${tier}`);
+    }
   }
 
-  // --- Tier 3: Network (Requires Comm Network / Advanced) ---
+  private _checkSensor(key: string, name: string) {
+    if (!(this.api.rocket.snapshot().exposedKeys || []).includes(key))
+      throw new Error(`Navigation.${name}: Missing sensor for '${key}'`);
+  }
 
-  getCommState(): { connected: boolean; signal: number } {
-    this.charge(2);
-    if (!this._checkTier(CPUTier.NETWORK, 'getCommState')) return { connected: false, signal: 0 };
-    const s = (this.rocket as any).commState; // Accessed via any for now or need to update Rocket typings imported
+  get heading(): number {
+    this.api.charge(1);
+    this._checkTier(CPUTier.TELEMETRY, 'heading');
+    this._checkSensor('orientationRad', 'heading');
+    return this.api.rocket.snapshot().orientationRad;
+  }
+
+  angleDiff(a: number, b: number): number {
+    this.api.charge(this.api.getCostModel().assistBase);
+    const TWO = Math.PI * 2;
+    let d = (a - b) % TWO;
+    if (d < 0) d += TWO;
+    if (d > Math.PI) d -= TWO;
+    return d;
+  }
+
+  /**
+   * Helper to steer the rocket towards a target angle.
+   * Uses a simple P-controller to command a turn rate.
+   */
+  alignTo(targetRad: number): void {
+    const current = this.heading; // charges cost
+    const diff = this.angleDiff(targetRad, current); // charges cost
+    // Simple P-controller
+    // Kp = 2.0 means if we are 1 rad away, we ask for 2 rad/s turn.
+    // Rocket physics limits max turn rate anyway.
+    const Kp = 2.0;
+    const cmd = diff * Kp;
+    this.api.control.turn(cmd); // charges cost
+  }
+
+  get prograde(): number {
+    // Re-use functionality via api access?
+    // Logic from before:
+    // Requires velocity.
+    const v = this.api.telemetry.velocity; // this will charge & check
+    return Math.atan2(v.y, v.x);
+  }
+
+  get retrograde(): number {
+    const v = this.api.telemetry.velocity;
+    const a = Math.atan2(v.y, v.x) + Math.PI;
+    return a % (Math.PI * 2);
+  }
+}
+
+class RocketCommsAPI {
+  constructor(private api: RocketAPI) { }
+
+  get state(): { connected: boolean; signal: number } {
+    this.api.charge(2);
+    // Requires network tier?
+    // Using existing logic:
+    const installed = this.api.rocket.cpu ? getCPUTier(this.api.rocket.cpu.id) : CPUTier.BASIC;
+    if (installed < CPUTier.NETWORK) return { connected: false, signal: 0 };
+
+    const s = this.api.rocket.commState;
     return { connected: !!s?.connected, signal: s?.signalStrength ?? 0 };
   }
 
-  sendDataPacket(type: string, sizeKb: number, data: any): void {
-    this.charge(10);
-    // Spec says: Rockets can queue data packets when disconnected.
-    // But maybe we need Tier 3 to *initiate* complex transmission?
-    // Let's assume sending basic packets needs basic comms but special types need Network tier?
-    // Spec says "Tier 3: Comm network status...".
-    // "Send Atmospheric Profile Data Packet" is Tier 1 Mission.
-    // So sendDataPacket should probably be available earlier?
-    // Let's set it to Tier 1 for basic packets, or check based on type?
-    // Actually, "Transmit first telemetry packet" is Tier 0 mission.
-    // Wait, "Tier 0... Transmit first telemetry packet".
-    // But Tier 0 is "Blind Flight".
-    // Maybe the mission triggers automatically? Or user script does it?
-    // If user script does it, it needs API.
-    // If Tier 0 has NO data, how can it send packet?
-    // Maybe `sendDataPacket` is allowed in Tier 0 but it sends "blind" data?
-    // Let's implement it as Tier 0 accessible but dependent on Comm System connection (which manages the queue).
-    // Actually, let's stick to the prompt's explicit list:
-    // Tier 1: "Send Atmospheric Profile Data Packet".
-    // Tier 0: "Reach 100m... Transmit first telemetry packet".
-    // This implies Tier 0 needs `sendDataPacket`. 
-    // I will allow `sendDataPacket` at Tier 0/Basic, but `getCommState` (checking if connected) is Tier 3 (Advanced).
-    // This creates fun gameplay: "Blindly send data and hope you are in range".
-
-    // Check connection first? "Rockets can queue data packets when disconnected" - existing design.
-    this.rocket.packetQueue.push({
+  send(type: string, sizeKb: number, data: any): void {
+    this.api.charge(10);
+    this.api.rocket.packetQueue.push({
       id: Math.random().toString(36).slice(2),
       type: type as any,
       sizeKb,
       progressKb: 0,
-      sourceId: this.rocket.id,
+      sourceId: this.api.rocket.id,
       targetId: 'base',
       data
     });
-    this.log(`[Comms] Queued packet ${type} (${sizeKb}kb)`);
+    this.api.log(`[Comms] Queued packet ${type}`);
   }
 
-  /**
-   * Deploy a payload by ID.
-   * Returns the ID of the new rocket if successful, or null/empty if failed.
-   */
   deployPayload(payloadId: string): string | null {
-    this.charge(50); // Expensive operation
-    const newId = this.rocket.deployPayload(payloadId);
+    this.api.charge(50);
+    const newId = this.api.rocket.deployPayload(payloadId);
     if (newId) {
-      this.log(`[System] Deployed payload: ${newId}`);
+      this.api.log(`[System] Deployed payload: ${newId}`);
     } else {
-      this.log(`[System] Failed to deploy payload: ${payloadId} not found`);
+      this.api.log(`[System] Failed to deploy payload: ${payloadId} not found`);
     }
     return newId;
   }

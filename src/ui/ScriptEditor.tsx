@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useImperativeHandle } from "react";
 import { EditorView, keymap, lineNumbers, highlightActiveLine } from "@codemirror/view";
 import { EditorState, Compartment } from "@codemirror/state";
 import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
@@ -27,7 +27,7 @@ const basicJsLinter = (view: EditorView): Diagnostic[] => {
         }
       }
     });
-  } catch {}
+  } catch { }
 
   // Heuristic lint: discourage while(true)
   try {
@@ -42,7 +42,7 @@ const basicJsLinter = (view: EditorView): Diagnostic[] => {
         message: "Unbounded loop detected: consider a guard or break",
       });
     }
-  } catch {}
+  } catch { }
 
   return diags;
 };
@@ -157,17 +157,27 @@ export interface ScriptEditorProps {
   telemetryKeys?: string[];
 }
 
+export interface ScriptEditorRef {
+  compile: () => Promise<string>;
+}
+
 /**
  * Minimal CodeMirror wrapper specialized for JavaScript editing.
  * - Provides syntax highlighting, autocomplete, lint gutter, bracket matching.
  * - Exposes onChange and a compile keybinding (Mod-Enter).
  */
-export default function ScriptEditor({ initialValue, value, theme = "dark", onChange, onCompile, telemetryKeys, disabled }: ScriptEditorProps) {
+const ScriptEditor = React.forwardRef<ScriptEditorRef, ScriptEditorProps>(({ initialValue, value, theme = "dark", onChange, onCompile, telemetryKeys, disabled }, ref) => {
   const hostRef = useRef<HTMLDivElement | null>(null);
   const viewRef = useRef<EditorView | null>(null);
   const themeCompartment = useRef(new Compartment()).current;
   const completionCompartment = useRef(new Compartment()).current;
   const editableCompartment = useRef(new Compartment()).current;
+
+  useImperativeHandle(ref, () => ({
+    compile: async () => {
+      return viewRef.current?.state.doc.toString() ?? "";
+    }
+  }));
 
   useEffect(() => {
     if (!hostRef.current) return;
@@ -249,10 +259,12 @@ export default function ScriptEditor({ initialValue, value, theme = "dark", onCh
   useEffect(() => {
     const v = viewRef.current;
     if (!v) return;
-    v.dispatch({ effects: completionCompartment.reconfigure(autocompletion({
-      override: [rocketApiCompletionSource(telemetryKeys)],
-      activateOnTyping: true,
-    })) });
+    v.dispatch({
+      effects: completionCompartment.reconfigure(autocompletion({
+        override: [rocketApiCompletionSource(telemetryKeys)],
+        activateOnTyping: true,
+      }))
+    });
   }, [telemetryKeys]);
 
   // Keep document in sync when the controlled `value` prop changes
@@ -267,4 +279,6 @@ export default function ScriptEditor({ initialValue, value, theme = "dark", onCh
   }, [value]);
 
   return <div ref={hostRef} style={{ width: "100%", height: "100%" }} />;
-}
+});
+
+export default ScriptEditor;

@@ -18,6 +18,7 @@ export interface RocketState {
 }
 
 export interface RocketSnapshot {
+  name?: string;
   position: Readonly<Vec2>;
   velocity: Readonly<Vec2>;
   orientationRad: number;
@@ -43,6 +44,8 @@ export interface RocketSnapshot {
   fuelKg: number;
   /** instantaneous fuel consumption rate in kg/s based on last tick */
   fuelConsumptionKgPerS: number;
+  maxTurnRateRadPerS?: number;
+  angularVelocityRadPerS?: number;
   /** Total stored battery energy across all batteries (J). */
   batteryJoules: number;
   /** Total battery capacity across all batteries (J). */
@@ -89,35 +92,50 @@ export interface RocketSnapshot {
   lastPacketSentType?: string;
   /** List of keys that are actively exposed by installed sensors/parts. */
   exposedKeys?: string[];
+  /** Average engine throttle (0-1). */
+  avgEngineThrustPct?: number;
+  /** True if any parachute is currently deployed. */
+  parachuteDeployed?: boolean;
+  /** True if the rocket has any parachutes installed. */
+  hasParachutes?: boolean;
+  /** Estimated total drag coefficient of the vehicle. */
+  totalDragCoefficient?: number;
 }
 
 export type RocketCommand =
   | { type: "setEnginePower"; value: number }
   | { type: "turnLeft"; value: number }
-  | { type: "turnRight"; value: number };
+  | { type: "turnRight"; value: number }
+  | { type: "deployParachute" }
+  | { type: "deploySolar" }
+  | { type: "retractSolar" };
 
 export interface RocketCommandQueue {
   drain(): RocketCommand[];
 }
 
-// --- Part interfaces ---
+export class SimpleQueue implements RocketCommandQueue {
+  private items: RocketCommand[] = [];
+  enqueue(cmd: RocketCommand) { this.items.push(cmd); }
+  drain(): RocketCommand[] {
+    const ret = this.items;
+    this.items = [];
+    return ret;
+  }
+}
+
+// --- PART INTERFACES ---
 
 export interface EnginePart {
   readonly id: string;
   readonly name: string;
   readonly dryMassKg: number;
-  /** maximum thrust in Newtons at full power */
   readonly maxThrustN: number;
-  /** Throttle level 0.0 to 1.0 */
-  power: number;
-  /** fuel consumption rate (kg/s) at full power */
+  power: number; // 0..1
   readonly fuelBurnRateKgPerS: number;
-  /** Additional thrust fraction at vacuum relative to sea level (e.g., 0.25 => +25% at vacuum). */
   readonly vacuumBonusAtVacuum?: number;
-  /** Optional list of Rocket snapshot keys this part exposes to scripts/UI. */
   readonly exposes?: string[];
-  /** Returns current thrust (N) based on power and atmosphere. */
-  currentThrust(airDensity: number, seaLevelDensity?: number): number;
+  currentThrust(rho: number, rho0: number): number;
 }
 
 export interface FuelTankPart {
@@ -125,10 +143,9 @@ export interface FuelTankPart {
   readonly name: string;
   readonly dryMassKg: number;
   fuelKg: number;
-  readonly capacityKg: number;
-  /** Optional list of Rocket snapshot keys this part exposes to scripts/UI. */
+  readonly capacityKg?: number;
   readonly exposes?: string[];
-  drawFuel(requestKg: number): number; // returns actual drawn
+  drawFuel(amount: number): number;
 }
 
 export interface BatteryPart {
@@ -137,85 +154,45 @@ export interface BatteryPart {
   readonly massKg: number;
   energyJoules: number;
   readonly capacityJoules: number;
-  /** Optional list of Rocket snapshot keys this part exposes to scripts/UI. */
   readonly exposes?: string[];
-  drawEnergy(requestJ: number): number; // returns actual drawn
+  drawEnergy(amountJ: number): number;
 }
 
-export interface ProcessingUnitPart {
+export interface ProcessingUnitPart { // Alias for CPUPart
   readonly id: string;
   readonly name: string;
   readonly massKg: number;
-  /** Maximum script size in characters. */
-  readonly maxScriptChars: number;
-  /** Per tick processing budget in cost units. */
-  readonly processingBudgetPerTick: number;
-  /** Battery energy cost per tick when one script runs for a tick. */
-  readonly energyPerTickJ: number;
-  /** Number of concurrent script slots this CPU can run per tick. */
   readonly scriptSlots: number;
-  /** Minimum interval between script executions, in seconds. If <= 0, runs every tick. */
-  readonly processingIntervalSeconds: number;
-  /** Optional list of Rocket snapshot keys this part exposes to scripts/UI. */
+  readonly processingBudgetPerTick: number;
+  readonly maxScriptChars: number;
+  readonly processingIntervalSeconds?: number;
   readonly exposes?: string[];
 }
+export type CPUPart = ProcessingUnitPart;
 
 export interface SensorPart {
   readonly id: string;
   readonly name: string;
   readonly massKg: number;
-  /**
-   * Names of Rocket API fields this sensor allows scripts to read.
-   * Kept as plain strings to decouple simulation from scripting types.
-   */
-  readonly exposes: string[];
-}
-
-/** Reaction wheels provide attitude control by consuming battery energy. */
-export interface ReactionWheelsPart {
-  readonly id: string;
-  readonly name: string;
-  readonly massKg: number;
-  /** Max continuous angular velocity this unit can support (rad/s). */
-  readonly maxOmegaRadPerS: number;
-  /** Energy required per (rad/s) per second (J / (rad/s) / s) ≡ J/s per rad/s. */
-  readonly energyPerRadPerS: number;
-  /** Optional list of snapshot keys this part exposes. */
   readonly exposes?: string[];
 }
 
-/** Simple antenna part for communications. */
+export interface ReactionWheelPart { // Alias ReactionWheelsPart
+  readonly id: string;
+  readonly name: string;
+  readonly maxOmegaRadPerS: number;
+  readonly energyPerRadPerS: number;
+  readonly exposes?: string[];
+}
+export type ReactionWheelsPart = ReactionWheelPart;
+
 export interface AntennaPart {
   readonly id: string;
   readonly name: string;
   readonly massKg: number;
-  /** Maximum line-of-sight range to base in meters. */
-  readonly rangeMeters: number;
+  readonly rangeMeters?: number;
+  readonly antennaPower?: number;
   readonly exposes?: string[];
-}
-
-/** Payload part that can be deployed as a separate entity. */
-export interface PayloadPart {
-  readonly id: string;
-  readonly name: string;
-  readonly massKg: number;
-  /** Config for the new rocket spawned from this payload. */
-  readonly satelliteConfig: {
-    name: string;
-    parts: {
-      sensors: SensorPart[];
-      antennas: AntennaPart[];
-      batteries: BatteryPart[];
-      solar: any[]; // future proof
-    }
-  };
-  readonly exposes?: string[];
-}
-
-export class SimpleQueue implements RocketCommandQueue {
-  private q: RocketCommand[] = [];
-  enqueue(cmd: RocketCommand): void { this.q.push(cmd); }
-  drain(): RocketCommand[] { const c = this.q; this.q = []; return c; }
 }
 
 export interface SolarPanelPart {
@@ -223,61 +200,123 @@ export interface SolarPanelPart {
   readonly name: string;
   readonly massKg: number;
   readonly generationWatts: number;
+  deployed: boolean;
+  readonly retractable: boolean;
   readonly exposes?: string[];
 }
 
-export class Rocket {
-  // Public physical properties for environment calculations
-  readonly referenceArea = 0.8; // m^2 exposed area, placeholder
-  readonly dragCoefficient = 0.5; // Cd placeholder
+export interface ParachutePart {
+  readonly id: string;
+  readonly name: string;
+  readonly massKg: number;
+  deployed: boolean;
+  readonly deployedDrag: number;
+  readonly exposes?: string[];
+}
 
-  readonly state: RocketState = {
+export interface PayloadPart {
+  readonly id: string;
+  readonly name: string;
+  readonly massKg: number;
+  // Minimal config to allow deploying
+  readonly satelliteConfig: {
+    parts: {
+      sensors: SensorPart[];
+      antennas: AntennaPart[];
+      batteries: BatteryPart[];
+    };
+  };
+  readonly exposes?: string[];
+}
+
+// Simple parts
+export interface NoseConePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; }
+export interface FinPart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; }
+export interface HeatShieldPart { readonly id: string; readonly name: string; readonly massKg: number; readonly maxTemp: number; }
+export interface SciencePart { readonly id: string; readonly name: string; readonly massKg: number; readonly scienceValue?: number; }
+
+
+// --- ROCKET CLASS ---
+
+export class Rocket {
+  id: string = "rocket-1";
+  name: string = "Rocket";
+  state: RocketState = {
     position: { x: 0, y: 0 },
     velocity: { x: 0, y: 0 },
-    orientationRad: Math.PI / 2, // initially pointing up
-    temperature: 293, // ~20 C in K-ish units
+    orientationRad: 0,
+    temperature: 0,
   };
 
-  /** Unique identifier for this rocket (assigned by SimulationManager). */
-  id: string = "";
+  // Config/Physics
+  dragCoefficient = 0.5;
+  referenceArea = 10; // m^2
 
-  /** Communication State (updated by CommSystem). */
-  commState: {
-    connected: boolean;
-    hops: number;
-    path: string[];
-    latencyMs: number;
-    signalStrength: number;
-  } = { connected: false, hops: 0, path: [], latencyMs: 0, signalStrength: 0 };
-
-  /** Data packets waiting to be sent. */
-  packetQueue: any[] = []; // Typed as DataPacket[] in CommSystem context
-
-  /** Queue of new rockets spawned this tick (handled by Environment). */
-  spawnQueue: Rocket[] = [];
-
-  // Composition
+  // Parts
   engines: EnginePart[] = [];
   fuelTanks: FuelTankPart[] = [];
   batteries: BatteryPart[] = [];
-  /** Attitude control units */
-  reactionWheels: ReactionWheelsPart[] = [];
-  /** Communications antennas */
-  antennas: AntennaPart[] = [];
-  cpu: ProcessingUnitPart | null = null;
+  cpu: CPUPart | null = null;
   sensors: SensorPart[] = [];
-  payloads: PayloadPart[] = [];
+  reactionWheels: ReactionWheelPart[] = [];
+  antennas: AntennaPart[] = [];
+  parachutes: ParachutePart[] = [];
   solarPanels: SolarPanelPart[] = [];
+  payloads: PayloadPart[] = [];
+  noseCones: NoseConePart[] = [];
+  fins: FinPart[] = [];
+  heatShields: HeatShieldPart[] = [];
+  science: SciencePart[] = [];
 
-  // Internal state derived from commands
-  private angularVelocityRadPerS = 0; // actual angular rate applied (rad/s)
-  private desiredAngularVelocityRadPerS = 0; // user-commanded target (rad/s), signed
+  // Runtime
+  spawnQueue: Rocket[] = [];
+  packetQueue: { id: string; type: string; sizeKb: number; progressKb: number; sourceId: string; targetId: string; data: any }[] = [];
+  commState: { connected: boolean; signalStrength: number } = { connected: false, signalStrength: 0 };
 
-  /**
-   * Apply queued commands; called by Environment before force integration.
-   * For turning commands, the value is interpreted as an angular velocity (rad/s).
-   * The angular velocity persists until set to zero again.
-   */
+  desiredAngularVelocityRadPerS = 0;
+  private _lastFuelBurnKgPerS = 0;
+
+  // Snapshot internal buffers
+  private _altitudeForSnapshot = 0;
+  private _airDensityForSnapshot: number | undefined = undefined;
+  private _apAltitudeForSnapshot: number = Number.NaN;
+  private _peAltitudeForSnapshot: number = Number.NaN;
+  private _soiBodyIdForSnapshot: string | undefined = undefined;
+  private _inAtmosphereForSnapshot: boolean | undefined = undefined;
+  private _forcesForSnapshot: { thrust: { fx: number; fy: number }; drag: { fx: number; fy: number }; gravity: { fx: number; fy: number; perBody: { id: string; name: string; fx: number; fy: number }[] } } | undefined = undefined;
+  private _commsInRange: boolean | undefined = undefined;
+  private _commsDistanceM: number | undefined = undefined;
+  private _commsBaseRangeM: number | undefined = undefined;
+  private _commsRocketRangeM: number | undefined = undefined;
+  private _commsSentPerS: number | undefined = undefined;
+  private _commsRecvPerS: number | undefined = undefined;
+  private _maxTurnRateForSnapshot: number | undefined = undefined;
+
+  // Setters for Environment
+  setAltitudeForSnapshot(alt: number): void { this._altitudeForSnapshot = alt; }
+  setAirDensityForSnapshot(rho: number | undefined): void { this._airDensityForSnapshot = (typeof rho === 'number') ? rho : undefined; }
+  setApPeForSnapshot(apAlt: number, peAlt: number): void { this._apAltitudeForSnapshot = Number(apAlt); this._peAltitudeForSnapshot = Number(peAlt); }
+  setSoIForSnapshot(id: string | undefined): void { this._soiBodyIdForSnapshot = id; }
+  setInAtmosphereForSnapshot(v: boolean | undefined): void { this._inAtmosphereForSnapshot = typeof v === 'boolean' ? v : undefined; }
+  setForcesForSnapshot(forces: any): void {
+    this._forcesForSnapshot = forces ? {
+      thrust: { ...forces.thrust },
+      drag: { ...forces.drag },
+      gravity: { fx: forces.gravity.fx, fy: forces.gravity.fy, perBody: forces.gravity.perBody.map((g: any) => ({ ...g })) },
+    } : undefined;
+  }
+  setCommsForSnapshot(params: any): void {
+    this._commsInRange = !!params.inRange;
+    this._commsDistanceM = Number(params.distanceM);
+    this._commsBaseRangeM = Number(params.baseRangeM);
+    this._commsRocketRangeM = Number(params.rocketRangeM);
+    this._commsSentPerS = Number(params.sentPerS);
+    this._commsRecvPerS = Number(params.recvPerS);
+  }
+  setTurnStatsForSnapshot(maxOmega: number): void { this._maxTurnRateForSnapshot = Number(maxOmega); }
+
+  // --- Logic ---
+
   applyCommands(queue: RocketCommandQueue): void {
     for (const cmd of queue.drain()) {
       switch (cmd.type) {
@@ -287,48 +326,49 @@ export class Rocket {
         case "turnLeft": {
           const v = Math.max(0, Math.abs(cmd.value));
           this.desiredAngularVelocityRadPerS = -v;
-          if (v === 0) this.desiredAngularVelocityRadPerS = 0;
           break;
         }
         case "turnRight": {
           const v = Math.max(0, Math.abs(cmd.value));
           this.desiredAngularVelocityRadPerS = v;
-          if (v === 0) this.desiredAngularVelocityRadPerS = 0;
           break;
+        }
+        case "deployParachute":
+          for (const p of this.parachutes) p.deployed = true;
+          break;
+        case "deploySolar":
+          for (const s of this.solarPanels) s.deployed = true;
+          break;
+        case "retractSolar":
+          for (const s of this.solarPanels) if (s.retractable) s.deployed = false;
+          break;
+      }
+    }
+  }
+
+  tickInternal(dt: number): void {
+    // Solar Generation
+    let solarJ = 0;
+    for (const s of this.solarPanels) {
+      if (s.deployed) solarJ += s.generationWatts * dt;
+    }
+    // Distribute solar energy to batteries
+    if (solarJ > 0) {
+      for (const b of this.batteries) {
+        if (solarJ <= 0) break;
+        const space = b.capacityJoules - b.energyJoules;
+        if (space > 0) {
+          const add = Math.min(space, solarJ);
+          b.energyJoules += add;
+          solarJ -= add;
         }
       }
     }
-    // Actual angular velocity will be computed in Environment based on reaction wheels and available energy.
-  }
 
-  /** Current angular turn rate in radians per second (can be negative). */
-  getAngularVelocityRadPerS(): number { return this.angularVelocityRadPerS; }
-  /** Desired angular rate set by commands (rad/s), signed. */
-  getDesiredAngularVelocityRadPerS(): number { return this.desiredAngularVelocityRadPerS; }
-  /** Internal: set actual angular velocity after control system evaluation. */
-  _setActualAngularVelocityRadPerS(v: number): void { this.angularVelocityRadPerS = Number(v) || 0; }
-
-  /**
-   * Returns current thrust in Newtons summing all engines.
-   * Air density parameters allow engines to apply atmosphere-specific scaling (e.g., vacuum bonus).
-   */
-  currentThrust(airDensity: number = 0, seaLevelDensity: number = 1.225): number {
-    return this.engines.reduce((sum, e) => sum + e.currentThrust(airDensity, seaLevelDensity), 0);
-  }
-
-  /**
-   * Must be called once per tick after force integration to update internal resources.
-   * - Burns fuel according to engine power
-   * - Drains battery as needed (external systems should request drawEnergy)
-   */
-  // Track last-tick fuel burn to expose consumption rate
-  private _lastFuelBurnKgPerS = 0;
-
-  tickInternal(dt: number): void {
     // Burn fuel proportional to engine power and dt.
     let requiredFuel = 0;
     for (const e of this.engines) {
-      if (e.power === 1) requiredFuel += e.fuelBurnRateKgPerS * dt;
+      if (e.power > 0) requiredFuel += e.fuelBurnRateKgPerS * dt * e.power;
     }
     // Draw fuel from tanks in order.
     let remaining = requiredFuel;
@@ -356,15 +396,32 @@ export class Rocket {
     const bat = this.batteries.reduce((m, b) => m + b.massKg, 0);
     const cpu = this.cpu?.massKg ?? 0;
     const sensors = this.sensors.reduce((m, s) => m + s.massKg, 0);
-    const antennas = (this as any).antennas ? (this as any).antennas.reduce((m: number, a: any) => m + (a?.massKg || 0), 0) : 0;
+    const antennas = this.antennas.reduce((m, a) => m + a.massKg, 0);
     const payloads = this.payloads.reduce((m, p) => m + p.massKg, 0);
-    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas + payloads;
+    const cones = this.noseCones.reduce((m, p) => m + p.massKg, 0);
+    const fins = this.fins.reduce((m, p) => m + p.massKg, 0);
+    const chutes = this.parachutes.reduce((m, p) => m + p.massKg, 0);
+    const shields = this.heatShields.reduce((m, p) => m + p.massKg, 0);
+    const sci = this.science.reduce((m, p) => m + p.massKg, 0);
+    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas + payloads + cones + fins + chutes + shields + sci;
   }
 
-  /**
-   * Deploy a payload part as a new separate rocket entity.
-   * Returns the ID of the new rocket if successful, or null if failed.
-   */
+  currentThrust(rho: number, rho0: number): number {
+    return this.engines.reduce((sum, e) => sum + e.currentThrust(rho, rho0), 0);
+  }
+
+  getAngularVelocityRadPerS(): number {
+    // Only used for snapshot actual omega reporting from Environment; Rocket just stores rotation
+    // But since Environment computes it, we might not technically know it here unless we differentiate orientation.
+    // Environment uses this field to report back?
+    // Let's assume Environment writes a "rwOmegaRadPerS" to snapshot directly or we store it.
+    return (this as any)._rwOmegaRadPerS ?? 0;
+  }
+  // Internal setter for Environment
+  _setActualAngularVelocityRadPerS(w: number) { (this as any)._rwOmegaRadPerS = w; }
+
+  getDesiredAngularVelocityRadPerS() { return this.desiredAngularVelocityRadPerS; }
+
   deployPayload(payloadId: string): string | null {
     const idx = this.payloads.findIndex(p => p.id === payloadId);
     if (idx === -1) return null;
@@ -390,7 +447,6 @@ export class Rocket {
     sat.sensors = [...payload.satelliteConfig.parts.sensors];
     sat.antennas = [...payload.satelliteConfig.parts.antennas];
     sat.batteries = [...payload.satelliteConfig.parts.batteries];
-    // sat.solar = ...
 
     // Remove payload from this rocket
     this.payloads.splice(idx, 1);
@@ -408,7 +464,6 @@ export class Rocket {
     return this.batteries.reduce((e, b) => e + b.energyJoules, 0);
   }
 
-  /** Draw energy from batteries in order; returns actual draw. */
   drawEnergy(requestJ: number): number {
     let remaining = requestJ;
     let drawnTotal = 0;
@@ -419,63 +474,6 @@ export class Rocket {
       remaining -= d;
     }
     return drawnTotal;
-  }
-
-  private _altitudeForSnapshot = 0;
-  private _airDensityForSnapshot: number | undefined = undefined;
-  private _apAltitudeForSnapshot: number = Number.NaN;
-  private _peAltitudeForSnapshot: number = Number.NaN;
-  private _soiBodyIdForSnapshot: string | undefined = undefined;
-  private _inAtmosphereForSnapshot: boolean | undefined = undefined;
-  private _forcesForSnapshot: { thrust: { fx: number; fy: number }; drag: { fx: number; fy: number }; gravity: { fx: number; fy: number; perBody: { id: string; name: string; fx: number; fy: number }[] } } | undefined = undefined;
-  // Communications snapshot fields
-  private _commsInRange: boolean | undefined = undefined;
-  private _commsDistanceM: number | undefined = undefined;
-  private _commsBaseRangeM: number | undefined = undefined;
-  private _commsRocketRangeM: number | undefined = undefined;
-  private _commsSentPerS: number | undefined = undefined;
-  private _commsRecvPerS: number | undefined = undefined;
-  /** Set by Environment each tick to reflect altitude over primary body. */
-  setAltitudeForSnapshot(alt: number): void {
-    this._altitudeForSnapshot = alt;
-  }
-  /** Set by Environment each tick to reflect atmospheric density (kg/m^3). */
-  setAirDensityForSnapshot(rho: number | undefined): void {
-    this._airDensityForSnapshot = (typeof rho === 'number') ? rho : undefined;
-  }
-  /** Set by Environment each tick when orbit analysis is available. Use NaN if not elliptical. */
-  setApPeForSnapshot(apAlt: number, peAlt: number): void {
-    this._apAltitudeForSnapshot = Number(apAlt);
-    this._peAltitudeForSnapshot = Number(peAlt);
-  }
-  /** Set by Environment: body id with strongest gravity (SOI approx). */
-  setSoIForSnapshot(id: string | undefined): void {
-    this._soiBodyIdForSnapshot = id;
-  }
-  /** Set by Environment: whether currently inside atmosphere (rho>0). */
-  setInAtmosphereForSnapshot(v: boolean | undefined): void {
-    this._inAtmosphereForSnapshot = typeof v === 'boolean' ? v : undefined;
-  }
-  /** Set by Environment: force breakdown this tick (Newtons). */
-  setForcesForSnapshot(forces: { thrust: { fx: number; fy: number }; drag: { fx: number; fy: number }; gravity: { fx: number; fy: number; perBody: { id: string; name: string; fx: number; fy: number }[] } } | undefined): void {
-    this._forcesForSnapshot = forces ? {
-      thrust: { fx: forces.thrust.fx, fy: forces.thrust.fy },
-      drag: { fx: forces.drag.fx, fy: forces.drag.fy },
-      gravity: {
-        fx: forces.gravity.fx,
-        fy: forces.gravity.fy,
-        perBody: forces.gravity.perBody.map(g => ({ id: g.id, name: g.name, fx: g.fx, fy: g.fy })),
-      },
-    } : undefined;
-  }
-  /** Set by SimulationManager: communications link metrics for UI. */
-  setCommsForSnapshot(params: { inRange: boolean; distanceM: number; baseRangeM: number; rocketRangeM: number; sentPerS: number; recvPerS: number }): void {
-    this._commsInRange = !!params.inRange;
-    this._commsDistanceM = Number(params.distanceM);
-    this._commsBaseRangeM = Number(params.baseRangeM);
-    this._commsRocketRangeM = Number(params.rocketRangeM);
-    this._commsSentPerS = Number(params.sentPerS);
-    this._commsRecvPerS = Number(params.recvPerS);
   }
 
   snapshot(): RocketSnapshot {
@@ -490,7 +488,24 @@ export class Rocket {
     let rwMax = 0;
     for (const rw of this.reactionWheels) rwMax += Math.max(0, (rw as any).maxOmegaRadPerS || 0);
     const rwOmega = this.getAngularVelocityRadPerS();
+
+    // Calculate telemetry
+    const engines = this.engines;
+    const throttleSum = engines.reduce((sum, e) => sum + e.power, 0);
+    const throttleAvg = engines.length > 0 ? throttleSum / engines.length : 0;
+
+    const parachuteDeployed = this.parachutes.some(p => p.deployed);
+
+    // Estimate total drag coefficient (Cd)
+    // Base shape
+    let cd = this.dragCoefficient;
+    // Addtional parts
+    for (const p of this.parachutes) if (p.deployed) cd += p.deployedDrag;
+    for (const f of this.fins) cd += (f.dragCoefficient ?? 0);
+    for (const n of this.noseCones) cd += (n.dragCoefficient ?? 0);
+
     return {
+      name: this.name,
       position: { ...this.state.position },
       velocity: { ...this.state.velocity },
       orientationRad: this.state.orientationRad,
@@ -500,6 +515,8 @@ export class Rocket {
       airDensity: this._airDensityForSnapshot,
       soiBodyId: this._soiBodyIdForSnapshot,
       inAtmosphere: this._inAtmosphereForSnapshot,
+      maxTurnRateRadPerS: this._maxTurnRateForSnapshot,
+      angularVelocityRadPerS: this.state.angularVelocity,
       forces: this._forcesForSnapshot ? {
         thrust: { ...this._forcesForSnapshot.thrust },
         drag: { ...this._forcesForSnapshot.drag },
@@ -546,6 +563,11 @@ export class Rocket {
         ...(this.payloads.flatMap(p => p.exposes || [])),
         ...(this.solarPanels.flatMap(s => s.exposes || [])),
       ])),
+      // New fields
+      avgEngineThrustPct: throttleAvg,
+      parachuteDeployed,
+      hasParachutes: this.parachutes.length > 0,
+      totalDragCoefficient: cd,
     };
   }
 }

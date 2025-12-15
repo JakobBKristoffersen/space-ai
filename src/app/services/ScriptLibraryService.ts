@@ -1,6 +1,6 @@
 import { SessionKeys } from "./SessionKeys";
 
-export type ScriptItem = { id: string; name: string; code: string; updatedAt: number };
+export type ScriptItem = { id: string; name: string; code: string; compiledCode?: string; updatedAt: number };
 export type SlotAssign = { rocketIndex?: number; slot: number; scriptId: string | null; enabled: boolean };
 
 export class ScriptLibraryService {
@@ -11,16 +11,20 @@ export class ScriptLibraryService {
   }
 
   saveAll(all: ScriptItem[]): void {
-    try { sessionStorage.setItem(SessionKeys.SCRIPTS, JSON.stringify(all)); } catch {}
+    try { sessionStorage.setItem(SessionKeys.SCRIPTS, JSON.stringify(all)); } catch { }
   }
 
-  upsertByName(name: string, code: string): ScriptItem {
+  upsertByName(name: string, code: string, compiledCode?: string): ScriptItem {
     const list = this.list();
     const existing = list.find(s => s.name === name);
     if (existing) {
-      existing.code = code; existing.updatedAt = Date.now(); this.saveAll(list); return existing;
+      existing.code = code;
+      if (compiledCode !== undefined) existing.compiledCode = compiledCode;
+      existing.updatedAt = Date.now();
+      this.saveAll(list);
+      return existing;
     }
-    const item: ScriptItem = { id: this.newId(), name, code, updatedAt: Date.now() };
+    const item: ScriptItem = { id: this.newId(), name, code, compiledCode, updatedAt: Date.now() };
     list.push(item); this.saveAll(list); return item;
   }
 
@@ -33,7 +37,7 @@ export class ScriptLibraryService {
   }
 
   saveAssignments(all: SlotAssign[]): void {
-    try { sessionStorage.setItem(SessionKeys.CPU_SLOTS, JSON.stringify(all)); } catch {}
+    try { sessionStorage.setItem(SessionKeys.CPU_SLOTS, JSON.stringify(all)); } catch { }
   }
 
   seedIfEmpty(defaultCode: string, defaultName = "TakeOff.js"): void {
@@ -41,14 +45,14 @@ export class ScriptLibraryService {
     if (!sessionStorage.getItem(SessionKeys.SCRIPT)) {
       const legacy = localStorage.getItem("user-script");
       const seed = legacy ?? defaultCode;
-      try { sessionStorage.setItem(SessionKeys.SCRIPT, seed); } catch {}
+      try { sessionStorage.setItem(SessionKeys.SCRIPT, seed); } catch { }
     }
     // Seed scripts library if empty
     if (!sessionStorage.getItem(SessionKeys.SCRIPTS)) {
       const initialCode = sessionStorage.getItem(SessionKeys.SCRIPT) ?? defaultCode;
       const item: ScriptItem = { id: this.newId(), name: defaultName, code: initialCode, updatedAt: Date.now() };
       this.saveAll([item]);
-      try { sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, defaultName); } catch {}
+      try { sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, defaultName); } catch { }
     }
   }
 }

@@ -5,9 +5,10 @@ import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
 import WorldScenePage from "./pages/WorldScenePage";
 import ScriptsPage from "./pages/ScriptsPage";
-import EnterprisePage from "./pages/EnterprisePage";
 import MissionsPage from "./pages/MissionsPage";
 import ResearchPage from "./pages/ResearchPage";
+import BuildPage from "./pages/BuildPage";
+import SpaceCenterPage from "./pages/SpaceCenterPage";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -32,6 +33,8 @@ function useManagerAndServices() {
   return core;
 }
 
+import { DebugToolbox } from "./ui/DebugToolbox";
+
 function formatGameTime(parts: { year: number; month: number; day: number; hours: number; minutes: number }): string {
   const pad = (n: number) => String(n).padStart(2, "0");
   const HH = pad(parts.hours);
@@ -47,6 +50,9 @@ export default function App() {
   const appFg = useColorModeValue("gray.900", "gray.100");
 
   const core = useManagerAndServices();
+
+  // View state
+  const [currentView, setCurrentView] = useState<string>("space_center");
 
   // Money & RP state for header
   const [money, setMoney] = useState<number>(0);
@@ -79,72 +85,47 @@ export default function App() {
     return () => { try { unsub?.(); } catch { } };
   }, [core]);
 
-  const handleResetAll = () => {
-    try { (window as any).__services?.resetAll?.(); } catch { }
-  };
-
+  // Render logic: specific pages + persistent WorldScene
   return (
     <AppCoreContext.Provider value={core}>
       <Flex id="app" direction="column" minH="100dvh" bg={appBg} color={appFg}>
         {/* App header */}
-        <HStack px={4} py={3} justify="space-between" borderBottomWidth="1px">
-          <Heading size="md">Space AI</Heading>
+        <HStack px={4} py={3} justify="space-between" borderBottomWidth="1px" bg="gray.800" borderColor="gray.700">
+          <HStack>
+            <Button size="sm" variant="ghost" mr={2} onClick={() => setCurrentView("space_center")}>
+              🚀 Space Center
+            </Button>
+            <Heading size="md" display={{ base: "none", md: "block" }}>Space AI</Heading>
+          </HStack>
 
-          <Text fontFamily="mono">{clock}</Text>
-          <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
-          <Text fontFamily="mono" color="green.300">$ {money.toLocaleString()}</Text>
+          <HStack gap={6}>
+            <Text fontFamily="mono" fontSize="sm">{clock}</Text>
+            <HStack gap={4}>
+              <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
+              <Text fontFamily="mono" color="green.300">$ {money.toLocaleString()}</Text>
+            </HStack>
+          </HStack>
+
           <HStack gap={3}>
-            <Dialog.Root>
-              <Dialog.Trigger asChild>
-                <Button size="sm" variant="outline" colorScheme="purple">Dev</Button>
-              </Dialog.Trigger>
-              <Dialog.Content>
-                <Dialog.Header><Dialog.Title>Developer Tools</Dialog.Title></Dialog.Header>
-                <Dialog.Body>
-                  <HStack gap={4}>
-                    <Button onClick={() => { (window as any).__services?.debug?.unlockAll(); alert("Unlocked!"); }}>Unlock All Cheats</Button>
-                    <Button onClick={() => { (window as any).__services?.debug?.maximizeRocket(0); }}>Max Rocket (0)</Button>
-                  </HStack>
-                </Dialog.Body>
-                <Dialog.CloseTrigger />
-              </Dialog.Content>
-            </Dialog.Root>
-            <Button size="sm" variant="ghost" colorPalette="red" onClick={handleResetAll}>Reset All</Button>
+            <DebugToolbox />
             <ColorModeButton />
           </HStack>
         </HStack>
 
-        {/* Pages */}
-        <Tabs.Root defaultValue={'world_scene'} variant="outline" fitted >
-          <Tabs.List>
-            <Tabs.Trigger value={'world_scene'}>World</Tabs.Trigger>
-            <Tabs.Trigger value={'missions'}>Missions</Tabs.Trigger>
-            <Tabs.Trigger value={'research'}>Research</Tabs.Trigger>
-            <Tabs.Trigger value={'scripts'}>Scripts</Tabs.Trigger>
-            <Tabs.Trigger value={'enterprise'}>Enterprise</Tabs.Trigger>
-          </Tabs.List>
+        {/* Views */}
+        <Box flex={1} overflow="hidden" position="relative">
+          <Box h="100%" display={currentView === 'world_scene' ? 'block' : 'none'}>
+            <WorldScenePage onNavigate={setCurrentView} />
+          </Box>
 
-          <Tabs.Content p={0} value={'world_scene'}>
-            <WorldScenePage />
-          </Tabs.Content>
-
-          <Tabs.Content p={0} value={'missions'}>
-            <MissionsPage />
-          </Tabs.Content>
-
-          <Tabs.Content p={0} value={'research'}>
-            <ResearchPage />
-          </Tabs.Content>
-
-          <Tabs.Content p={0} value={'scripts'}>
-            <ScriptsPage />
-          </Tabs.Content>
-
-          <Tabs.Content p={0} value={'enterprise'}>
-            <EnterprisePage />
-          </Tabs.Content>
-        </Tabs.Root>
+          {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}
+          {currentView === 'build' && <BuildPage onNavigate={setCurrentView} />}
+          {currentView === 'missions' && <MissionsPage onNavigate={setCurrentView} />}
+          {currentView === 'research' && <ResearchPage onNavigate={setCurrentView} />}
+          {currentView === 'scripts' && <ScriptsPage onNavigate={setCurrentView} />}
+        </Box>
       </Flex>
     </AppCoreContext.Provider>
   );
 }
+

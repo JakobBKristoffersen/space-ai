@@ -1,9 +1,26 @@
-import React, { useEffect, useState } from "react";
-import { Box, Button, Card, SimpleGrid, Heading, HStack, Text, VStack, Badge } from "@chakra-ui/react";
-import { useAppCore } from "../app/AppContext";
-import { TechTree } from "../research/TechDefinitions";
+import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
+import { FaFlask } from "react-icons/fa";
+import {
+    HStack,
+    VStack,
+    Heading,
+    Text,
+    Button,
+    Box,
+    Card,
+    SimpleGrid,
+    Badge,
+} from "@chakra-ui/react";
+import { useState, useEffect } from "react";
 
-export default function ResearchPage() {
+import { useAppCore } from "../app/AppContext";
+import { TechTree } from "../game/research/TechDefinitions";
+
+interface Props {
+    onNavigate: (view: string) => void;
+}
+
+export default function ResearchPage({ onNavigate }: Props) {
     const { services } = useAppCore();
     const research = services?.research;
     const [points, setPoints] = useState(0);
@@ -45,21 +62,20 @@ export default function ResearchPage() {
     };
 
     return (
-        <VStack align="stretch" gap={4} p={4}>
-            <Card.Root variant="elevated">
-                <Card.Body>
-                    <HStack justify="space-between" align="center">
-                        <VStack align="start" gap={0}>
-                            <Heading size="md">Research Lab</Heading>
-                            <Text color="gray.500" fontSize="sm">Unlock new technologies to enhance your fleet.</Text>
-                        </VStack>
-                        <HStack>
-                            <Text fontSize="lg" fontWeight="bold" color="cyan.400">{points}</Text>
-                            <Text fontSize="sm" color="gray.500">Research Points</Text>
-                        </HStack>
-                    </HStack>
-                </Card.Body>
-            </Card.Root>
+        <VStack align="stretch" gap={4} p={6} bg="gray.900" minH="100%">
+            {/* HEADER */}
+            {/* HEADER */}
+            <SpaceCenterHeader
+                title="R&D Laboratory"
+                icon={FaFlask}
+                description="Unlock new technologies."
+                onBack={() => onNavigate("space_center")}
+            >
+                <HStack>
+                    <Text fontSize="2xl" fontWeight="bold" color="cyan.400" fontFamily="mono">{points}</Text>
+                    <Text fontSize="sm" color="gray.500">Research Points</Text>
+                </HStack>
+            </SpaceCenterHeader>
 
             <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
                 {TechTree.map(tech => {
