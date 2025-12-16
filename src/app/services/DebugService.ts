@@ -1,14 +1,13 @@
 import { ResearchService } from "./ResearchService";
-import { MissionManager } from "../../game/MissionManager";
+import { ScienceManager } from "../../game/ScienceManager";
 import { PendingUpgradesService } from "./PendingUpgradesService";
 import { TechTree } from "../../game/research/TechDefinitions";
-import { MissionList } from "../../game/missions/MissionData";
+
 
 import { SimulationManager } from "../../sim/SimulationManager";
 import { LayoutService, StoredLayout } from "./LayoutService";
 import { ORBIT_MAIN, ORBIT_UTIL } from "../bootstrap/seedScript";
-import { ScriptLibraryService } from "./ScriptLibraryService"; // Needed for types if we use it, but we get scriptLib from where? 
-// DebugService doesn't have scriptLib injected! I need to inject it.
+import { ScriptLibraryService } from "./ScriptLibraryService";
 
 
 /**
@@ -17,18 +16,17 @@ import { ScriptLibraryService } from "./ScriptLibraryService"; // Needed for typ
 export class DebugService {
     constructor(
         private research: ResearchService,
-        private missionMgr: MissionManager,
+        private scienceMgr: ScienceManager,
         private pending: PendingUpgradesService,
         private layout: LayoutService, // Injected
         private scriptLib: ScriptLibraryService, // Injected
         private manager: SimulationManager, // Injected
-        private setMoney: (val: number) => void
     ) { }
 
     // ... existing unlockAll ... (keep it)
     unlockAll() {
-        // 1. Give Money
-        this.setMoney(999_999_999);
+        // 1. Give RP
+        this.research.system.addPoints(99999);
 
         // 2. Unlock all Techs
         for (const tech of TechTree) {
@@ -36,7 +34,7 @@ export class DebugService {
         }
         // Force save research
         this.research.save();
-        alert("Cheats Applied: infinite money, all research unlocked.");
+        alert("Cheats Applied: infinite RP, all research unlocked.");
     }
 
     resetToBasicRocket(rocketIndex: number = 0) {

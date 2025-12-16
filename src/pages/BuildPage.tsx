@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo } from "react";
 import {
   Box,
   Grid,
@@ -55,7 +55,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
   }, [services.scripts]);
 
   // Resources & Limits
-  const [money, setMoney] = useState<number>(0);
   const [padLevel, setPadLevel] = useState<number>(1);
   const [maxMassKg, setMaxMassKg] = useState<number>(30_000);
   const [maxActiveRockets, setMaxActiveRockets] = useState<number>(1);
@@ -64,7 +63,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
   useEffect(() => {
     const sync = () => {
       try {
-        setMoney((window as any).__services?.getMoney?.() || 0);
         const upg = services.upgrades;
         if (upg) {
           const lvl = upg.getLevel("launchPad");
@@ -134,9 +132,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     const mass = (instance as any).massKg ?? (instance as any).dryMassKg;
     if (mass !== undefined) stats.push({ label: "Mass", value: `${mass}kg`, icon: FaWeightHanging });
 
-    // Cost is only on the store item definition 'p'
-    if (p.price) stats.push({ label: "Cost", value: `$${p.price}`, icon: FaDollarSign });
-
     // --- Specific Part Stats ---
     const i = instance as any;
 
@@ -170,12 +165,11 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     // If scienceValue exists on instance, show it (dynamic cast)
     if (i.scienceValue) stats.push({ label: "Sci", value: `${i.scienceValue}pts`, icon: FaFlask });
 
-    return { name: p.name, price: p.price ?? p.cost ?? 0, stats };
+    return { name: p.name, stats };
   };
 
   const summary = useMemo(() => {
     let totalMass = 0;
-    let totalCost = 0;
 
     // Sum assignments
     Object.values(assignments).forEach((partId) => {
@@ -185,11 +179,10 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         // Instantiate to get physical stats which might not be on the catalog item
         const instance = def.make();
         totalMass += ((instance as any).massKg ?? (instance as any).dryMassKg ?? 0);
-        totalCost += (def.price ?? def.cost ?? 0);
       }
     });
 
-    return { totalMass, totalCost };
+    return { totalMass };
   }, [assignments]);
 
   // Logic
@@ -231,7 +224,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
 
   const handleBuildLaunch = () => {
     // 1. Check constraints
-    if (summary.totalCost > money) { alert("Insufficient funds!"); return; }
     if (summary.totalMass > maxMassKg) { alert("Weight exceeds launch pad capacity!"); return; }
 
 
@@ -261,7 +253,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         // which will effectively rename it since we update the name in the Rocket object.
       }
     }
-    (window as any).__services?.setMoney?.(money - summary.totalCost);
+
 
     // 4. Build Rocket Object
     const layout: StoredLayout = { templateId, slots: assignments, scriptId, name: rocketName };
@@ -299,10 +291,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         onNavigate={onNavigate}
         currentView="build"
       >
-        <HStack color="green.300" fontWeight="mono" fontSize="lg">
-          <Icon as={FaDollarSign} />
-          <Text>${money.toLocaleString()}</Text>
-        </HStack>
       </SpaceCenterHeader>
 
       <Grid templateColumns="300px 1fr" gap={6} flex={1} minH={0} overflow="hidden">
@@ -395,18 +383,11 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                         <Text fontSize="xs" color="gray.500">Max: {maxMassKg} kg</Text>
                       </VStack>
                     </HStack>
-                    <HStack justify="space-between">
-                      <Text color="gray.400">Total Cost</Text>
-                      <Text fontWeight="mono" color={summary.totalCost > money ? "red.400" : "green.300"}>${summary.totalCost}</Text>
-                    </HStack>
-                    <HStack justify="space-between">
-                      <Text color="gray.400">Funds</Text>
-                      <Text fontWeight="mono" color="green.300">${money}</Text>
-                    </HStack>
+
                   </VStack>
 
                   <Button size="lg" colorScheme="blue" width="full" mt={4} onClick={handleBuildLaunch}
-                    disabled={summary.totalCost > money || summary.totalMass > maxMassKg}>
+                    disabled={summary.totalMass > maxMassKg}>
                     Deploy to Pad
                   </Button>
                   {summary.totalMass > maxMassKg && <Text fontSize="xs" color="red.400" textAlign="center">Exceeds Pad Limit (Lvl {padLevel})</Text>}
@@ -473,7 +454,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
 
                         {/* Right: Actions/Price */}
                         <HStack>
-                          {partInfo && <Text fontSize="sm" color="gray.400">${partInfo.price}</Text>}
                           <Icon as={FaInfoCircle} color="gray.600" />
                         </HStack>
                       </Flex>
@@ -501,10 +481,10 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                   <Icon as={FaTrash} mr={2} /> Unequip Current Part
                 </Button>
 
-                {activeSlot && activeSlot.allowedCategories.flatMap(cat => {
-                  return getPartsByCategory(cat).map(part => {
-                    const info = getPartStats(part.id, cat);
-                    const affordable = part.price <= money;
+                {(() => {
+                  const cat = activeSlot?.allowedCategories?.[0] || 'misc';
+                  return getPartsByCategory(cat as any).map(part => {
+                    const info = getPartStats(part.id, cat as any);
                     return (
                       <Button key={part.id}
                         variant={assignments[activeSlot!.id] === part.id ? "solid" : "outline"}
@@ -513,9 +493,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                         justifyContent="space-between"
                         height="auto"
                         py={3}
-                        disabled={!affordable}
+                        disabled={false}
                         onClick={() => handlePartSelect(part.id)}
-                        opacity={affordable ? 1 : 0.5}
                       >
                         <VStack align="start" gap={1}>
                           <Text fontWeight="bold">{part.name}</Text>
@@ -526,13 +505,11 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                           </HStack>
                         </VStack>
                         <VStack align="end" gap={0}>
-                          <Text color={affordable ? "green.300" : "red.400"} fontWeight="mono">${part.price}</Text>
-                          {!affordable && <Text fontSize="xs" color="red.400">Insufficient Funds</Text>}
                         </VStack>
                       </Button>
                     );
                   });
-                })}
+                })()}
               </VStack>
             </Dialog.Body>
             <Dialog.CloseTrigger />

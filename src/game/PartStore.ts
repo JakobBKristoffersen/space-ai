@@ -5,7 +5,7 @@
  * - Independent from rendering and physics.
  */
 
-import { Money } from "./MissionManager";
+
 import { BatteryPart, EnginePart, FuelTankPart, ProcessingUnitPart, SensorPart, ReactionWheelsPart, PayloadPart, AntennaPart, SolarPanelPart } from "../simulation/Rocket";
 import { SmallEngine } from "../simulation/parts/Engine";
 import { PrecisionEngine } from "../simulation/parts/PrecisionEngine";
@@ -21,7 +21,7 @@ import { IonEngine } from "../simulation/parts/IonEngine";
 import { BasicSatellitePayload } from "../simulation/parts/Payloads";
 import { BasicSolarPanel } from "../simulation/parts/SolarPanels";
 import { NoseCone, Fin, Parachute, HeatShield } from "../simulation/parts/Aerodynamics";
-import { ScienceExperiment } from "../simulation/parts/Science";
+import { ScienceExperiment, TemperatureScanner } from "../simulation/parts/Science";
 
 export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna" | "payload" | "solar" | "cone" | "fin" | "parachute" | "heatShield" | "science";
 
@@ -29,7 +29,7 @@ export interface StorePart<T> {
   readonly id: string;
   readonly name: string;
   readonly category: PartCategory;
-  readonly price: Money;
+
   /** Factory to instantiate a fresh part when purchased. */
   make(): T;
   /** Unlock predicate: given completed missions and unlocked techs, is this part unlocked? */
@@ -76,18 +76,17 @@ export class PartStore {
     ].filter(p => p.isUnlocked(completed, techs));
   }
 
-  /** Attempts to purchase a part; returns the instance and new balance, or null if insufficient funds. */
+  /** Attempts to purchase a part; returns the instance if allowed. */
   purchase<T>(
     partId: string,
-    balance: Money,
     completed: readonly string[],
     techs: readonly string[],
-  ): { instance: T; newBalance: Money } | null {
+  ): { instance: T } | null {
     const all = this.listAvailable(completed, techs);
     const part = all.find(p => p.id === partId) as StorePart<T> | undefined;
     if (!part) return null;
-    if (balance < part.price) return null;
-    return { instance: part.make(), newBalance: balance - part.price };
+    // No money check
+    return { instance: part.make() };
   }
 }
 
@@ -100,7 +99,7 @@ export const DefaultCatalog: Catalog = {
       id: "engine.small",
       name: "Small Engine",
       category: "engine",
-      price: PartUnlockData["engine.small"]?.moneyCost ?? 500,
+
       make: () => new SmallEngine(),
       isUnlocked: () => true,
     },
@@ -108,7 +107,7 @@ export const DefaultCatalog: Catalog = {
       id: "engine.precision",
       name: "Precision Engine",
       category: "engine",
-      price: PartUnlockData["engine.precision"]?.moneyCost ?? 1500,
+
       make: () => new PrecisionEngine(),
       isUnlocked: (_c, t) => t.includes("tech.propulsion_prec"),
     },
@@ -116,7 +115,7 @@ export const DefaultCatalog: Catalog = {
       id: "engine.vacuum",
       name: "Vacuum Engine",
       category: "engine",
-      price: 2500,
+
       make: () => new VacuumEngine(),
       isUnlocked: (_c, t) => t.includes("tech.propulsion_adv"),
     },
@@ -124,7 +123,7 @@ export const DefaultCatalog: Catalog = {
       id: "engine.ion",
       name: "Ion Thruster",
       category: "engine",
-      price: 5000,
+
       make: () => new IonEngine(),
       isUnlocked: (_c, t) => t.includes("tech.ion"),
     },
@@ -134,7 +133,7 @@ export const DefaultCatalog: Catalog = {
       id: "fueltank.small",
       name: "Small Fuel Tank",
       category: "fuel",
-      price: PartUnlockData["fueltank.small"]?.moneyCost ?? 200,
+
       make: () => new SmallFuelTank(),
       isUnlocked: () => true,
     },
@@ -142,7 +141,7 @@ export const DefaultCatalog: Catalog = {
       id: "fueltank.medium",
       name: "Medium Fuel Tank",
       category: "fuel",
-      price: 500,
+
       make: () => new MediumFuelTank(),
       isUnlocked: (_c, t) => t.includes("tech.batteries_med"), // Reusing logic or new tech?
     },
@@ -150,7 +149,7 @@ export const DefaultCatalog: Catalog = {
       id: "fueltank.large",
       name: "Large Fuel Tank",
       category: "fuel",
-      price: PartUnlockData["fueltank.large"]?.moneyCost ?? 800,
+
       make: () => new LargeFuelTank(),
       isUnlocked: (_c, t) => t.includes("tech.batteries_med"),
     },
@@ -160,7 +159,7 @@ export const DefaultCatalog: Catalog = {
       id: "battery.small",
       name: "Small Battery",
       category: "battery",
-      price: PartUnlockData["battery.small"]?.moneyCost ?? 150,
+
       make: () => new SmallBattery(),
       isUnlocked: () => true,
     },
@@ -168,7 +167,7 @@ export const DefaultCatalog: Catalog = {
       id: "battery.medium",
       name: "Medium Battery",
       category: "battery",
-      price: 400,
+
       make: () => new MediumBattery(),
       isUnlocked: (_c, t) => t.includes("tech.batteries_med"),
     },
@@ -178,7 +177,7 @@ export const DefaultCatalog: Catalog = {
       id: "cpu.basic",
       name: "Basic Guidance System",
       category: "cpu",
-      price: PartUnlockData["cpu.basic"]?.moneyCost ?? 400,
+
       make: () => new BasicCPU(),
       isUnlocked: () => true,
     },
@@ -186,7 +185,7 @@ export const DefaultCatalog: Catalog = {
       id: "cpu.advanced",
       name: "Advanced Guidance System",
       category: "cpu",
-      price: PartUnlockData["cpu.advanced"]?.moneyCost ?? 1200,
+
       make: () => new AdvancedCPU(),
       isUnlocked: (_c, t) => t.includes(PartUnlockData["cpu.advanced"]?.techRequired || "tech.guidance_adv"),
     },
@@ -194,7 +193,7 @@ export const DefaultCatalog: Catalog = {
       id: "cpu.orbital",
       name: "Orbital Computer",
       category: "cpu",
-      price: 3000,
+
       make: () => new OrbitalProcessingUnit(),
       isUnlocked: (_c, t) => t.includes("tech.cpu_orbital"),
     },
@@ -204,7 +203,7 @@ export const DefaultCatalog: Catalog = {
       id: "sensor.nav.basic",
       name: "Basic Navigation Sensor",
       category: "sensor",
-      price: PartUnlockData["sensor.nav.basic"]?.moneyCost ?? 100,
+
       make: () => new BasicNavigationSensor(),
       isUnlocked: () => true,
     },
@@ -212,7 +211,7 @@ export const DefaultCatalog: Catalog = {
       id: "sensor.nav.adv",
       name: "Advanced Navigation Sensor",
       category: "sensor",
-      price: 500,
+
       make: () => new AdvancedNavigationSensor(),
       isUnlocked: (_c, t) => t.includes("tech.guidance_adv"),
     },
@@ -222,7 +221,7 @@ export const DefaultCatalog: Catalog = {
       id: "rw.small",
       name: "Small Reaction Wheels",
       category: "reactionWheels",
-      price: PartUnlockData["rw.small"]?.moneyCost ?? 300,
+
       make: () => new SmallReactionWheels(),
       isUnlocked: () => true,
     },
@@ -232,7 +231,7 @@ export const DefaultCatalog: Catalog = {
       id: "antenna.small",
       name: "Small Antenna",
       category: "antenna",
-      price: PartUnlockData["antenna.small"]?.moneyCost ?? 250,
+
       make: () => new SmallAntenna(),
       isUnlocked: () => true,
     },
@@ -240,7 +239,7 @@ export const DefaultCatalog: Catalog = {
       id: "antenna.medium",
       name: "Medium Antenna",
       category: "antenna",
-      price: 600,
+
       make: () => new MediumAntenna(),
       isUnlocked: (_c, t) => t.includes("tech.comms_tracking"),
     },
@@ -248,7 +247,7 @@ export const DefaultCatalog: Catalog = {
       id: "antenna.relay",
       name: "Relay Dish",
       category: "antenna",
-      price: 1500,
+
       make: () => new RelayAntenna(),
       isUnlocked: (_c, t) => t.includes("tech.comms_tracking"),
     },
@@ -256,7 +255,7 @@ export const DefaultCatalog: Catalog = {
       id: "antenna.deep",
       name: "Deep Space Dish",
       category: "antenna",
-      price: 3000,
+
       make: () => new DeepSpaceAntenna(),
       isUnlocked: (_c, t) => t.includes("tech.comms_deep"),
     },
@@ -266,7 +265,7 @@ export const DefaultCatalog: Catalog = {
       id: "payload.sat.basic",
       name: "CubeSat Deployer",
       category: "payload",
-      price: 1000,
+
       make: () => new BasicSatellitePayload(),
       isUnlocked: (_c, t) => t.includes("tech.satellite"),
     }
@@ -276,7 +275,7 @@ export const DefaultCatalog: Catalog = {
       id: "solar.basic",
       name: "Basic Solar Panel",
       category: "solar",
-      price: 300,
+
       make: () => new BasicSolarPanel(),
       isUnlocked: (_c, t) => t.includes("tech.solar_basic"),
     }
@@ -286,7 +285,7 @@ export const DefaultCatalog: Catalog = {
       id: "cone.basic",
       name: "Nose Cone",
       category: "cone",
-      price: 150,
+
       make: () => new NoseCone(),
       isUnlocked: () => true,
     }
@@ -296,7 +295,7 @@ export const DefaultCatalog: Catalog = {
       id: "fin.basic",
       name: "Aerodynamic Fin",
       category: "fin",
-      price: 100,
+
       make: () => new Fin(),
       isUnlocked: () => true,
     }
@@ -306,7 +305,7 @@ export const DefaultCatalog: Catalog = {
       id: "parachute.basic",
       name: "Parachute",
       category: "parachute",
-      price: 400,
+
       make: () => new Parachute(),
       isUnlocked: () => true,
     }
@@ -316,7 +315,7 @@ export const DefaultCatalog: Catalog = {
       id: "heatshield.basic",
       name: "Heat Shield",
       category: "heatShield",
-      price: 500,
+
       make: () => new HeatShield(),
       isUnlocked: () => true,
     }
@@ -326,8 +325,15 @@ export const DefaultCatalog: Catalog = {
       id: "science.basic",
       name: "Science Experiment",
       category: "science",
-      price: 800,
+
       make: () => new ScienceExperiment(),
+      isUnlocked: () => true,
+    },
+    {
+      id: "science.temp",
+      name: "Temperature Scanner",
+      category: "science",
+      make: () => new TemperatureScanner(),
       isUnlocked: () => true,
     }
   ]

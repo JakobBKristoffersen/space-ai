@@ -74,10 +74,12 @@ declare interface RocketAPI {
     readonly comms: {
         /** Connection state. Requires Network Tier. */
         readonly state: { connected: boolean; signal: number };
-        /** Send data packet to base. */
-        send(type: string, sizeKb: number, data: any): void;
-        /** Deploy a payload as a new rocket. */
-        deployPayload(payloadId: string): string | null;
+        /** Send a text message to base (0.1 KB). */
+        transmitMessage(message: string): void;
+        /** Transmit a key-value data point to the Mission Data store. */
+        transmitData(key: string, value: number | string | boolean): void;
+        /** Transmit science data from an experiment. */
+        transmitScience(experimentId: string): void;
     };
 }
 

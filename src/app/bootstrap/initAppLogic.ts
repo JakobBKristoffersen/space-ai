@@ -11,8 +11,8 @@ import { ResearchService } from "../services/ResearchService";
 import { SimulationManager } from "../sim/SimulationManager";
 import { ToySystem } from "../config/ToySystem";
 import { DEFAULT_EXAMPLE } from "./seedScript";
-import { BASE_STARTING_MONEY, seedDefaultMissions } from "../config";
-import { MissionManager } from "../../game/MissionManager";
+import { ScienceManager } from "../../game/ScienceManager";
+import { CommsService } from "../../game/CommsService"; // Import CommsService
 import { PartStore, DefaultCatalog } from "../../game/PartStore";
 import { SessionKeys } from "../services/SessionKeys";
 import { DebugService } from "../services/DebugService";
@@ -96,26 +96,13 @@ export function initAppLogic(): void {
     try { manager.setRocketName(0, layout.name); } catch { }
   }
 
-  // 6) Missions + money + store
-  let missionMgr = new MissionManager(research);
-  seedDefaultMissions(missionMgr);
-  let money: number = (window as any).__money ?? (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
+  // 6) Science & Store
+  const scienceMgr = new ScienceManager(research);
+  const commsSvc = new CommsService(scienceMgr); // Instantiate
   const store = new PartStore(DefaultCatalog);
 
   // Debug Service
-  const debugSvc = new DebugService(research, missionMgr, pending, layoutSvc, scriptLib, manager, (v) => { money = v; });
-
-  // Rewards flow on post-tick
-  manager.onPostTick(() => {
-    try {
-      const env = manager.getEnvironment();
-      const newly = missionMgr.tick(env.snapshot());
-      if (newly.length > 0) {
-        let gained = 0; for (const m of newly) gained += m.reward().money;
-        money += gained;
-      }
-    } catch { }
-  });
+  const debugSvc = new DebugService(research, scienceMgr, pending, layoutSvc, scriptLib, manager);
 
   // 7) Expose globals for React pages
   try {
@@ -128,27 +115,25 @@ export function initAppLogic(): void {
       research,
       pending,
       debug: debugSvc, // Expose for UI
-      // Missions
-      getMissions: () => { try { return missionMgr.describeAll(manager.getEnvironment().snapshot()); } catch { return []; } },
-      getCompleted: () => missionMgr.getCompletedMissionIds(),
-      // Money
-      getMoney: () => money,
-      setMoney: (v: number) => { money = Math.max(0, Number(v) || 0); },
+      comms: commsSvc,
+      // Science
+      getAchievements: () => { try { return scienceMgr.list(); } catch { return []; } },
+      getCompleted: () => scienceMgr.getCompletedIds(),
+      // Money replaced by RP
       getResearchPoints: () => research.system.points,
       getReceivedPackets: () => manager.getReceivedPackets(),
       // Store helpers
       getAvailableIds: () => {
-        try { return store.listAvailable(missionMgr.getCompletedMissionIds(), research.system.unlockedTechs).map(p => p.id); } catch { return []; }
+        try { return store.listAvailable(scienceMgr.getCompletedIds(), research.system.unlockedTechs).map(p => p.id); } catch { return []; }
       },
       purchasePart: (partId: string) => {
         try {
           const techs = research.system.unlockedTechs;
-          const available = store.listAvailable(missionMgr.getCompletedMissionIds(), techs);
+          const available = store.listAvailable(scienceMgr.getCompletedIds(), techs);
           const part: any = available.find(p => p.id === partId);
           if (!part) return { ok: false, reason: "locked" };
-          if (money < part.price) return { ok: false, reason: "insufficient", price: part.price, balance: money };
-          money -= part.price;
-          return { ok: true, price: part.price, newBalance: money, part: { id: part.id, name: part.name, category: part.category } };
+          // Money check removed
+          return { ok: true, part: { id: part.id, name: part.name, category: part.category } };
         } catch (e: any) {
           return { ok: false, reason: "error", message: e?.message ?? String(e) };
         }
@@ -169,6 +154,17 @@ export function initAppLogic(): void {
 
   // 8) Start always-running simulation and publish initial telemetry
   try { manager.start(); } catch { }
+
+  manager.onPostTick(() => {
+    const packets = manager.getReceivedPackets();
+    if (packets.length > 0) {
+      while (packets.length > 0) {
+        const p = packets.shift();
+        if (p) commsSvc.receivePacket(p);
+      }
+    }
+  });
+
   try { manager.publishTelemetry(); } catch { }
 }
 

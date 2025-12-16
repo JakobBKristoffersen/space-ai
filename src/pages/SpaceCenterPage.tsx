@@ -10,19 +10,7 @@ interface Props {
 
 export default function SpaceCenterPage({ onNavigate }: Props) {
     const { services } = useAppCore();
-    const [money, setMoney] = useState(0);
     const [updater, setUpdater] = useState(0); // force refresh
-
-    // Auto-update money
-    useEffect(() => {
-        const update = () => {
-            const m = (window as any).__services?.getMoney?.();
-            if (m !== undefined) setMoney(m);
-        };
-        update();
-        const t = setInterval(update, 1000);
-        return () => clearInterval(t);
-    }, [updater]);
 
     const [selectedFacility, setSelectedFacility] = useState<{ id: string, name: string, type?: FacilityType } | null>(null);
 
@@ -37,36 +25,27 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
     }
 
     const handleUpgrade = (type: FacilityType) => {
-        const level = upgrades.getLevel(type);
-        const cost = upgrades.getUpgradeCost(type, level);
-        if (cost && money >= cost) {
-            // Deduct money
-            const svcs: any = (window as any).__services;
-            if (svcs?.setMoney) svcs.setMoney(money - cost);
-
-            // Upgrade
-            upgrades.upgrade(type);
-            setUpdater(prev => prev + 1); // trigger re-render
-            setMoney(money - cost);
-        }
+        // Upgrade (Free for now)
+        upgrades.upgrade(type);
+        setUpdater(prev => prev + 1); // trigger re-render
     };
 
     const getFacilityInfo = (type: FacilityType) => {
         const level = upgrades.getLevel(type);
-        const nextCost = upgrades.getUpgradeCost(type, level);
         let desc = `Level ${level}`;
         if (type === "launchPad") desc = `Lvl ${level} (Max ${upgrades.getMaxLaunchMass(level) / 1000}t)`;
         if (type === "trackingStation") desc = `Lvl ${level} (Max ${upgrades.getMaxActiveRockets(level)} Missions)`;
         if (type === "vab") desc = `Lvl ${level} (T${level} Templates)`;
 
-        return { level, nextCost, desc };
+        return { level, desc };
     };
 
     const cards = [
         { id: "world_scene", title: "Launch Control", icon: FaSatelliteDish, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
+        { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500" },
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400", type: "vab" },
         { id: "facility_pad", title: "Launch Pad", icon: FaArrowUp, desc: "Manage launch capabilities.", color: "red.400", type: "launchPad" },
-        { id: "missions", title: "Mission Control", icon: FaFlag, desc: "Accept contracts.", color: "orange.400", type: "missionControl" },
+        { id: "missions", title: "Science Achievements", icon: FaFlag, desc: "View research goals.", color: "orange.400", type: "missionControl" },
         { id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" },
         { id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400" }, // No upgrade yet
     ];
@@ -75,9 +54,6 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
         <Flex direction="column" h="full" p={8} align="center" justify="center" bg="gray.900">
             <HStack w="full" maxW="1200px" justify="space-between" mb={8}>
                 <Heading size="2xl" color="white" textShadow="0 0 10px rgba(255,255,255,0.3)">Space Center Hub</Heading>
-                <Badge size="lg" colorPalette="green" variant="solid" fontSize="lg">
-                    <Icon as={FaCoins} mr={2} /> $ {money.toLocaleString()}
-                </Badge>
             </HStack>
 
             <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={6} maxW="1200px" w="full">
@@ -173,10 +149,9 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
                                             <Box p={4} borderWidth="1px" borderColor="green.600" borderRadius="md" bg="green.900/20">
                                                 <Text fontWeight="bold" color="green.300" mb={1}>NEXT UPGRADE</Text>
                                                 <Text mb={2}>{nextDesc}</Text>
-                                                <Button w="full" colorScheme="green" onClick={() => handleUpgrade(type)} disabled={money < cost}>
-                                                    Upgrade for ${cost.toLocaleString()}
+                                                <Button w="full" colorScheme="green" onClick={() => handleUpgrade(type)}>
+                                                    Upgrade (Free)
                                                 </Button>
-                                                {money < cost && <Text fontSize="xs" color="red.400" mt={1}>Insufficient Funds</Text>}
                                             </Box>
                                         ) : (
                                             <Text color="yellow.400" fontStyle="italic">This facility is at maximum level.</Text>

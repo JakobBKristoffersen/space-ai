@@ -9,6 +9,7 @@ import MissionsPage from "./pages/MissionsPage";
 import ResearchPage from "./pages/ResearchPage";
 import BuildPage from "./pages/BuildPage";
 import SpaceCenterPage from "./pages/SpaceCenterPage";
+import { CommsCenterPage } from "./pages/CommsCenterPage";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -54,14 +55,12 @@ export default function App() {
   // View state
   const [currentView, setCurrentView] = useState<string>("space_center");
 
-  // Money & RP state for header
-  const [money, setMoney] = useState<number>(0);
+  // RP state for header
   const [rp, setRp] = useState<number>(0);
   useEffect(() => {
     const t = setInterval(() => {
       try {
         const svcs: any = (window as any).__services;
-        if (svcs?.getMoney) setMoney(Number(svcs.getMoney()) || 0);
         if (svcs?.getResearchPoints) setRp(Number(svcs.getResearchPoints()) || 0);
       } catch { }
     }, 500);
@@ -102,7 +101,6 @@ export default function App() {
             <Text fontFamily="mono" fontSize="sm">{clock}</Text>
             <HStack gap={4}>
               <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
-              <Text fontFamily="mono" color="green.300">$ {money.toLocaleString()}</Text>
             </HStack>
           </HStack>
 
@@ -118,6 +116,7 @@ export default function App() {
           </Box>
 
           {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}
+          {currentView === 'comms' && <CommsCenterPage onNavigate={setCurrentView} />}
           {currentView === 'build' && <BuildPage onNavigate={setCurrentView} />}
           {currentView === 'missions' && <MissionsPage onNavigate={setCurrentView} />}
           {currentView === 'research' && <ResearchPage onNavigate={setCurrentView} />}

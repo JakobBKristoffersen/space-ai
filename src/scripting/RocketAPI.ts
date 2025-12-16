@@ -319,38 +319,86 @@ class RocketCommsAPI {
 
   get state(): { connected: boolean; signal: number } {
     this.api.charge(2);
-    // Requires network tier?
-    // Using existing logic:
-    const installed = this.api.rocket.cpu ? getCPUTier(this.api.rocket.cpu.id) : CPUTier.BASIC;
-    if (installed < CPUTier.NETWORK) return { connected: false, signal: 0 };
-
+    // Delegate to CommSystem state on rocket
     const s = this.api.rocket.commState;
     return { connected: !!s?.connected, signal: s?.signalStrength ?? 0 };
   }
 
-  send(type: string, sizeKb: number, data: any): void {
+  /**
+   * Send a text message to base.
+   * Cost: 8 bytes per character.
+   */
+  transmitMessage(content: string): void {
+    const bytes = content.length * 8;
+    const sizeKb = Math.max(0.01, bytes / 1024);
+
+    // Allow queuing even if disconnected; simulation handles the queue
     this.api.charge(10);
     this.api.rocket.packetQueue.push({
       id: Math.random().toString(36).slice(2),
-      type: type as any,
-      sizeKb,
+      type: "message",
+      sizeKb: sizeKb,
       progressKb: 0,
       sourceId: this.api.rocket.id,
       targetId: 'base',
-      data
+      data: content
     });
-    this.api.log(`[Comms] Queued packet ${type}`);
+    this.api.log(`[Comms] Queued message "${content.substring(0, 20)}..." (${sizeKb.toFixed(3)} KB)`);
   }
 
-  deployPayload(payloadId: string): string | null {
-    this.api.charge(50);
-    const newId = this.api.rocket.deployPayload(payloadId);
-    if (newId) {
-      this.api.log(`[System] Deployed payload: ${newId}`);
-    } else {
-      this.api.log(`[System] Failed to deploy payload: ${payloadId} not found`);
+  transmitData(key: string, value: number | string | boolean): void {
+    if (typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
+      throw new Error("transmitData: Value must be a string, number, or boolean.");
     }
-    return newId;
+
+    let bytes = 0;
+    // Key cost (string)
+    bytes += key.length * 8;
+
+    // Value cost
+    if (typeof value === 'string') {
+      bytes += value.length * 8;
+    } else if (typeof value === 'number') {
+      bytes += 16;
+    } else if (typeof value === 'boolean') {
+      bytes += 1;
+    }
+
+    const sizeKb = Math.max(0.01, bytes / 1024);
+
+    this.api.charge(5);
+    this.api.rocket.packetQueue.push({
+      id: Math.random().toString(36).slice(2),
+      type: "kv_update",
+      sizeKb: sizeKb,
+      progressKb: 0,
+      sourceId: this.api.rocket.id,
+      targetId: 'base',
+      data: { key, value }
+    });
+    this.api.log(`[Comms] Transmitting data: ${key}=${value} (${sizeKb.toFixed(3)} KB)`);
+  }
+
+  transmitScience(experimentId: string): void {
+    // Find experiment part
+    const part = this.api.rocket.science.find(p => p.id === experimentId);
+    if (!part) throw new Error(`Comms.transmitScience: Experiment '${experimentId}' not found on rocket`);
+
+    // Collect data
+    const data = (part as any).collect ? (part as any).collect(this.api.telemetry.altitude) : null;
+
+    if (!data) throw new Error(`Comms.transmitScience: Failed to collect data from '${experimentId}'`);
+
+    this.api.charge(20);
+    this.api.rocket.packetQueue.push({
+      id: Math.random().toString(36).slice(2),
+      type: "science",
+      sizeKb: data.dataSizeKb || 10,
+      progressKb: 0,
+      sourceId: this.api.rocket.id,
+      targetId: 'base',
+      data: data
+    });
+    this.api.log(`[Comms] Queued science data: ${data.description}`);
   }
 }
-

@@ -93,9 +93,23 @@ export default function MissionsPage({ onNavigate }: Props) {
 
     const tick = () => {
       try {
-        const data = (svc?.getMissions ? (svc.getMissions() as MissionRow[]) : []);
-        // Sanitize progress to be finite [0,1] to avoid NaN downstream
-        const safe = (Array.isArray(data) ? data : []).map((m) => ({
+        // Updated to use ScienceManager achievements
+        const raw = (svc?.getAchievements ? (svc.getAchievements() as any[]) : []);
+
+        // Map ScienceAchievement to MissionRow
+        // ScienceAchievement: { id, name, description, isCompleted, rewardRp }
+        const data: MissionRow[] = raw.map(a => ({
+          id: a.id,
+          name: a.name,
+          description: a.description,
+          reward: { money: 0, rp: a.rewardRp },
+          tier: 1, // Default tier
+          completed: a.isCompleted,
+          progress: a.isCompleted ? 1 : 0 // No partial progress for science achievements yet
+        }));
+
+        // Sanitize progress
+        const safe = data.map((m) => ({
           ...m,
           progress: (Number.isFinite(m.progress) ? Math.max(0, Math.min(1, m.progress)) : 0),
         }));

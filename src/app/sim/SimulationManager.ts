@@ -97,20 +97,22 @@ export class SimulationManager {
 
     // Internal tick wiring: run scripts, combine command queues, then advance env
     this.loop.onTick((dt, i) => {
-      const scriptQueue = this.runner.runTick(dt, this.opts.defaultScriptRunnerOpts);
+      // Determine gating for current active rocket
+      let isLaunched = false;
+      try {
+        const ai = (this.env as any).getActiveRocketIndex?.() ?? 0;
+        isLaunched = !!this.launchedByIndex[ai];
+      } catch { isLaunched = false; }
+
+      // Only run script if launched
+      const scriptQueue = isLaunched ? this.runner.runTick(dt, this.opts.defaultScriptRunnerOpts) : { drain: () => [] };
+
       const combined: RocketCommandQueue = {
         drain: () => {
           const cmds = [...scriptQueue.drain(), ...this.manualQueue.drain()];
-          // Determine gating for current active rocket
-          let allowEngineOn = true;
-          try {
-            const ai = (this.env as any).getActiveRocketIndex?.() ?? 0;
-            // Guard against out of bounds if empty
-            if (ai < 0 || ai >= this.launchedByIndex.length) allowEngineOn = false;
-            else allowEngineOn = !!this.launchedByIndex[ai];
-          } catch { allowEngineOn = true; }
-          if (!allowEngineOn) {
-            // Block engine-on until takeOff() is called for the active rocket; allow engine-off and turning.
+
+          if (!isLaunched) {
+            // Block engine-on until takeOff() is called logic preserved just in case manual commands try to fire
             return cmds.map(c => {
               if (c.type === "setEnginePower") {
                 return { type: "setEnginePower", value: 0 as 0 } as any;

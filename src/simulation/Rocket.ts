@@ -102,6 +102,10 @@ export interface RocketSnapshot {
   totalDragCoefficient?: number;
   /** Name of the terrain currently below the rocket. */
   currentTerrain?: string;
+  /** Number of packets waiting in the comms queue. */
+  packetQueueLength?: number;
+  /** Total size of waiting packets in KB. */
+  packetQueueSizeKb?: number;
 }
 
 export type RocketCommand =
@@ -193,7 +197,8 @@ export interface AntennaPart {
   readonly name: string;
   readonly massKg: number;
   readonly rangeMeters?: number;
-  readonly antennaPower?: number;
+  readonly bandwidth?: number;
+  readonly power?: number;
   readonly exposes?: string[];
 }
 
@@ -275,10 +280,22 @@ export class Rocket {
   // Runtime
   spawnQueue: Rocket[] = [];
   packetQueue: { id: string; type: string; sizeKb: number; progressKb: number; sourceId: string; targetId: string; data: any }[] = [];
-  commState: { connected: boolean; signalStrength: number } = { connected: false, signalStrength: 0 };
 
   desiredAngularVelocityRadPerS = 0;
   private _lastFuelBurnKgPerS = 0;
+
+  // Physics
+  massKg = 0;
+
+  // Comms State (fed by CommSystem)
+  commState?: {
+    connected: boolean;
+    hops: number;
+    path: string[];
+    latencyMs: number;
+    signalStrength: number;
+    distanceMeters?: number;
+  };
 
   // Snapshot internal buffers
   private _altitudeForSnapshot = 0;
@@ -550,13 +567,20 @@ export class Rocket {
       rwOmegaRadPerS: rwOmega,
       rwMaxOmegaRadPerS: rwMax,
       rwDesiredOmegaRadPerS: this.getDesiredAngularVelocityRadPerS(),
-      commsInRange: this._commsInRange,
-      commsDistanceMeters: this._commsDistanceM,
-      commsBaseRangeMeters: this._commsBaseRangeM,
+      commsInRange: this.commState?.connected ?? this._commsInRange,
+      commsDistanceMeters: this.commState?.distanceMeters ?? (this._commsDistanceM || 0),
+      // We should probably rely on commState if present.
+
+      // Re-mapping old fields for compatibility (or just use new ones if UI adapts)
+      // For now, let's just make 'commsInRange' accurate.
+      commsBaseRangeMeters: this._commsBaseRangeM, // these are static configs anyway
       commsRocketRangeMeters: this._commsRocketRangeM,
+
       commsBytesSentPerS: this._commsSentPerS,
       commsBytesRecvPerS: this._commsRecvPerS,
       lastPacketSentType: (this as any)._lastPacketSentType,
+      packetQueueLength: this.packetQueue.length,
+      packetQueueSizeKb: this.packetQueue.reduce((acc, p) => acc + (p.sizeKb - p.progressKb), 0),
       exposedKeys: Array.from(new Set([
         ...(this.sensors.flatMap(s => s.exposes || [])),
         ...(this.engines.flatMap(e => e.exposes || [])),

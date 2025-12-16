@@ -50,24 +50,11 @@ export class UpgradesService {
   // --- Game Logic / Stats ---
 
   getUpgradeCost(type: FacilityType, currentLevel: number): number | null {
-    // Costs to go to next level (current -> current+1)
-    // Level 1 is default (free). Cost is for Level 2, Level 3.
-    switch (type) {
-      case "launchPad":
-        if (currentLevel === 1) return 1000;
-        if (currentLevel === 2) return 5000;
-        if (currentLevel === 3) return 25000;
-        break;
-      case "vab":
-        if (currentLevel === 1) return 2000;
-        if (currentLevel === 2) return 10000;
-        break;
-      case "trackingStation":
-        if (currentLevel === 1) return 1000; // unlocks 3 slots
-        if (currentLevel === 2) return 5000; // unlocks unlimited
-        break;
-    }
-    return null; // Max level reached
+    // Costs removed for Science update (free upgrades for now, or could switch to RP later)
+    // Return 0 to indicate free.
+    const maxLevels: Record<string, number> = { launchPad: 4, vab: 3, trackingStation: 3 };
+    if (currentLevel >= (maxLevels[type] || 1)) return null;
+    return 0;
   }
 
   getUpgradeDescription(type: FacilityType, nextLevel: number): string {

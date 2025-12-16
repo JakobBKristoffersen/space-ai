@@ -34,6 +34,7 @@ export class LayoutService {
       templateId: "template.basic",
       slots: {
         "slot.nose.cpu": "cpu.basic",
+        "slot.nose.antenna": "antenna.small",
         "slot.body.tank": "fueltank.small",
         "slot.body.battery": "battery.small",
         "slot.tail.engine": "engine.small"
@@ -183,6 +184,11 @@ export class LayoutService {
     if (r.reactionWheels.length === 0) r.reactionWheels.push(new SmallReactionWheels());
     if (r.sensors.length === 0) r.sensors.push(new BasicNavigationSensor());
     if (!r.cpu) r.cpu = new BasicProcessingUnit();
+
+    // Hotfix: Ensure Basic Rocket always has an antenna (fixes legacy layouts missing it)
+    if (templateId === "template.basic" && r.antennas.length === 0) {
+      r.antennas.push(new SmallAntenna());
+    }
 
     return r;
   }

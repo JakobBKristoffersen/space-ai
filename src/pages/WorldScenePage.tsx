@@ -21,7 +21,7 @@ import {
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { estimateDeltaV, mag2 } from "../app/utils/rocketPerf";
-import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind } from "react-icons/fa";
+import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish } from "react-icons/fa";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 
 // --- Helpers ---
@@ -179,7 +179,39 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                 </Card.Body>
                             </Card.Root>
 
-                            {/* Systems */}
+                            {/* COMMUNICATIONS */}
+                            <Card.Root size="sm" variant="subtle" bg="gray.800">
+                                <Card.Header pb={1}><HStack justify="space-between"><Heading size="xs" color="gray.400">COMMUNICATIONS</Heading><Icon as={FaSatelliteDish} size="xs" /></HStack></Card.Header>
+                                <Card.Body>
+                                    <VStack align="stretch" gap={2}>
+                                        <HStack justify="space-between">
+                                            <Text fontSize="xs">Status</Text>
+                                            {rocketSnap?.commsInRange ?
+                                                <Box px={1.5} py={0.5} bg="green.900" color="green.300" borderRadius="sm" fontSize="xs" fontWeight="bold">CONNECTED</Box> :
+                                                <Box px={1.5} py={0.5} bg="red.900" color="red.300" borderRadius="sm" fontSize="xs" fontWeight="bold">NO SIGNAL</Box>
+                                            }
+                                        </HStack>
+                                        <Grid templateColumns="1fr 1fr" gap={2}>
+                                            <StatBox label="DISTANCE" value={fmt((rocketSnap?.commsDistanceMeters ?? 0) / 1000, 1)} unit="km" />
+                                            <Box bg="gray.950" p={2} borderRadius="md" borderWidth="1px" borderColor="gray.800">
+                                                <Text fontSize="xx-small" color="gray.500" fontWeight="bold">QUEUE</Text>
+                                                <HStack align="baseline" gap={1}>
+                                                    <Text fontSize="md" fontWeight="mono" color="white">{rocketSnap?.packetQueueLength ?? 0}</Text>
+                                                    <Text fontSize="xs" color="gray.400">/ {fmt(rocketSnap?.packetQueueSizeKb ?? 0, 2)} KB</Text>
+                                                </HStack>
+                                            </Box>
+                                        </Grid>
+                                        {(rocketSnap?.commsBytesSentPerS ?? 0) > 0 && (
+                                            <HStack justify="space-between">
+                                                <Text fontSize="xs">Upload</Text>
+                                                <Text fontSize="xs" fontWeight="mono" color="green.300">{fmt((rocketSnap?.commsBytesSentPerS ?? 0) / 1024, 2)} KB/s</Text>
+                                            </HStack>
+                                        )}
+                                    </VStack>
+                                </Card.Body>
+                            </Card.Root>
+
+                            {/* SYSTEMS */}
                             <Card.Root size="sm" variant="subtle" bg="gray.800">
                                 <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="gray.400">SYSTEMS</Text><Icon as={FaTachometerAlt} size="xs" /></HStack></Card.Header>
                                 <Card.Body>
@@ -195,7 +227,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                             <Progress.Root value={(temp / maxTemp) * 100} max={100} size="xs" colorPalette="orange">
                                                 <Progress.Track><Progress.Range /></Progress.Track>
                                             </Progress.Root>
-                                            <HStack justify="end" mt={1} color="gray.500"><Icon as={FaThermometerHalf} size="2xs" /><Text fontSize="xx-small">GLOBAL</Text></HStack>
+                                            <HStack justify="end" mt={1} color="gray.500"><Icon as={FaThermometerHalf} boxSize={3} /><Text fontSize="xx-small">GLOBAL</Text></HStack>
                                         </Box>
                                     </VStack>
                                 </Card.Body>
