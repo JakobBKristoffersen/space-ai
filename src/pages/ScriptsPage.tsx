@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Flex,
   HStack,
@@ -13,7 +13,6 @@ import {
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { useColorModeValue } from "@/components/ui/color-mode";
-import ScriptEditor, { ScriptEditorRef } from "../ui/ScriptEditor";
 import MonacoScriptEditor, { MonacoScriptEditorRef } from "../ui/MonacoScriptEditor";
 import { AssignButton } from "./scripts/AssignButton";
 import { ScriptList, FileItem } from "./scripts/ScriptList";
@@ -25,8 +24,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
   const scriptLib = services.scripts as any;
   const activeRocket = manager?.getRocket();
 
-  // Refs for both editors
-  const legacyEditorRef = useRef<any>(null);
+  // Ref for editor
   const monacoEditorRef = useRef<MonacoScriptEditorRef>(null);
 
   const [files, setFiles] = useState<FileItem[]>([]);
@@ -34,10 +32,6 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
   const [currentName, setCurrentName] = useState<string>("");
   const [code, setCode] = useState<string>("");
   const [telemetryKeys, setTelemetryKeys] = useState<string[]>([]);
-
-  // New State
-  const [useMonaco, setUseMonaco] = useState<boolean>(true);
-  const [language, setLanguage] = useState<"typescript" | "python">("typescript");
 
   const refreshLib = () => {
     if (!scriptLib) return [];
@@ -63,19 +57,12 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
     return () => window.removeEventListener("telemetry-keys" as any, onKeys);
   }, []);
 
-  const detectLanguage = (name: string): "typescript" | "python" => {
-    if (name.endsWith(".py")) return "python";
-    return "typescript";
-  };
-
   const selectFile = (id: string, list = files) => {
     const item = list.find(f => f.id === id);
     if (!item) return;
     setCurrentId(id);
     setCurrentName(item.name);
     setCode(item.code);
-    const lang = detectLanguage(item.name);
-    setLanguage(lang);
 
     try {
       sessionStorage.setItem("session:user-script", item.code);
@@ -83,18 +70,11 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
     } catch { }
   };
 
-  const createNew = (lang: "typescript" | "python") => {
+  const createNew = () => {
     if (!scriptLib) return;
-    const item = TemplateService.createNew(scriptLib, lang);
+    const item = TemplateService.createNew(scriptLib);
     const next = refreshLib();
     selectFile(item.id, next);
-  };
-
-  const createMultiSeed = () => {
-    if (!scriptLib) return;
-    const item = TemplateService.createMultiSeed(scriptLib);
-    const next = refreshLib();
-    if (item) selectFile(item.id, next);
   };
 
   const deleteCurrent = () => {
@@ -123,21 +103,16 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
 
   const save = async () => {
     if (!scriptLib) return;
-    const name = currentName?.trim() || (language === "python" ? "Untitled.py" : "Untitled.ts");
+    const name = currentName?.trim() || "Untitled.ts";
 
     let compiled: string | undefined = undefined;
     try {
-      if (useMonaco && monacoEditorRef.current) {
+      if (monacoEditorRef.current) {
         compiled = await monacoEditorRef.current.compile();
-      } else if (!useMonaco && legacyEditorRef.current) {
-        compiled = await legacyEditorRef.current.compile();
       }
     } catch (e) {
       console.warn("Compile error during save", e);
     }
-
-    // For Python, or if compile returned nothing/failed (fallback to source? No, Sandbox fails on TS source)
-    if (language === "python" && !compiled) compiled = code;
 
     scriptLib.upsertByName(name, code, compiled);
     if (name !== currentName) setCurrentName(name);
@@ -148,12 +123,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
   const check = async () => {
     try {
       let output = "";
-      if (useMonaco) {
-        output = await monacoEditorRef.current?.compile() || "";
-      } else {
-        if (language === "python") output = code;
-        else output = await legacyEditorRef.current?.compile() || code;
-      }
+      output = await monacoEditorRef.current?.compile() || "";
 
       if (output) alert("Compilation/Analysis OK!\nLength: " + output.length);
       else alert("No output.");
@@ -185,11 +155,8 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
         <ScriptList
           files={files}
           currentId={currentId}
-          useMonaco={useMonaco}
-          setUseMonaco={setUseMonaco}
           onSelect={selectFile}
           onCreateNew={createNew}
-          onCreateMultiSeed={createMultiSeed}
           onDelete={deleteCurrent}
           onDuplicate={duplicateCurrent}
         />
@@ -205,10 +172,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
                   activeRocket={activeRocket}
                   code={code}
                   name={currentName}
-                  language={language}
-                  useMonaco={useMonaco}
                   monacoRef={monacoEditorRef}
-                  legacyRef={legacyEditorRef}
                   onSuccess={handleAssignSuccess}
                 />
                 <Button size="sm" onClick={save} variant="ghost">Save</Button>
@@ -217,34 +181,19 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
             </HStack>
           </Card.Header>
           <Card.Body p={0} flex={1} minH={0} >
-            {useMonaco ? (
-              <MonacoScriptEditor
-                ref={monacoEditorRef}
-                initialValue={code}
-                files={files}
-                currentFileName={currentName}
-                language={language}
-                telemetryKeys={telemetryKeys}
-                onChange={(v) => {
-                  setCode(v);
-                  try { sessionStorage.setItem("session:user-script", v); } catch { }
-                }}
-                onCompile={save}
-                theme={editorTheme}
-              />
-            ) : (
-              <ScriptEditor
-                ref={legacyEditorRef}
-                value={code}
-                telemetryKeys={telemetryKeys}
-                onChange={(v) => {
-                  setCode(v);
-                  try { sessionStorage.setItem("session:user-script", v); } catch { }
-                }}
-                onCompile={save}
-                theme={editorTheme}
-              />
-            )}
+            <MonacoScriptEditor
+              ref={monacoEditorRef}
+              initialValue={code}
+              files={files}
+              currentFileName={currentName}
+              telemetryKeys={telemetryKeys}
+              onChange={(v) => {
+                setCode(v);
+                try { sessionStorage.setItem("session:user-script", v); } catch { }
+              }}
+              onCompile={save}
+              theme={editorTheme}
+            />
           </Card.Body>
         </Card.Root>
       </SimpleGrid>

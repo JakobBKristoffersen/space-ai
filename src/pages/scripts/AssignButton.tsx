@@ -10,10 +10,7 @@ interface AssignButtonProps {
     activeRocket: any;
     code: string;
     name: string;
-    language: 'typescript' | 'python';
-    useMonaco: boolean;
     monacoRef: React.RefObject<MonacoScriptEditorRef>;
-    legacyRef: React.RefObject<any>;
     onSuccess?: () => void;
 }
 
@@ -21,10 +18,7 @@ export function AssignButton({
     activeRocket,
     code,
     name,
-    language,
-    useMonaco,
     monacoRef,
-    legacyRef,
     onSuccess
 }: AssignButtonProps) {
     const { manager, services } = useAppCore();
@@ -36,13 +30,11 @@ export function AssignButton({
         // Compile first!
         let compiledJs = "";
         try {
-            if (useMonaco && monacoRef.current) {
+            if (monacoRef.current) {
                 compiledJs = await monacoRef.current.compile();
-            } else if (!useMonaco && legacyRef.current?.compile) {
-                // Try to use legacy compile if available
-                compiledJs = await legacyRef.current.compile();
             } else {
-                // Fallback: raw code (Python or if legacy fails)
+                // Fallback (should not happen if mapped correctly)
+                console.warn("No editor ref");
                 compiledJs = code;
             }
         } catch (e: any) {
@@ -50,7 +42,7 @@ export function AssignButton({
             return;
         }
 
-        if (!compiledJs && language === 'typescript') {
+        if (!compiledJs) {
             alert("Compiler returned empty output.");
             return;
         }
@@ -62,20 +54,19 @@ export function AssignButton({
         }
 
         // Validation
-        if (language === 'typescript') {
-            const tier = getCPUTier(activeRocket.cpu.id);
-            const val = ScriptAnalysis.validateUsage(compiledJs, tier);
-            if (!val.ok) {
-                if (!confirm(`Validation Warning:\n${val.error}\n\nAssign anyway?`)) {
-                    return;
-                }
+        // Validation
+        const tier = getCPUTier(activeRocket.cpu.id);
+        const val = ScriptAnalysis.validateUsage(compiledJs, tier);
+        if (!val.ok) {
+            if (!confirm(`Validation Warning:\n${val.error}\n\nAssign anyway?`)) {
+                return;
             }
         }
 
         const r = manager?.getRunner();
         if (r) {
             try {
-                await r.installScriptToSlot(compiledJs, { timeLimitMs: 6 }, 0, name, language);
+                await r.installScriptToSlot(compiledJs, { timeLimitMs: 6 }, 0, name, "typescript");
                 r.setSlotEnabled(0, true);
 
                 const scripts = services.scripts as any;

@@ -8,11 +8,8 @@ export interface FileItem { id: string; name: string; updatedAt: number; code: s
 interface ScriptListProps {
     files: FileItem[];
     currentId: string | null;
-    useMonaco: boolean;
-    setUseMonaco: (val: boolean) => void;
     onSelect: (id: string) => void;
-    onCreateNew: (lang: "typescript" | "python") => void;
-    onCreateMultiSeed: () => void;
+    onCreateNew: () => void;
     onDelete: () => void;
     onDuplicate: () => void;
 }
@@ -20,11 +17,8 @@ interface ScriptListProps {
 export function ScriptList({
     files,
     currentId,
-    useMonaco,
-    setUseMonaco,
     onSelect,
     onCreateNew,
-    onCreateMultiSeed,
     onDelete,
     onDuplicate
 }: ScriptListProps) {
@@ -41,28 +35,7 @@ export function ScriptList({
                     <HStack justify="space-between">
                         <Heading size="sm">Scripts Directory</Heading>
                         <HStack gap={1}>
-                            <Button size="xs" onClick={() => onCreateNew("typescript")}>+TS</Button>
-                            <Button size="xs" variant="surface" colorPalette="cyan" onClick={onCreateMultiSeed}>Seed Import</Button>
-                            {/* <Button size="xs" onClick={() => onCreateNew("python")}>+Py</Button> */}
-                        </HStack>
-                    </HStack>
-                    <HStack justify="space-between">
-                        <Text fontSize="xs">Editor:</Text>
-                        <HStack gap={2}>
-                            <Button
-                                size="xs"
-                                variant={!useMonaco ? "solid" : "ghost"}
-                                onClick={() => setUseMonaco(false)}
-                            >
-                                Standard
-                            </Button>
-                            <Button
-                                size="xs"
-                                variant={useMonaco ? "solid" : "ghost"}
-                                onClick={() => setUseMonaco(true)}
-                            >
-                                Monaco
-                            </Button>
+                            <Button size="xs" onClick={onCreateNew}>+ New Script</Button>
                         </HStack>
                     </HStack>
                 </VStack>
