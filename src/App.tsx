@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { Box, Flex, HStack, Heading, Tabs, Button, Text, Dialog } from "@chakra-ui/react";
-import { ColorModeButton, useColorModeValue } from "@/components/ui/color-mode";
+import { useColorModeValue } from "@/components/ui/color-mode";
 import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
 import WorldScenePage from "./pages/WorldScenePage";
@@ -108,7 +108,6 @@ export default function App() {
 
           <HStack gap={3}>
             <DebugToolbox />
-            <ColorModeButton />
           </HStack>
         </HStack>
 

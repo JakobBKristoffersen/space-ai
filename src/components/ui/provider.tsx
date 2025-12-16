@@ -10,7 +10,7 @@ import * as React from "react"
 export function Provider({ children, ...props }: React.PropsWithChildren<ColorModeProviderProps>) {
   return (
     <ChakraProvider value={defaultSystem}>
-      <ColorModeProvider {...props}>{children}</ColorModeProvider>
+      <ColorModeProvider {...props} forcedTheme="dark">{children}</ColorModeProvider>
     </ChakraProvider>
   )
 }
