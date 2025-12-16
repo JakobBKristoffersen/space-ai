@@ -97,7 +97,7 @@ export class CelestialScene implements SceneLike {
     drawAtmosphereGlow(ctx, snap, pxPerMeter, toScreen);
 
     // Draw Atmosphere Limit Line
-    if (primary && primary.atmosphereScaleHeightMeters > 0 && (snap as any).atmosphereCutoffAltitudeMeters) {
+    if (primary && (primary.atmosphereScaleHeightMeters ?? 0) > 0 && (snap as any).atmosphereCutoffAltitudeMeters) {
       const center = toScreen(primary.position.x, primary.position.y);
       const Rcutoff = (primary.radiusMeters + Number((snap as any).atmosphereCutoffAltitudeMeters)) * pxPerMeter;
       ctx.strokeStyle = "rgba(135, 206, 235, 0.3)";
@@ -113,10 +113,41 @@ export class CelestialScene implements SceneLike {
     {
       const center = toScreen(primary.position.x, primary.position.y);
       const R = primary.radiusMeters * pxPerMeter;
-      ctx.fillStyle = primary.color || "#2e5d2e";
-      ctx.beginPath();
-      ctx.arc(center.x, center.y, R, 0, Math.PI * 2);
-      ctx.fill();
+
+      if ((primary as any).terrain) {
+        // Draw segments
+        const terrain = (primary as any).terrain as { type: string; color: string; startRad: number; endRad: number }[];
+        for (const seg of terrain) {
+          ctx.fillStyle = seg.color;
+          ctx.beginPath();
+          ctx.moveTo(center.x, center.y);
+          // Arc angles are clockwise from +X. 
+          // Our terrain definition is 0..2PI.
+          // Canvas arc takes start/end angles.
+          // Note: Canvas Y is down, but our world Y is up. The toScreen transform handles position, 
+          // but for drawing arcs we should be careful about orientation or just draw standard and let it be rotated.
+          // Actually, we are just drawing a circle at center (x,y). 
+          // The angles in standard Math.atan2 are counter-clockwise from +X in standard math, 
+          // but Canvas arc is clockwise from +X? No, Canvas arc is clockwise (positive angle).
+          // Math.atan2(y, x) is CCW from +X. 
+          // Wait, standard canvas arc(..., startAngle, endAngle) treats angle as CW from +X on screen?
+          // Actually, usually in computer graphics Y is down, so +angle is CW.
+          // In our world, Y is up, so +angle would be CCW.
+          // The terrain segments are defined 0..2PI. Let's just draw them directly mapping rads.
+          // If they appear flipped, it's just visual.
+          // The terrain segments are defined 0..2PI in World (Y-up, CCW).
+          // Canvas Y is down, so a World Angle 'a' maps to Screen Angle '-a'.
+          // To draw the segment [start, end] (World), we draw [-start, -end] (Screen) Counter-Clockwise.
+          ctx.arc(center.x, center.y, R, -seg.startRad, -seg.endRad, true);
+          ctx.lineTo(center.x, center.y);
+          ctx.fill();
+        }
+      } else {
+        ctx.fillStyle = primary.color || "#2e5d2e";
+        ctx.beginPath();
+        ctx.arc(center.x, center.y, R, 0, Math.PI * 2);
+        ctx.fill();
+      }
 
       // Draw fixed world structures (e.g., Base) anchored on bodies
       if (Array.isArray((snap as any).structures)) {

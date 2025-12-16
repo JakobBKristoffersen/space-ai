@@ -273,6 +273,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                         <StatBox label="TURN RATE" value={fmt((rocketSnap?.angularVelocityRadPerS ?? 0) * 57.3, 1)} unit="°/s" />
                                         <StatBox label="APOAPSIS" value={fmt(rocketSnap?.apAltitude ?? 0)} unit="m" />
                                         <StatBox label="PERIAPSIS" value={fmt(rocketSnap?.peAltitude ?? 0)} unit="m" />
+                                        <StatBox label="TERRAIN" value={rocketSnap?.currentTerrain ?? "-"} unit="" />
                                     </Grid>
                                 </Card.Body>
                             </Card.Root>

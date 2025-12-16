@@ -100,6 +100,8 @@ export interface RocketSnapshot {
   hasParachutes?: boolean;
   /** Estimated total drag coefficient of the vehicle. */
   totalDragCoefficient?: number;
+  /** Name of the terrain currently below the rocket. */
+  currentTerrain?: string;
 }
 
 export type RocketCommand =
@@ -248,6 +250,8 @@ export class Rocket {
     temperature: 0,
   };
 
+  currentTerrain: string | undefined;
+
   // Config/Physics
   dragCoefficient = 0.5;
   referenceArea = 10; // m^2
@@ -314,6 +318,7 @@ export class Rocket {
     this._commsRecvPerS = Number(params.recvPerS);
   }
   setTurnStatsForSnapshot(maxOmega: number): void { this._maxTurnRateForSnapshot = Number(maxOmega); }
+  // setCurrentTerrainForSnapshot removed, using public property this.currentTerrain
 
   // --- Logic ---
 
@@ -516,7 +521,7 @@ export class Rocket {
       soiBodyId: this._soiBodyIdForSnapshot,
       inAtmosphere: this._inAtmosphereForSnapshot,
       maxTurnRateRadPerS: this._maxTurnRateForSnapshot,
-      angularVelocityRadPerS: this.state.angularVelocity,
+      angularVelocityRadPerS: this.getAngularVelocityRadPerS(),
       forces: this._forcesForSnapshot ? {
         thrust: { ...this._forcesForSnapshot.thrust },
         drag: { ...this._forcesForSnapshot.drag },
@@ -568,6 +573,7 @@ export class Rocket {
       parachuteDeployed,
       hasParachutes: this.parachutes.length > 0,
       totalDragCoefficient: cd,
+      currentTerrain: this.currentTerrain,
     };
   }
 }

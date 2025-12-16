@@ -16,6 +16,13 @@ export interface PlanetModel {
   surfaceGravity: number; // m/s^2 at sea level
 }
 
+export interface TerrainSegment {
+  type: string;
+  color: string;
+  startRad: number; // 0 to 2PI
+  endRad: number;
+}
+
 // Celestial bodies model (toy-friendly). Uses surfaceGravity instead of mass to avoid G.
 export interface CelestialBodyDef {
   id: string;
@@ -32,6 +39,7 @@ export interface CelestialBodyDef {
     angularSpeedRadPerS: number;
     phaseRad?: number;
   };
+  terrain?: TerrainSegment[];
 }
 
 export interface CelestialSystemDef {
@@ -105,6 +113,7 @@ export interface BodyState {
   position: { x: number; y: number };
   atmosphereScaleHeightMeters?: number;
   atmosphereColor?: string;
+  terrain?: TerrainSegment[];
 }
 
 export interface EnvironmentSnapshot {
@@ -176,6 +185,7 @@ export class Environment {
       position: { x: 0, y: 0 },
       atmosphereScaleHeightMeters: b.atmosphereScaleHeightMeters,
       atmosphereColor: b.atmosphereColor,
+      terrain: b.terrain,
     }));
     // Set initial positions at t=0
     for (const bs of initialBodies) {
@@ -586,6 +596,20 @@ export class Environment {
     rocket.state.velocity.y += ay * dt;
     rocket.state.position.x += rocket.state.velocity.x * dt;
     rocket.state.position.y += rocket.state.velocity.y * dt;
+
+    // 7.5) Determine Terrain
+    const primaryBodyForTerrain = this.bodies.find(b => b.id === this.system.primaryId);
+    if (primaryBodyForTerrain && primaryBodyForTerrain.terrain) {
+      // Angle from center of primary to rocket
+      const dx = rocket.state.position.x - primaryBodyForTerrain.position.x;
+      const dy = rocket.state.position.y - primaryBodyForTerrain.position.y;
+      let angle = Math.atan2(dy, dx); // -PI to PI
+      if (angle < 0) angle += Math.PI * 2; // 0 to 2PI
+
+      const segment = primaryBodyForTerrain.terrain.find(t => angle >= t.startRad && angle < t.endRad);
+      // console.log("Terrain Debug:", { dx, dy, angle, segmentType: segment?.type, terrainCount: primaryBodyForTerrain.terrain.length });
+      rocket.currentTerrain = segment?.type;
+    }
 
     // 8) Heating.
     const heatRate = this.heatingModel.heatingRate(rho, speed);
