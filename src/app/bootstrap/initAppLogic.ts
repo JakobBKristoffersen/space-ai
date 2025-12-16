@@ -36,12 +36,37 @@ export function initAppLogic(): void {
   const pending = new PendingUpgradesService();
   const research = new ResearchService();
 
-  // 3) Build rocket from stored layout (index 0); if absent, start empty.
+  // 3) Seed example script (moved early so we can assign it to default rocket)
+  // 3) Ensure Start.ts exists (Upsert to guarantee it's there even if library wasn't empty)
+  let startScriptId: string | undefined;
+  try {
+    const existing = sessionStorage.getItem(SessionKeys.SCRIPT);
+    const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'export function update(api: any){}');
+    // Force upsert to ensure it exists with this name and we get the real ID
+    const s = scriptLib.upsertByName("Start.ts", seed);
+    startScriptId = s.id;
+  } catch { }
+
+  // 4) Build rocket from stored layout (index 0); if absent, fix it.
   let layout = layoutSvc.loadLayout();
 
-  // 4) Manager (owns Environment/Renderer/Loop)
+  // Create default if missing, OR patch default if it's the basic rocket but missing the script
+  if (!layout || (layout.templateId === "template.basic" && !layout.scriptId)) {
+    if (!layout) {
+      layoutSvc.buildDefaultRocket();
+      layout = layoutSvc.loadLayout();
+    }
+
+    // Assign script if we have one and the layout needs it
+    if (layout && startScriptId) {
+      layout.scriptId = startScriptId;
+      layoutSvc.saveLayout(layout); // Persist the fix to layout storage
+    }
+  }
+
+  // 5) Manager (owns Environment/Renderer/Loop)
   const manager = new SimulationManager({
-    rocket: layout ? layoutSvc.buildRocketFromLayout(layout) : undefined,
+    rocket: layoutSvc.buildRocketFromLayout(layout),
     system: ToySystem,
     ctx,
     layoutSvc,
@@ -51,19 +76,34 @@ export function initAppLogic(): void {
     defaultScriptRunnerOpts: { timeLimitMs: 6 },
   });
 
+  // Ensure the script is actually installed in the runner if we have a scriptId
+  // (SimulationManager might not auto-install on fresh boot unless we tell it)
+  if (layout?.scriptId && startScriptId) {
+    try {
+      const s = scriptLib.getById(layout.scriptId);
+      if (s) {
+        manager.getRunner().installScriptToSlot(s.compiledCode || s.code, { timeLimitMs: 6 }, 0, s.name);
+
+        // Also persist assignment so UI sees it
+        scriptLib.saveAssignments([{ rocketIndex: 0, slot: 0, scriptId: s.id, enabled: true }]);
+      }
+    } catch { }
+  }
+
+
   // Sync initial rocket name if available from stored layout
   if (layout && layout.name) {
     try { manager.setRocketName(0, layout.name); } catch { }
   }
 
-  // 5) Missions + money + store
+  // 6) Missions + money + store
   let missionMgr = new MissionManager(research);
   seedDefaultMissions(missionMgr);
   let money: number = (window as any).__money ?? (typeof BASE_STARTING_MONEY === 'number' ? BASE_STARTING_MONEY : 100);
   const store = new PartStore(DefaultCatalog);
 
   // Debug Service
-  const debugSvc = new DebugService(research, missionMgr, pending, layoutSvc, manager, (v) => { money = v; });
+  const debugSvc = new DebugService(research, missionMgr, pending, layoutSvc, scriptLib, manager, (v) => { money = v; });
 
   // Rewards flow on post-tick
   manager.onPostTick(() => {
@@ -76,13 +116,6 @@ export function initAppLogic(): void {
       }
     } catch { }
   });
-
-  // 6) Seed example script if library empty (read from session first)
-  try {
-    const existing = sessionStorage.getItem(SessionKeys.SCRIPT);
-    const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'function update(api){}');
-    scriptLib.seedIfEmpty(seed, "TakeOff.js");
-  } catch { }
 
   // 7) Expose globals for React pages
   try {

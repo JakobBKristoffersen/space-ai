@@ -6,6 +6,10 @@ import { MissionList } from "../../game/missions/MissionData";
 
 import { SimulationManager } from "../../sim/SimulationManager";
 import { LayoutService, StoredLayout } from "./LayoutService";
+import { ORBIT_MAIN, ORBIT_UTIL } from "../bootstrap/seedScript";
+import { ScriptLibraryService } from "./ScriptLibraryService"; // Needed for types if we use it, but we get scriptLib from where? 
+// DebugService doesn't have scriptLib injected! I need to inject it.
+
 
 /**
  * Service to handle debug cheats and reset logic.
@@ -16,6 +20,7 @@ export class DebugService {
         private missionMgr: MissionManager,
         private pending: PendingUpgradesService,
         private layout: LayoutService, // Injected
+        private scriptLib: ScriptLibraryService, // Injected
         private manager: SimulationManager, // Injected
         private setMoney: (val: number) => void
     ) { }
@@ -39,14 +44,9 @@ export class DebugService {
         const basicLayout: StoredLayout = {
             templateId: "template.basic",
             slots: {
-                "slot.nose.cone": "cone.basic",
                 "slot.nose.cpu": "cpu.basic",
-                "slot.nose.sci": "science.basic",
-                "slot.nose.antenna": "antenna.small",
-                "slot.nose.chute": "parachute.basic",
                 "slot.body.tank": "fueltank.small",
                 "slot.body.battery": "battery.small",
-                "slot.body.fin": "fin.basic",
                 "slot.tail.engine": "engine.small"
             }
         };
@@ -91,5 +91,11 @@ export class DebugService {
         CONFIG.reactionWheels.forEach(id => this.pending.queueUpgrade("reactionWheels", id, rocketIndex));
 
         alert("Rocket Maxed! Reset the rocket in World Scene to apply changes.");
+    }
+
+    cheatLoadOrbitScript() {
+        this.scriptLib.upsertByName("SeedUtils.ts", ORBIT_UTIL);
+        this.scriptLib.upsertByName("SeedMain.ts", ORBIT_MAIN);
+        alert("SeedMain.ts and SeedUtils.ts loaded into library!");
     }
 }

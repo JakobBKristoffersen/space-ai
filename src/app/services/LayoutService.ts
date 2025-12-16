@@ -33,17 +33,13 @@ export class LayoutService {
     const layout: StoredLayout = {
       templateId: "template.basic",
       slots: {
-        "slot.nose.cone": "cone.basic",
         "slot.nose.cpu": "cpu.basic",
-        "slot.nose.sci": "science.basic",
-        "slot.nose.antenna": "antenna.small",
-        "slot.nose.chute": "parachute.basic",
         "slot.body.tank": "fueltank.small",
         "slot.body.battery": "battery.small",
-        "slot.body.fin": "fin.basic",
         "slot.tail.engine": "engine.small"
       }
     };
+    this.saveLayout(layout);
     return this.buildRocketFromLayout(layout);
   }
 
@@ -93,8 +89,20 @@ export class LayoutService {
         }
       }
 
-      if (score > bestScore) {
-        bestScore = score;
+      // Score = number of filled slots
+      // Tie-breaker: prefer template with fewer total slots (simpler) to avoid picking Tier 2 for a basic rocket
+      // or penalize empty slots?
+
+      const filledCount = score;
+      const totalSlots = template.stages.reduce((acc, s) => acc + s.slots.length, 0);
+      const percentFilled = totalSlots > 0 ? filledCount / totalSlots : 0;
+
+      // We prefer high completion percentage.
+      // If I have 4 parts, and Basic has 9 slots (44%), and Tier 2 has 13 slots (30%).
+      // Basic wins.
+
+      if (percentFilled > bestScore) {
+        bestScore = percentFilled;
         bestLayout = { templateId: template.id, slots };
       }
     }

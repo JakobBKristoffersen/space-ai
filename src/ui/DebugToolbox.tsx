@@ -92,6 +92,9 @@ export function DebugToolbox() {
                                     <Button w="full" variant="outline" onClick={() => svcs?.debug?.resetToBasicRocket?.()} leftIcon={<Icon as={FaRocket} />}>
                                         Spawn Basic Rocket (Reset Layout)
                                     </Button>
+                                    <Button w="full" variant="outline" onClick={() => svcs?.debug?.cheatLoadOrbitScript?.()} leftIcon={<Icon as={FaRocket} />}>
+                                        Cheat: Load Orbit Script
+                                    </Button>
                                 </VStack>
                             </Box>
 

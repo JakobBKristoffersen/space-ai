@@ -210,7 +210,7 @@ class RocketTelemetryAPI {
 
   get altitude(): number {
     this.api.charge(1);
-    this._checkTier(CPUTier.TELEMETRY, 'altitude'); // Altitude usually needs basic telemetry or altimeter
+    this._checkTier(CPUTier.BASIC, 'altitude'); // User requested basic access
     // Actually, 'altitude' is a sensor key.
     this._checkSensor('altitude', 'altitude');
     return this.api.rocket.snapshot().altitude;
@@ -218,7 +218,7 @@ class RocketTelemetryAPI {
 
   get velocity(): { x: number; y: number } {
     this.api.charge(1);
-    this._checkTier(CPUTier.TELEMETRY, 'velocity');
+    this._checkTier(CPUTier.BASIC, 'velocity');
     this._checkSensor('velocity', 'velocity');
     const s = this.api.rocket.snapshot();
     return { x: s.velocity.x, y: s.velocity.y };
@@ -226,7 +226,7 @@ class RocketTelemetryAPI {
 
   get position(): { x: number; y: number } {
     this.api.charge(1);
-    this._checkTier(CPUTier.TELEMETRY, 'position');
+    this._checkTier(CPUTier.BASIC, 'position');
     this._checkSensor('position', 'position');
     const s = this.api.rocket.snapshot();
     return { x: s.position.x, y: s.position.y };
@@ -270,7 +270,7 @@ class RocketNavigationAPI {
 
   get heading(): number {
     this.api.charge(1);
-    this._checkTier(CPUTier.TELEMETRY, 'heading');
+    this._checkTier(CPUTier.BASIC, 'heading');
     this._checkSensor('orientationRad', 'heading');
     return this.api.rocket.snapshot().orientationRad;
   }

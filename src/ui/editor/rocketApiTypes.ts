@@ -66,6 +66,8 @@ declare interface RocketAPI {
         readonly retrograde: number;
         /** Calculate diff between angles [-PI, PI]. */
         angleDiff(a: number, b: number): number;
+        /** Steer rocket to target angle (radians). Requires Reaction Wheels/Fins. */
+        alignTo(targetRad: number): void;
     };
 
     /** Communications & Payload */

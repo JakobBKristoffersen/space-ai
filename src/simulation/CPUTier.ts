@@ -13,13 +13,13 @@ export enum CPUTier {
 export const CPUTierDefs = {
     [CPUTier.BASIC]: {
         name: "Basic",
-        description: "Blind control only. No sensor data.",
-        api: ["setThrottle", "setSteering", "setSlotEnabled"],
+        description: "Basic guidance with telemetry.",
+        api: ["setThrottle", "setSteering", "setSlotEnabled", "getAltitude", "getVelocity", "getPosition", "getHeading", "alignTo", "angleDiff"],
     },
     [CPUTier.TELEMETRY]: {
         name: "Telemetry",
-        description: "Access to altitude, velocity, and heating data.",
-        api: ["getAltitude", "getVelocity", "getPosition", "getHeading", "getMaxHeat", "getHeat", "getPrograde", "getRetrograde", "alignTo", "angleDiff"],
+        description: "Advanced telemetry.",
+        api: ["getMaxHeat", "getHeat", "getPrograde", "getRetrograde"],
     },
     [CPUTier.ORBITAL]: {
         name: "Orbital",
@@ -37,7 +37,7 @@ export const CPUTierDefs = {
  * Returns the highest unlocked tier for a given CPU Part ID.
  */
 export function getCPUTier(partId: string): CPUTier {
-    if (partId === "cpu.basic") return CPUTier.BASIC;
+    if (partId === "cpu.basic") return CPUTier.BASIC; // User requested basic guidance has telemetry
     if (partId === "cpu.advanced") return CPUTier.TELEMETRY;
     if (partId === "cpu.orbital") return CPUTier.ORBITAL;
     if (partId === "cpu.network") return CPUTier.NETWORK;

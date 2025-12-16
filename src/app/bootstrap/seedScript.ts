@@ -1,174 +1,172 @@
 // Default example user script used to seed the session Scripts Library.
 // Keep this in sync with the current RocketAPI and telemetry fields.
 
-export const DEFAULT_EXAMPLE = `// Orbit insertion autopilot using Apoapsis/Periapsis
-// Goal: Raise Apoapsis (Ap) to ~2000 m, coast to Ap, then burn prograde until Periapsis (Pe) reaches ~2000 m (±10%).
-// API: const s = api.getSnapshot().data; fields used: altitude, velocity{x,y}, orientationRad, apAltitude, peAltitude, fuelKg, airDensity
-// Controls: api.setEnginePower(0|1); api.setTurnRate(rateRadPerS) where positive turns right/clockwise; pass 0 to stop turning.
+export const ORBIT_UTIL = `// Types for our state machine
+export enum Phase {
+    PRELAUNCH = 0,
+    ASCENT = 1,
+    GRAVITY_TURN = 2,
+    COAST = 3,
+    CIRCULARIZE = 4,
+    ORBIT = 5
+}
+
+export interface State {
+    phase: Phase;
+    targetAlt: number; // meters
+}
+
+// Persist state in rocket memory so it survives between ticks
+export function getState(api: RocketAPI): State {
+    const s = api.memory.get("state") as State;
+    if (s) return s;
+    const initial = { phase: Phase.PRELAUNCH, targetAlt: 150000 };
+    api.memory.set("state", initial);
+    return initial;
+}
+
+export function setState(api: RocketAPI, s: State) {
+    api.memory.set("state", s);
+}
+
+// Simple PID Controller
+export class PID {
+    kp: number; ki: number; kd: number;
+    sum: number = 0;
+    lastErr: number = 0;
+
+    constructor(kp: number, ki: number, kd: number) {
+        this.kp = kp; this.ki = ki; this.kd = kd;
+    }
+
+    update(error: number, dt: number): number {
+        this.sum += error * dt;
+        const dErr = (error - this.lastErr) / dt;
+        this.lastErr = error;
+        return this.kp * error + this.ki * this.sum + this.kd * dErr;
+    }
+}
+`;
+
+export const ORBIT_MAIN = `import { Phase, getState, setState, PID } from "./SeedUtils";
+
+// Main Launch Script using Modular RocketAPI
+
+export function update(api: RocketAPI) {
+    const state = getState(api);
+    
+    // Telemetry access
+    // Note: These will fail if sensors are not installed!
+    const alt = api.telemetry.altitude;
+    const vel = api.telemetry.velocity;
+    const speed = api.telemetry.speed;
+    const ap = api.telemetry.apoapsis;
+    const pe = api.telemetry.periapsis;
+
+    api.log(\`Phase: \${Phase[state.phase]} Alt: \${Math.floor(alt)} Ap: \${Math.floor(ap)}\`);
+
+    switch (state.phase) {
+        case Phase.PRELAUNCH:
+            api.control.throttle(1.0);
+            if (speed > 10) {
+                state.phase = Phase.ASCENT;
+                setState(api, state);
+            }
+            break;
+
+        case Phase.ASCENT:
+            api.control.throttle(1.0);
+            api.control.turn(0); // Keep vertical
+            
+            // Start turn at 1km or 100m/s
+            if (alt > 1000 || speed > 100) {
+                state.phase = Phase.GRAVITY_TURN;
+                setState(api, state);
+            }
+            break;
+
+        case Phase.GRAVITY_TURN:
+            // Gradual turn
+            const progress = Math.min(1.0, ap / state.targetAlt);
+            const targetAngleDeg = 90 * (1.0 - progress);
+            const targetRad = targetAngleDeg * (Math.PI / 180);
+            
+            // Align to target
+            // Requires Guidance Computer & Reaction Wheels
+            api.nav.alignTo(targetRad);
+            
+            api.control.throttle(1.0);
+
+            if (ap >= state.targetAlt) {
+                state.phase = Phase.COAST;
+                setState(api, state);
+                api.control.throttle(0);
+            }
+            break;
+
+        case Phase.COAST:
+            api.control.throttle(0);
+            // Point Prograde for efficiency
+            if ( !isNaN(api.nav.prograde) ) {
+                api.nav.alignTo(api.nav.prograde);
+            }
+
+            if (alt > state.targetAlt * 0.95 && Math.abs(vel.y) < 100) {
+                 state.phase = Phase.CIRCULARIZE;
+                 setState(api, state);
+            }
+            break;
+
+        case Phase.CIRCULARIZE:
+            api.nav.alignTo(api.nav.prograde);
+            
+            if (pe < state.targetAlt * 0.9) {
+                api.control.throttle(1.0);
+            } else {
+                api.control.throttle(0);
+                if (pe > state.targetAlt * 0.95) {
+                    state.phase = Phase.ORBIT;
+                    setState(api, state);
+                }
+            }
+            break;
+
+        case Phase.ORBIT:
+            api.control.throttle(0);
+            api.log("Orbit Achieved!");
+            break;
+    }
+}
+`;
+
+export const DEFAULT_EXAMPLE = `/**
+ * Base Line Script (TypeScript)
+ * - Logs status to console
+ * - Sets throttle to 100%
+ */
+export function update(api: RocketAPI) {
+  // Log message only once (using memory to track)
+  if (!api.memory.get("welcome_shown")) {
+    api.log("System nominal. Throttle set to maximum.");
+    api.memory.set("welcome_shown", true);
+  }
+  
+  // Full throttle
+  api.control.throttle(1.0);
+}
+`;
+
+/**
+ * Pre-compiled JS version of DEFAULT_EXAMPLE to ensure immediate execution 
+ * without requiring the in-browser compiler to handle the types.
+ */
+export const DEFAULT_EXAMPLE_COMPILED = `"use strict";
+// JS Version for Execution
 function update(api) {
-  const PHASES = ["liftoff","raise_ap","coast_to_ap","circularize","done"];
-  // Show all phases once
-  if (!api.memory.get("__phasesListed")) {
-    api.log("Phases: " + PHASES.join(" -> "));
-    api.memory.set("__phasesListed", 1);
+  if (!api.memory.get("welcome_shown")) {
+    api.log("System nominal. Throttle set to maximum.");
+    api.memory.set("welcome_shown", true);
   }
-
-  // --- Telemetry Ping ---
-  // Send a packet every 2 seconds if valid
-  const lastPing = Number(api.memory.get("__lastPing") || 0);
-  const now = Date.now();
-  if (now - lastPing > 2000) {
-    // Check if we can send (e.g. valid tiers?), but api.sendDataPacket checks internally or just charges
-    api.sendDataPacket("telemetry", 2, { alt: Math.floor(Number(api.getSnapshot().data.altitude||0)), phase: api.memory.get("phase") });
-    api.memory.set("__lastPing", now);
-  }
-  // ---------------------
-  const s = api.getSnapshot().data;
-  const alt = Number(s.altitude ?? 0);
-  const v = s.velocity || { x: 0, y: 0 };
-  const vx = Number(v.x || 0), vy = Number(v.y || 0);
-  const fuel = Number(s.fuelKg ?? 0);
-  const ap = Number(s.apAltitude ?? NaN);
-  const pe = Number(s.peAltitude ?? NaN);
-  const orient = Number(s.orientationRad ?? 0);
-
-  // Parameters
-  const targetAp = 2000;    // m
-  const targetPe = 2000;    // m (±10% acceptable)
-  const peOkLow = targetPe * 0.9;
-  const peOkHigh = targetPe * 1.1;
-  const alignRate = 0.25;   // rad/s turn rate to command
-  const alignTol = 0.05;    // rad (~1.7°)
-
-  // Persistent phase (ensure first one is logged)
-  const storedPhase = api.memory.get("phase");
-  let phase = (typeof storedPhase === "string" && storedPhase) ? storedPhase : "liftoff";
-  if (storedPhase !== phase) { api.memory.set("phase", phase); api.log("Phase → " + phase); }
-  function setPhase(p) { if (p !== phase) { phase = p; api.memory.set("phase", p); api.memory.set("__lastProgressBucket", -1); api.log("Phase → " + p); } }
-
-  // Helpers
-  function clamp01(x){ return Math.max(0, Math.min(1, x)); }
-
-  function reportProgress(label, p){
-    p = clamp01(p);
-    const lastPhase = api.memory.get("__progressPhase") || "";
-    let lastBucket = Number(api.memory.get("__lastProgressBucket") ?? -1);
-    const bucket = Math.floor(p * 10); // 0..10
-    if (phase !== lastPhase || bucket > lastBucket) {
-      api.log(label + ": " + Math.round(p*100) + "%");
-      api.memory.set("__progressPhase", phase);
-      api.memory.set("__lastProgressBucket", bucket);
-    }
-  }
-
-  // Safety
-  if (fuel <= 0) { api.setEnginePower(0); api.setTurnRate(0); return; }
-
-  // Track last altitude for apoapsis detection during coast
-  const prevAlt = Number(api.memory.get("prevAlt") ?? alt);
-  api.memory.set("prevAlt", alt);
-
-  if (phase === "liftoff") {
-    // New liftoff phase: ascend vertically until air density halves, then start turning.
-    const rho = Number(s.airDensity ?? NaN);
-    let rho0 = Number(api.memory.get("rho0") ?? NaN);
-    if (!isFinite(rho0) && isFinite(rho)) { rho0 = rho; api.memory.set("rho0", rho0); }
-    // Align to local vertical (outward normal): orientation should be pi/2 at launch; keep correcting just in case.
-    const upAngle = Math.PI / 2;
-    // Use API assist if available (Advanced CPU), else manual logic would fail without helpers but we assume Advanced/Orbital for this profile
-    if (api.alignTo) api.alignTo(upAngle); 
-    else api.setTurnRate(0); // Fallback for basic CPU
-
-    api.setEnginePower(1);
-    if (isFinite(rho0) && isFinite(rho)) {
-      const target = 0.5 * rho0;
-      const p = clamp01(1 - (rho - target) / Math.max(1e-6, rho0 - target));
-      reportProgress("Liftoff", p);
-      if (rho <= target) {
-        setPhase("raise_ap");
-      }
-    }
-  } else if (phase === "raise_ap") {
-    // Gravity turn: gradually tilt from vertical to build horizontal velocity,
-    // then follow prograde as it approaches the horizon. This avoids staying vertical forever.
-    const upAngle = Math.PI / 2;
-    let tilt = Number(api.memory.get("tilt") ?? 0);
-    const maxTilt = Math.PI * 0.45; // ~81° from +X i.e., slightly below horizontal in screen terms
-    // Increase tilt a bit every script run (runner interval ~2s on basic guidance)
-    tilt = Math.min(maxTilt, tilt + 0.12);
-    api.memory.set("tilt", tilt);
-
-    // Desired attitude: start from up and subtract tilt (turn right toward +X)
-    const desired = upAngle - tilt;
-
-    // Once horizontal speed is significant, hand over to prograde alignment (avoid early vertical lock)
-    const vhor = Math.abs(vx);
-    const usePrograde = vhor > 20; // m/s horizontal threshold
-
-    if (usePrograde) {
-      // Align to prograde when we have meaningful horizontal speed
-      // Use API assist to find prograde angle
-      if (api.getPrograde && api.alignTo) {
-        const aim = api.getPrograde();
-        const aligned = api.alignTo(aim);
-        try { api.log("[raise_ap] prograde align aligned=" + (aligned ? "true" : "false")); } catch {}
-      }
-    } else {
-      // During the gravity-turn phase, command a steady rightward turn rate so we visibly tip over
-      // Manual turn because we want specific rate, or we could use alignTo(desired) if we trust it
-      // The original script used manual turn rate because it's a "gravity turn" (open loop-ish)
-      // modifying it to use alignTo for the "desired" angle might be cleaner but "gravity turn" usually implies loose coupling.
-      // However, the original code used api.setTurnRate(-alignRate) which is a fixed turn.
-      // Let's stick to fixed turn for gravity turn phase or use alignTo?
-      // "command a steady rightward turn rate so we visibly tip over" -> keep manual rate.
-      api.setTurnRate(-0.25); // negative = left (CCW) in our convention toward +X when starting at +Y. Wait, original was -alignRate.
-      // alignRate was 0.25. So -0.25.
-      try { api.log("[raise_ap] gravity-turn cmdRate=-0.25 rad/s"); } catch {}
-    }
-
-    api.setEnginePower(1);
-    if (isFinite(ap) && isFinite(targetAp)) {
-      reportProgress("Raise Ap", clamp01(ap / targetAp));
-    }
-    if (isFinite(ap) && ap >= targetAp * 0.98) { // reached ~target Ap
-      api.setEnginePower(0);
-      api.setTurnRate(0); // stop any residual rotation
-      setPhase("coast_to_ap");
-    }
-  } else if (phase === "coast_to_ap") {
-    // Engines off; wait until we reach (or are very near) apoapsis
-    api.setEnginePower(0);
-    api.setTurnRate(0);
-    if (isFinite(ap)) {
-      const close = Math.abs(ap - alt) < 50; // within 25 m of Ap
-      const passedPeak = prevAlt > alt && alt > ap * 0.9; // started descending near Ap
-      const p = clamp01(1 - Math.abs(ap - alt) / Math.max(1, ap));
-      reportProgress("Coast to Ap", p);
-      if (close || passedPeak) {
-        setPhase("circularize");
-      }
-    }
-  } else if (phase === "circularize") {
-    // At/near Ap: burn prograde to raise Periapsis to target band
-    if (api.getPrograde && api.alignTo) {
-        const aim = api.getPrograde();
-        api.alignTo(aim);
-    }
-    
-    api.log('close to prograde burning to Pe and mainting prograde')
-    api.setEnginePower(1);  
-    
-    if (isFinite(pe) && isFinite(targetPe)) {
-      reportProgress("Circularize (raise Pe)", clamp01(pe / targetPe));
-    }
-    if (isFinite(pe) && pe >= peOkLow) {
-      api.setEnginePower(0);
-      api.setTurnRate(0);
-      setPhase("done");
-    }
-  } else if (phase === "done") {
-    api.setEnginePower(0);
-    api.setTurnRate(0);
-    reportProgress("Mission", 1);
-  }
+  api.control.throttle(1.0);
 }`;
+

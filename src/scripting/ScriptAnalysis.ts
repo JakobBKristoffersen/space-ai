@@ -93,7 +93,9 @@ export class ScriptAnalysis {
         const missing: string[] = [];
         for (const u of used) {
             // Ignore common harmless props if any?
-            if (!allowed.has(u)) {
+            // Ignore common harmless props and structural roots
+            const IGNORED_ROOTS = ["memory", "log", "control", "telemetry", "nav", "comms", "constructor", "prototype"];
+            if (!allowed.has(u) && !IGNORED_ROOTS.includes(u)) {
                 // Check if it's a standard/always-available method?
                 // "setTurnRate" etc should be in the Defs.
                 // "memory" is usually Base but let's check.
