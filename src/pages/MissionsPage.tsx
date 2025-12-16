@@ -139,7 +139,7 @@ export default function MissionsPage({ onNavigate }: Props) {
         title="Mission Control"
         icon={FaSatelliteDish}
         description="Manage active contracts and view progress."
-        onBack={() => onNavigate("space_center")}
+        onNavigate={onNavigate}
       >
         <Select.Root size="sm" collection={filters} value={[filter]} onValueChange={(d: any) => setFilter(Array.isArray(d?.value) ? d.value[0] : d?.value)} width="150px">
           <Select.HiddenSelect />

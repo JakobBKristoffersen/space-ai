@@ -69,7 +69,7 @@ export default function ResearchPage({ onNavigate }: Props) {
                 title="R&D Laboratory"
                 icon={FaFlask}
                 description="Unlock new technologies."
-                onBack={() => onNavigate("space_center")}
+                onNavigate={onNavigate}
             >
                 <HStack>
                     <Text fontSize="2xl" fontWeight="bold" color="cyan.400" fontFamily="mono">{points}</Text>

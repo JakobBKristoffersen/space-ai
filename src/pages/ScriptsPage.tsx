@@ -148,7 +148,8 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
         title="Software Engineering"
         icon={FaCode}
         description="Develop and manage flight software."
-        onBack={onNavigate ? () => onNavigate("space_center") : undefined}
+        onNavigate={onNavigate}
+        currentView="scripts"
       />
 
       <SimpleGrid columns={{ base: 1, md: 5 }} gap={3} flex={1} minH={0}>

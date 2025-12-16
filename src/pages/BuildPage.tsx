@@ -296,7 +296,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         title="Vehicle Assembly Building"
         icon={FaTools}
         description="Design and build your rockets."
-        onBack={() => onNavigate("space_center")}
+        onNavigate={onNavigate}
+        currentView="build"
       >
         <HStack color="green.300" fontWeight="mono" fontSize="lg">
           <Icon as={FaDollarSign} />

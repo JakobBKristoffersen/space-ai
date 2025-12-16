@@ -120,35 +120,28 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     return (
         <VStack align="stretch" h="100%" gap={0} bg="gray.950">
             {/* Header */}
-            <Box px={4} py={2} bg="gray.900" borderBottomWidth="1px" borderColor="gray.800">
-                <HStack justify="space-between">
-                    <HStack>
-                        <Icon as={FaGlobe} color="cyan.400" />
-                        <Heading size="md" color="white">Launch Control</Heading>
-                        <Text fontSize="sm" color="gray.500">Mission Telemetry</Text>
-                    </HStack>
-                    <HStack gap={2}>
-                        <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
-                        <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
-                            <Select.Control>
-                                <Select.Trigger><Select.ValueText /></Select.Trigger>
-                            </Select.Control>
-                            <Select.Content>
-                                {speedOptions.items.map((opt: any) => (
-                                    <Select.Item item={opt} key={opt.value}>
-                                        {opt.label}
-                                    </Select.Item>
-                                ))}
-                            </Select.Content>
-                        </Select.Root>
-                        {!launched ? <Button size="xs" colorScheme="green" onClick={onTakeOff}>LAUNCH</Button> : <Button size="xs" colorScheme="orange" variant="outline" onClick={onResetRocket}>RESET</Button>}
-                        <Button size="xs" variant="outline" colorPalette="cyan" onClick={() => onNavigate?.("build")}>
-                            <Icon as={FaRocket} mr={1} /> VAB
-                        </Button>
-                        <Button size="xs" variant="ghost" onClick={() => onNavigate?.("space_center")}>EXIT</Button>
-                    </HStack>
-                </HStack>
-            </Box>
+            <SpaceCenterHeader
+                title="Launch Control"
+                icon={FaGlobe}
+                description="Mission Telemetry"
+                onNavigate={onNavigate}
+                currentView="world_scene"
+            >
+                <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
+                <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
+                    <Select.Control>
+                        <Select.Trigger><Select.ValueText /></Select.Trigger>
+                    </Select.Control>
+                    <Select.Content>
+                        {speedOptions.items.map((opt: any) => (
+                            <Select.Item item={opt} key={opt.value}>
+                                {opt.label}
+                            </Select.Item>
+                        ))}
+                    </Select.Content>
+                </Select.Root>
+                {!launched ? <Button size="xs" colorScheme="green" onClick={onTakeOff}>LAUNCH</Button> : <Button size="xs" colorScheme="orange" variant="outline" onClick={onResetRocket}>RESET</Button>}
+            </SpaceCenterHeader>
 
             {/* Main Content Grid */}
             <Grid templateColumns="280px 1fr 300px" flex={1} overflow="hidden">

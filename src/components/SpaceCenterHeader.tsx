@@ -1,6 +1,5 @@
-import React, { ReactNode } from "react";
-import { HStack, VStack, Heading, Text, Button, Icon, Box, Card } from "@chakra-ui/react";
-import { FaChevronLeft } from "react-icons/fa";
+import { HStack, VStack, Heading, Text, Button, Icon, Box } from "@chakra-ui/react";
+import { FaChevronLeft, FaHome, FaRocket, FaCode, FaGlobe } from "react-icons/fa";
 import { IconType } from "react-icons";
 
 interface SpaceCenterHeaderProps {
@@ -8,37 +7,49 @@ interface SpaceCenterHeaderProps {
     icon?: IconType;
     description?: string;
     onBack?: () => void;
+    onNavigate?: (page: string) => void;
+    currentView?: string;
     children?: ReactNode; // Right-aligned actions
     bg?: string;
 }
 
-export function SpaceCenterHeader({ title, icon, description, onBack, children, bg = "gray.900" }: SpaceCenterHeaderProps) {
+export function SpaceCenterHeader({ title, icon, description, onBack, onNavigate, currentView, children, bg = "gray.900" }: SpaceCenterHeaderProps) {
     return (
-        <Card.Root variant="elevated" bg="gray.800" borderColor="gray.700" mb={4}>
-            <Card.Body py={3}>
-                <HStack justify="space-between" align="center">
-                    <HStack gap={4}>
-                        {onBack && (
-                            <Button size="sm" variant="ghost" onClick={onBack} color="gray.400" _hover={{ color: "white", bg: "whiteAlpha.200" }}>
-                                <Icon as={FaChevronLeft} mr={1} /> Back
-                            </Button>
-                        )}
-                        {icon && (
-                            <Box p={2} bg="whiteAlpha.100" borderRadius="md">
-                                <Icon as={icon} color="cyan.400" boxSize={5} />
-                            </Box>
-                        )}
-                        <VStack align="start" gap={0}>
-                            <Heading size="sm" color="white">{title}</Heading>
-                            {description && <Text color="gray.400" fontSize="xs">{description}</Text>}
-                        </VStack>
-                    </HStack>
-
-                    <HStack>
-                        {children}
-                    </HStack>
+        <Box px={4} py={2} bg={bg} borderBottomWidth="1px" borderColor="gray.800">
+            <HStack justify="space-between">
+                <HStack>
+                    {icon && <Icon as={icon} color="cyan.400" />}
+                    <Heading size="md" color="white">{title}</Heading>
+                    {description && <Text fontSize="sm" color="gray.500">{description}</Text>}
                 </HStack>
-            </Card.Body>
-        </Card.Root>
+                <HStack gap={2}>
+                    {children}
+
+                    {onNavigate && (
+                        <>
+                            <Box w="1px" h="20px" bg="gray.700" mx={1} />
+                            <Button size="xs" variant={currentView === "space_center" ? "subtle" : "ghost"} colorPalette="cyan" onClick={() => onNavigate("space_center")}>
+                                <Icon as={FaHome} mr={1} /> Hub
+                            </Button>
+                            <Button size="xs" variant={currentView === "build" ? "subtle" : "ghost"} colorPalette="cyan" onClick={() => onNavigate("build")}>
+                                <Icon as={FaRocket} mr={1} /> VAB
+                            </Button>
+                            <Button size="xs" variant={currentView === "scripts" ? "subtle" : "ghost"} colorPalette="cyan" onClick={() => onNavigate("scripts")}>
+                                <Icon as={FaCode} mr={1} /> Scripts
+                            </Button>
+                            <Button size="xs" variant={currentView === "world_scene" ? "subtle" : "ghost"} colorPalette="cyan" onClick={() => onNavigate("world_scene")}>
+                                <Icon as={FaGlobe} mr={1} /> Launch
+                            </Button>
+                        </>
+                    )}
+
+                    {!onNavigate && onBack && (
+                        <Button size="xs" variant="ghost" onClick={onBack}>
+                            <Icon as={FaChevronLeft} mr={1} /> Back
+                        </Button>
+                    )}
+                </HStack>
+            </HStack>
+        </Box>
     );
 }
