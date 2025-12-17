@@ -14,12 +14,18 @@ export function drawAtmosphereGlow(
   // Only draw if rocket is in atmosphere and the primary has an atmosphere model
   const primary = snap.bodies.find((b) => b.id === snap.primaryId);
   if (!primary) return;
-  const inAtmo = (snap.rocket as any)?.inAtmosphere;
-  if (!inAtmo) return;
-  if (!(primary.atmosphereScaleHeightMeters && primary.atmosphereScaleHeightMeters > 0)) return;
-
+  // Draw atmosphere whenever visible (no longer strictly requiring inAtmo check for visualization)
+  // const inAtmo = (snap.rocket as any)?.inAtmosphere;
+  // if (!inAtmo) return;
   // Cutoff altitude comes from the Environment model when available
-  const cutoffAlt = (snap as any).atmosphereCutoffAltitudeMeters ?? (primary.atmosphereScaleHeightMeters * 6);
+  const cutoffAlt = (snap as any).atmosphereCutoffAltitudeMeters ?? (primary.atmosphereScaleHeightMeters ? primary.atmosphereScaleHeightMeters * 6 : 0);
+
+  // Robust check: valid if we have a positive cutoff or scale height
+  if (cutoffAlt <= 0 && (!primary.atmosphereScaleHeightMeters || primary.atmosphereScaleHeightMeters <= 0)) return;
+
+  // Use explicit cutoff, or fallback to scale height * 6
+  // (Logic handled by cutoffAlt assignment above).
+
   const Rm = primary.radiusMeters;
   const outerRpx = (Rm + Math.max(0, cutoffAlt)) * pxPerMeter;
   const Rpx = Rm * pxPerMeter;

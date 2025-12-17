@@ -7,6 +7,7 @@ import type { EnvironmentSnapshot } from "../simulation/Environment";
 import { drawAtmosphereGlow } from "./sceneParts/atmosphere";
 import { updateTrail, drawTrail } from "./sceneParts/trail";
 import { drawRocket as drawRocketHelper } from "./sceneParts/rockets";
+import { drawStarField } from "./sceneParts/stars";
 
 export interface SceneStateProvider<T> {
   get(): T;
@@ -73,6 +74,9 @@ export class CelestialScene implements SceneLike {
       x: (x - camX) * pxPerMeter + width * 0.5,
       y: height * 0.5 - (y - camY) * pxPerMeter,
     });
+
+    // Draw Stars (background layer)
+    drawStarField(ctx, toScreen, width, height);
 
     // Update engine-on trail (store world positions while engines burn)
     const nowT = snap.timeSeconds;
