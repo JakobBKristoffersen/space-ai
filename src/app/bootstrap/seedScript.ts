@@ -52,7 +52,7 @@ export const ORBIT_MAIN = `import { Phase, getState, setState, PID } from "./See
 
 // Main Launch Script using Modular RocketAPI
 
-export function update(api: RocketAPI) {
+function update(api: RocketAPI) {
     const state = getState(api);
     
     // Telemetry access
@@ -144,7 +144,7 @@ export const DEFAULT_EXAMPLE = `/**
  * - Logs status to console
  * - Sets throttle to 100%
  */
-export function update(api: RocketAPI) {
+function update(api: RocketAPI) {
   // Log message only once (using memory to track)
   if (!api.memory.get("welcome_shown")) {
     api.log("System nominal. Throttle set to maximum.");

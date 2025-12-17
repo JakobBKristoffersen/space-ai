@@ -411,7 +411,6 @@ export class Environment {
     r.state.velocity.x = 0;
     r.state.velocity.y = 0;
     r.state.orientationRad = Math.PI / 2;
-    r.state.orientationRad = Math.PI / 2;
     // Replace and set active alias
     if (this.rockets.length > 0) {
       this.rockets[this.activeRocketIndex] = r;
@@ -420,6 +419,26 @@ export class Environment {
       this.activeRocketIndex = 0;
     }
     this.rocket = r;
+  }
+
+  /**
+   * Clears all existing rockets (including debris/stages) and sets the environment
+   * to contain ONLY the provided rocket as the single active rocket.
+   */
+  resetToSingleRocket(r: Rocket): void {
+    const primary = this.bodies.find(b => b.id === this.system.primaryId)!;
+    // Place new rocket at the top of the primary, stationary and pointing up
+    r.state.position.x = 0;
+    r.state.position.y = primary.radiusMeters;
+    r.state.velocity.x = 0;
+    r.state.velocity.y = 0;
+    r.state.orientationRad = Math.PI / 2;
+
+    // Clear array and set single entry
+    this.rockets = [r];
+    this.activeRocketIndex = 0;
+    this.rocket = r;
+    this.destroyed = false; // Reset destroyed flag if environment was considered "failed"
   }
 
   /** Encapsulated physics for the active rocket (thrust, reaction wheels, etc.). */

@@ -10,7 +10,7 @@ import { PendingUpgradesService } from "../services/PendingUpgradesService";
 import { ResearchService } from "../services/ResearchService";
 import { SimulationManager } from "../sim/SimulationManager";
 import { ToySystem } from "../config/ToySystem";
-import { DEFAULT_EXAMPLE } from "./seedScript";
+import { DEFAULT_EXAMPLE, DEFAULT_EXAMPLE_COMPILED } from "./seedScript";
 import { ScienceManager } from "../../game/ScienceManager";
 import { CommsService } from "../../game/CommsService"; // Import CommsService
 import { PartStore, DefaultCatalog } from "../../game/PartStore";
@@ -43,7 +43,7 @@ export function initAppLogic(): void {
     const existing = sessionStorage.getItem(SessionKeys.SCRIPT);
     const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'export function update(api: any){}');
     // Force upsert to ensure it exists with this name and we get the real ID
-    const s = scriptLib.upsertByName("Start.ts", seed);
+    const s = scriptLib.upsertByName("Start.ts", seed, DEFAULT_EXAMPLE_COMPILED);
     startScriptId = s.id;
   } catch { }
 

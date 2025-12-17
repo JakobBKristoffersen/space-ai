@@ -21,10 +21,12 @@ export function SpaceCenterHeader({ title, icon, description, onBack, onNavigate
                     {icon && <Icon as={icon} color="cyan.400" />}
                     <Heading size="md" color="white">{title}</Heading>
                     {description && <Text fontSize="sm" color="gray.500">{description}</Text>}
+                    <Box w="1px" h="20px" bg="gray.700" mx={1} />
                 </HStack>
                 <HStack gap={2}>
                     {children}
-
+                </HStack>
+                <HStack gap={2}>
                     {onNavigate && (
                         <>
                             <Box w="1px" h="20px" bg="gray.700" mx={1} />

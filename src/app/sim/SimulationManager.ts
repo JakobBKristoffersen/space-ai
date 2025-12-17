@@ -300,10 +300,10 @@ export class SimulationManager {
    * and publishes telemetry keys for editor.
    */
   recreateFromLayout(layout: StoredLayout): void {
-    // Replace active rocket only
+    // Replace active rocket and clear others (full reset behavior)
     const newRocket = this.opts.layoutSvc.buildRocketFromLayout(layout);
     for (const e of newRocket.engines) e.power = 0;
-    try { (this.env as any).replaceActiveRocket?.(newRocket); } catch { }
+    try { (this.env as any).resetToSingleRocket?.(newRocket); } catch { }
     this.rocket = newRocket;
 
     // Recreate runner bound to the active rocket

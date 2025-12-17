@@ -126,21 +126,22 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                 description="Mission Telemetry"
                 onNavigate={onNavigate}
                 currentView="world_scene"
-            >
-                <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
-                <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
-                    <Select.Control>
-                        <Select.Trigger><Select.ValueText /></Select.Trigger>
-                    </Select.Control>
-                    <Select.Content>
-                        {speedOptions.items.map((opt: any) => (
-                            <Select.Item item={opt} key={opt.value}>
-                                {opt.label}
-                            </Select.Item>
-                        ))}
-                    </Select.Content>
-                </Select.Root>
-                {!launched ? <Button size="xs" colorScheme="green" onClick={onTakeOff}>LAUNCH</Button> : <Button size="xs" colorScheme="orange" variant="outline" onClick={onResetRocket}>RESET</Button>}
+            > <HStack gap={2} >
+                    <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
+                    <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
+                        <Select.Control>
+                            <Select.Trigger><Select.ValueText /></Select.Trigger>
+                        </Select.Control>
+                        <Select.Content>
+                            {speedOptions.items.map((opt: any) => (
+                                <Select.Item item={opt} key={opt.value}>
+                                    {opt.label}
+                                </Select.Item>
+                            ))}
+                        </Select.Content>
+                    </Select.Root>
+                    {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH ROCKET</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET ROCKET</Button>}
+                </HStack>
             </SpaceCenterHeader>
 
             {/* Main Content Grid */}
