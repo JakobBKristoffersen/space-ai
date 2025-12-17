@@ -21,7 +21,7 @@ import { IonEngine } from "../simulation/parts/IonEngine";
 import { BasicSatellitePayload } from "../simulation/parts/Payloads";
 import { BasicSolarPanel } from "../simulation/parts/SolarPanels";
 import { NoseCone, Fin, Parachute, HeatShield } from "../simulation/parts/Aerodynamics";
-import { ScienceExperiment, TemperatureScanner } from "../simulation/parts/Science";
+import { TemperatureScanner, AtmosphereScanner, SurfaceScanner } from "../simulation/parts/Science";
 
 export type PartCategory = "engine" | "fuel" | "battery" | "cpu" | "sensor" | "reactionWheels" | "antenna" | "payload" | "solar" | "cone" | "fin" | "parachute" | "heatShield" | "science";
 
@@ -322,19 +322,25 @@ export const DefaultCatalog: Catalog = {
   ],
   science: [
     {
-      id: "science.basic",
-      name: "Science Experiment",
-      category: "science",
-
-      make: () => new ScienceExperiment(),
-      isUnlocked: () => true,
-    },
-    {
       id: "science.temp",
       name: "Temperature Scanner",
       category: "science",
       make: () => new TemperatureScanner(),
       isUnlocked: () => true,
+    },
+    {
+      id: "science.atmos",
+      name: "Atmosphere Scanner",
+      category: "science",
+      make: () => new AtmosphereScanner(),
+      isUnlocked: (_c, t) => t.includes("tech.science_basic"),
+    },
+    {
+      id: "science.surface",
+      name: "Surface Scanner",
+      category: "science",
+      make: () => new SurfaceScanner(),
+      isUnlocked: (_c, t) => t.includes("tech.science_basic"),
     }
   ]
 };

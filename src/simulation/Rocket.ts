@@ -27,10 +27,16 @@ export interface RocketSnapshot {
   altitude: number;
   /** Current atmospheric density at rocket altitude (kg/m^3), if available. */
   airDensity?: number;
+  /** Ambient temperature (Kelvin), if available. */
+  ambientTemperature?: number;
+  /** Ambient pressure (Pascals), if available. */
+  ambientPressure?: number;
   /** Body currently exerting the strongest gravitational acceleration on this rocket (SOI approximation). */
   soiBodyId?: string;
   /** Convenience flag: true when airDensity > 0. */
   inAtmosphere?: boolean;
+  /** Altitude where atmosphere ends (useful for science/scaling). */
+  atmosphereCutoffAltitudeMeters?: number;
   /** Per-tick force breakdown (Newtons). */
   forces?: {
     thrust: { fx: number; fy: number };
@@ -52,6 +58,10 @@ export interface RocketSnapshot {
   batteryCapacityJoules: number;
   /** 0..100 percentage of stored energy vs capacity. */
   batteryPercent: number;
+  /** Energy production rate (Watts or J/s) */
+  energyGainJPerS: number;
+  /** Energy consumption rate (Watts or J/s) */
+  energyDrawJPerS: number;
   /** CPU part name, if installed. */
   cpuName?: string;
   /** CPU per-tick processing budget, if installed. */
@@ -98,6 +108,10 @@ export interface RocketSnapshot {
   parachuteDeployed?: boolean;
   /** True if the rocket has any parachutes installed. */
   hasParachutes?: boolean;
+  /** True if any solar panel is deployed. */
+  solarDeployed?: boolean;
+  /** True if the rocket has any solar panels. */
+  hasSolarPanels?: boolean;
   /** Estimated total drag coefficient of the vehicle. */
   totalDragCoefficient?: number;
   /** Name of the terrain currently below the rocket. */
@@ -106,6 +120,8 @@ export interface RocketSnapshot {
   packetQueueLength?: number;
   /** Total size of waiting packets in KB. */
   packetQueueSizeKb?: number;
+  /** Installed science experiments. */
+  science?: { id: string; name: string; hasData?: boolean }[];
 }
 
 export type RocketCommand =
@@ -300,6 +316,8 @@ export class Rocket {
   // Snapshot internal buffers
   private _altitudeForSnapshot = 0;
   private _airDensityForSnapshot: number | undefined = undefined;
+  private _ambientTemperatureForSnapshot: number | undefined = undefined;
+  private _ambientPressureForSnapshot: number | undefined = undefined;
   private _apAltitudeForSnapshot: number = Number.NaN;
   private _peAltitudeForSnapshot: number = Number.NaN;
   private _soiBodyIdForSnapshot: string | undefined = undefined;
@@ -312,10 +330,20 @@ export class Rocket {
   private _commsSentPerS: number | undefined = undefined;
   private _commsRecvPerS: number | undefined = undefined;
   private _maxTurnRateForSnapshot: number | undefined = undefined;
+  private _atmosphereCutoffForSnapshot: number | undefined = undefined;
+
+  // Energy Tracking
+  private _lastEnergyGainJPerS = 0;
+  private _lastEnergyDrawJPerS = 0;
 
   // Setters for Environment
   setAltitudeForSnapshot(alt: number): void { this._altitudeForSnapshot = alt; }
+  setAtmosphereCutoffForSnapshot(alt: number | undefined): void { this._atmosphereCutoffForSnapshot = alt; }
   setAirDensityForSnapshot(rho: number | undefined): void { this._airDensityForSnapshot = (typeof rho === 'number') ? rho : undefined; }
+  setAtmospherePropertiesForSnapshot(tempK: number, pressPa: number): void {
+    this._ambientTemperatureForSnapshot = tempK;
+    this._ambientPressureForSnapshot = pressPa;
+  }
   setApPeForSnapshot(apAlt: number, peAlt: number): void { this._apAltitudeForSnapshot = Number(apAlt); this._peAltitudeForSnapshot = Number(peAlt); }
   setSoIForSnapshot(id: string | undefined): void { this._soiBodyIdForSnapshot = id; }
   setInAtmosphereForSnapshot(v: boolean | undefined): void { this._inAtmosphereForSnapshot = typeof v === 'boolean' ? v : undefined; }
@@ -374,6 +402,8 @@ export class Rocket {
     for (const s of this.solarPanels) {
       if (s.deployed) solarJ += s.generationWatts * dt;
     }
+    const totalSolarGenerated = solarJ;
+
     // Distribute solar energy to batteries
     if (solarJ > 0) {
       for (const b of this.batteries) {
@@ -408,7 +438,33 @@ export class Rocket {
     }
     // Update last fuel burn rate (kg/s)
     this._lastFuelBurnKgPerS = dt > 0 ? drawnTotal / dt : 0;
+
+    // Record history for averaging
+    this._energyHistory.push({ gain: totalSolarGenerated, draw: this._currentTickEnergyDrawn, dt });
+
+    // Prune history > 5 seconds
+    let totalDt = 0;
+    // Walk backwards
+    let keepCount = 0;
+    for (let i = this._energyHistory.length - 1; i >= 0; i--) {
+      totalDt += this._energyHistory[i].dt;
+      keepCount++;
+      if (totalDt >= 5.0) break;
+    }
+    if (keepCount < this._energyHistory.length) {
+      this._energyHistory.splice(0, this._energyHistory.length - keepCount);
+    }
+
+    // Compute averages
+    const sum = this._energyHistory.reduce((acc, item) => ({ gain: acc.gain + item.gain, draw: acc.draw + item.draw, dt: acc.dt + item.dt }), { gain: 0, draw: 0, dt: 0 });
+
+    this._lastEnergyGainJPerS = sum.dt > 0 ? sum.gain / sum.dt : 0;
+    this._lastEnergyDrawJPerS = sum.dt > 0 ? sum.draw / sum.dt : 0;
+
+    this._currentTickEnergyDrawn = 0;
   }
+
+  private _energyHistory: { gain: number; draw: number; dt: number }[] = [];
 
   /** Total mass including dry mass, fuel, and batteries. */
   totalMass(): number {
@@ -495,8 +551,10 @@ export class Rocket {
       drawnTotal += d;
       remaining -= d;
     }
+    this._currentTickEnergyDrawn += drawnTotal;
     return drawnTotal;
   }
+  private _currentTickEnergyDrawn = 0;
 
   snapshot(): RocketSnapshot {
     const energy = this.availableEnergyJ();
@@ -535,8 +593,11 @@ export class Rocket {
       massKg: this.totalMass(),
       altitude: this._altitudeForSnapshot,
       airDensity: this._airDensityForSnapshot,
+      ambientTemperature: this._ambientTemperatureForSnapshot,
+      ambientPressure: this._ambientPressureForSnapshot,
       soiBodyId: this._soiBodyIdForSnapshot,
       inAtmosphere: this._inAtmosphereForSnapshot,
+      atmosphereCutoffAltitudeMeters: this._atmosphereCutoffForSnapshot,
       maxTurnRateRadPerS: this._maxTurnRateForSnapshot,
       angularVelocityRadPerS: this.getAngularVelocityRadPerS(),
       forces: this._forcesForSnapshot ? {
@@ -564,6 +625,8 @@ export class Rocket {
       cpuCostUsedLastTick,
       cpuEnergyUsedLastTick,
       cpuNextRunInSeconds: (this as any)._cpuNextRunInSeconds ?? (this.cpu?.processingIntervalSeconds ?? 0),
+      energyGainJPerS: this._lastEnergyGainJPerS,
+      energyDrawJPerS: this._lastEnergyDrawJPerS,
       rwOmegaRadPerS: rwOmega,
       rwMaxOmegaRadPerS: rwMax,
       rwDesiredOmegaRadPerS: this.getDesiredAngularVelocityRadPerS(),
@@ -596,8 +659,11 @@ export class Rocket {
       avgEngineThrustPct: throttleAvg,
       parachuteDeployed,
       hasParachutes: this.parachutes.length > 0,
+      solarDeployed: this.solarPanels.some(s => s.deployed),
+      hasSolarPanels: this.solarPanels.length > 0,
       totalDragCoefficient: cd,
       currentTerrain: this.currentTerrain,
+      science: this.science.map(s => ({ id: s.id, name: s.name, hasData: false })), // TODO: link to data buffer
     };
   }
 }

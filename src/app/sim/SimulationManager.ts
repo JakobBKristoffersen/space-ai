@@ -68,7 +68,12 @@ export class SimulationManager {
     // Create environment with the single primary rocket (or undefined)
     this.env = new Environment(this.rocket, {
       system: opts.system,
-      atmosphere: new AtmosphereWithCutoff({ scaleHeightMeters: primaryDef.atmosphereScaleHeightMeters ?? 200, rho0: 1.225, cutoffFactor: 7 }),
+      atmosphere: new AtmosphereWithCutoff({
+        scaleHeightMeters: primaryDef.atmosphereScaleHeightMeters ?? 200,
+        atmosphereHeightMeters: primaryDef.atmosphereHeightMeters,
+        rho0: 1.225,
+        cutoffFactor: 7
+      }),
       drag: QuadraticDrag,
       heating: SimpleHeating,
       rockets: this.rocket ? [this.rocket] : [],
@@ -94,6 +99,8 @@ export class SimulationManager {
 
     // Fixed-timestep loop, start paused by default (UI decides when to start)
     this.loop = new SimulationLoop({ fixedDt: 1 / 120, targetRenderHz: 30, startPaused: true });
+
+    this.setupPersistence();
 
     // Internal tick wiring: run scripts, combine command queues, then advance env
     this.loop.onTick((dt, i) => {
@@ -137,6 +144,15 @@ export class SimulationManager {
         const basePos = baseStruct ? baseStruct.position : { x: 0, y: 0 };
         // We pass ReadonlyArray<BodyState> as BodyState[] - safeish for read access
         this.commSystem.update(dt, this.env.getRockets() as Rocket[], snap.bodies as any[], basePos);
+
+        // Consume received packets
+        const received = this.commSystem.receivedPackets.splice(0, this.commSystem.receivedPackets.length);
+        for (const p of received) {
+          if (p.type === "science_data_bulk") {
+            const { type, values } = p.data;
+            this.opts.layoutSvc.getScienceManager().onBulkDataReceived(type, values);
+          }
+        }
       } catch (e) { console.warn("Comm update failed", e); }
 
       // Advance game clock (1 sim sec = 60 game secs by default)
@@ -324,6 +340,9 @@ export class SimulationManager {
 
     // Publish telemetry keys for the new composition
     this.publishTelemetry();
+
+    // Persist new state immediately so we don't restore old flight on reload
+    this.saveState();
   }
 
   /** Build from stored layout and recreate. */
@@ -394,7 +413,9 @@ export class SimulationManager {
           const code = (s as any).compiledCode || s.code;
           this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, a.slot, s.name);
           installedAny = true;
-        } catch { }
+        } catch (e: any) {
+          this.runner.appendLog(a.slot, `System: Failed to load script "${s.name}". ${e.message}`);
+        }
       }
       try { this.runner.setSlotEnabled?.(a.slot, !!a.enabled); } catch { }
     }
@@ -406,7 +427,9 @@ export class SimulationManager {
         try {
           const code = (s as any).compiledCode || s.code;
           this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, 0, s.name);
-        } catch { }
+        } catch (e: any) {
+          this.runner.appendLog(0, `System: Failed to load fallback script. ${e.message}`);
+        }
       }
     }
   }
@@ -417,4 +440,119 @@ export class SimulationManager {
     const keys = this.opts.telemetry.currentKeys(this.rocket);
     this.opts.telemetry.publish(keys);
   }
+
+  // --- Persistence ---
+
+  private saveState(): void {
+    if (!this.rocket) return;
+    try {
+      const state: SimState = {
+        timestamp: Date.now(),
+        gameSeconds: this.simGameSeconds,
+        launched: this.launchedByIndex,
+        rocket: {
+          state: { ...this.rocket.state },
+          angularVelocityRadPerS: this.rocket.getAngularVelocityRadPerS(),
+          fuelTanks: this.rocket.fuelTanks.map(t => ({ id: t.id, fuelKg: t.fuelKg })),
+          batteries: this.rocket.batteries.map(b => ({ id: b.id, energyJoules: b.energyJoules })),
+          parachutes: this.rocket.parachutes.map(p => ({ id: p.id, deployed: p.deployed })),
+          solarPanels: this.rocket.solarPanels.map(p => ({ id: p.id, deployed: p.deployed })),
+          engines: this.rocket.engines.map(e => ({ id: e.id, power: e.power })),
+        }
+      };
+      localStorage.setItem("sim_state", JSON.stringify(state));
+    } catch (e) { console.warn("Failed to save sim state", e); }
+  }
+
+  private restoreState(): boolean {
+    try {
+      const raw = localStorage.getItem("sim_state");
+      if (!raw) return false;
+      const state: SimState = JSON.parse(raw);
+
+      this.simGameSeconds = state.gameSeconds || 0;
+      if (state.launched) this.launchedByIndex = state.launched;
+
+      if (this.rocket && state.rocket) {
+        const r = this.rocket;
+        // Restore kinematic state
+        r.state.position = { ...state.rocket.state.position };
+        r.state.velocity = { ...state.rocket.state.velocity };
+        r.state.orientationRad = state.rocket.state.orientationRad;
+        r.state.temperature = state.rocket.state.temperature;
+        r._setActualAngularVelocityRadPerS(state.rocket.angularVelocityRadPerS || 0);
+
+        // Restore Parts
+        if (state.rocket.fuelTanks) {
+          state.rocket.fuelTanks.forEach(saved => {
+            const part = r.fuelTanks.find(p => p.id === saved.id);
+            if (part) part.fuelKg = saved.fuelKg;
+          });
+        }
+        if (state.rocket.batteries) {
+          state.rocket.batteries.forEach(saved => {
+            const part = r.batteries.find(p => p.id === saved.id);
+            if (part) part.energyJoules = saved.energyJoules;
+          });
+        }
+        if (state.rocket.parachutes) {
+          state.rocket.parachutes.forEach(saved => {
+            const part = r.parachutes.find(p => p.id === saved.id);
+            if (part) part.deployed = saved.deployed;
+          });
+        }
+        if (state.rocket.solarPanels) {
+          state.rocket.solarPanels.forEach(saved => {
+            const part = r.solarPanels.find(p => p.id === saved.id);
+            if (part) part.deployed = saved.deployed;
+          });
+        }
+        if (state.rocket.engines) {
+          state.rocket.engines.forEach(saved => {
+            const part = r.engines.find(p => p.id === saved.id);
+            if (part) part.power = saved.power;
+          });
+        }
+      }
+      return true;
+    } catch (e) {
+      console.warn("Failed to restore sim state", e);
+      return false;
+    }
+  }
+
+  private setupPersistence() {
+    // Restore on boot
+    if (this.restoreState()) {
+      console.log("Restored simulation state");
+    }
+
+    // Auto-save
+    setInterval(() => this.saveState(), 5000); // 5s
+
+    // Save on visibility change (tab switch/close)
+    document.addEventListener("visibilitychange", () => {
+      if (document.visibilityState === "hidden") this.saveState();
+    });
+  }
+}
+
+interface SimState {
+  timestamp: number;
+  gameSeconds: number;
+  launched: boolean[];
+  rocket?: {
+    state: {
+      position: { x: number, y: number };
+      velocity: { x: number, y: number };
+      orientationRad: number;
+      temperature: number;
+    };
+    angularVelocityRadPerS: number;
+    fuelTanks: Array<{ id: string, fuelKg: number }>;
+    batteries: Array<{ id: string, energyJoules: number }>;
+    parachutes: Array<{ id: string, deployed: boolean }>;
+    solarPanels: Array<{ id: string, deployed: boolean }>;
+    engines: Array<{ id: string, power: number }>;
+  };
 }

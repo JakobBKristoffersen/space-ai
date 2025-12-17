@@ -78,8 +78,28 @@ declare interface RocketAPI {
         transmitMessage(message: string): void;
         /** Transmit a key-value data point to the Mission Data store. */
         transmitData(key: string, value: number | string | boolean): void;
-        /** Transmit science data from an experiment. */
-        transmitScience(experimentId: string): void;
+    };
+
+    /** Science Experiments */
+    readonly science: {
+        readonly temperature: {
+            /** Measure and store current temperature. data[int(altitude)] = temp. Requires Thermometer. */
+            collect(): void;
+            /** Transmit collected temperature data to base. (Clears buffer). */
+            transmit(): void;
+        };
+        readonly atmosphere: {
+            /** Measure and store air density. data[int(altitude)] = rho. Requires Barometer. */
+            collect(): void;
+            /** Transmit collected density data. */
+            transmit(): void;
+        };
+        readonly surface: {
+            /** Scan surface terrain type. data[int(lat)] = type. Requires Surface Scanner. */
+            collect(): void;
+            /** Transmit collected surface data. */
+            transmit(): void;
+        };
     };
 }
 

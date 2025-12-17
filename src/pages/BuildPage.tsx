@@ -165,6 +165,9 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     // If scienceValue exists on instance, show it (dynamic cast)
     if (i.scienceValue) stats.push({ label: "Sci", value: `${i.scienceValue}pts`, icon: FaFlask });
 
+    // Solar Panel
+    if (i.generationWatts) stats.push({ label: "Gen", value: `${i.generationWatts}W`, icon: FaBolt });
+
     return { name: p.name, stats };
   };
 
@@ -304,7 +307,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                 <HStack justify="space-between">
                   <Heading size="sm" color="gray.300">Design Overview</Heading>
                   <Button size="xs" variant="ghost" colorScheme="cyan" title="Import from Active Rocket" onClick={() => {
-                    const rocket = manager?.getEnvironment().rocket;
+                    const rocket = manager?.getEnvironment().getActiveRocket();
                     if (rocket && services.layout) {
                       const l = services.layout.getLayoutFromRocket(rocket);
                       if (l) {

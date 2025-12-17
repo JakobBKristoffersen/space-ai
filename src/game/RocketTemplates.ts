@@ -37,13 +37,15 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
                     // Nose
                     { id: "slot.nose.cone", name: "Nose Cone", allowedCategories: ["cone"] },
                     { id: "slot.nose.cpu", name: "Guidance System", allowedCategories: ["cpu"] },
-                    { id: "slot.nose.sci", name: "Science Exp", allowedCategories: ["science"] },
+                    { id: "slot.nose.sci", name: "Science Exp 1", allowedCategories: ["science"] },
+                    { id: "slot.nose.sci2", name: "Science Exp 2", allowedCategories: ["science"] },
                     { id: "slot.nose.antenna", name: "Antenna", allowedCategories: ["antenna"] },
                     { id: "slot.nose.chute", name: "Parachute", allowedCategories: ["parachute"] },
                     // Body
                     { id: "slot.body.tank", name: "Fuel Tank", allowedCategories: ["fuel"] },
                     { id: "slot.body.battery", name: "Battery", allowedCategories: ["battery"] }, // Added battery here (TODO mentioned it in Nose? "1x Battery" in nose list? let's stick to TODO)
                     { id: "slot.body.fin", name: "Fins", allowedCategories: ["fin"] },
+                    { id: "slot.body.solar", name: "Solar Panel", allowedCategories: ["solar"] },
                     // Tail
                     { id: "slot.tail.engine", name: "Engine", allowedCategories: ["engine"] },
                 ]
@@ -70,6 +72,7 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
                     { id: "slot.u.body.tank", name: "Fuel Tank", allowedCategories: ["fuel"] },
                     { id: "slot.u.body.rw", name: "Reaction Wheel", allowedCategories: ["reactionWheels"] },
                     { id: "slot.u.body.fin", name: "Fins", allowedCategories: ["fin"] },
+                    { id: "slot.u.body.solar", name: "Solar Panel", allowedCategories: ["solar"] },
                     { id: "slot.u.tail.engine", name: "Engine", allowedCategories: ["engine"] },
                 ]
             },

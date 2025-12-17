@@ -29,21 +29,27 @@ export function initAppLogic(): void {
   if (ctx) ctx.imageSmoothingEnabled = true;
 
   // 2) Services
-  const layoutSvc = new LayoutService();
+  const research = new ResearchService();
+  const scienceMgr = new ScienceManager(research);
+  const layoutSvc = new LayoutService(scienceMgr);
   const scriptLib = new ScriptLibraryService();
   const telemetrySvc = new TelemetryService();
   const upgrades = new UpgradesService();
   const pending = new PendingUpgradesService();
-  const research = new ResearchService();
 
   // 3) Seed example script (moved early so we can assign it to default rocket)
   // 3) Ensure Start.ts exists (Upsert to guarantee it's there even if library wasn't empty)
   let startScriptId: string | undefined;
   try {
-    const existing = sessionStorage.getItem(SessionKeys.SCRIPT);
+    const existing = localStorage.getItem(SessionKeys.SCRIPT);
     const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'export function update(api: any){}');
-    // Force upsert to ensure it exists with this name and we get the real ID
-    const s = scriptLib.upsertByName("Start.ts", seed, DEFAULT_EXAMPLE_COMPILED);
+
+    // Check if Start.ts already exists in the library (to avoid overwriting user changes)
+    let s = scriptLib.list().find(item => item.name === "Start.ts");
+    if (!s) {
+      // Only create if missing
+      s = scriptLib.upsertByName("Start.ts", seed, DEFAULT_EXAMPLE_COMPILED);
+    }
     startScriptId = s.id;
   } catch { }
 
@@ -97,7 +103,7 @@ export function initAppLogic(): void {
   }
 
   // 6) Science & Store
-  const scienceMgr = new ScienceManager(research);
+  // ScienceManager moved up
   const commsSvc = new CommsService(scienceMgr); // Instantiate
   const store = new PartStore(DefaultCatalog);
 
@@ -117,8 +123,12 @@ export function initAppLogic(): void {
       debug: debugSvc, // Expose for UI
       comms: commsSvc,
       // Science
-      getAchievements: () => { try { return scienceMgr.list(); } catch { return []; } },
-      getCompleted: () => scienceMgr.getCompletedIds(),
+      getScienceManager: () => scienceMgr,
+      getMilestones: () => scienceMgr.getMilestones(),
+      claimMilestone: (id: string) => scienceMgr.claim(id),
+      getScienceData: () => scienceMgr.data,
+      // Legacy compat
+      getAchievements: () => [],
       // Money replaced by RP
       getResearchPoints: () => research.system.points,
       getReceivedPackets: () => manager.getReceivedPackets(),

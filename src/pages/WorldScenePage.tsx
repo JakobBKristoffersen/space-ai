@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MinimapPanel } from "../components/MinimapPanel";
 import {
+    Badge,
     Box,
     Button,
     Card,
@@ -21,7 +22,7 @@ import {
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { estimateDeltaV, mag2 } from "../app/utils/rocketPerf";
-import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish } from "react-icons/fa";
+import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish, FaFlask } from "react-icons/fa";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 
 // --- Helpers ---
@@ -202,12 +203,12 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                                 </HStack>
                                             </Box>
                                         </Grid>
-                                        {(rocketSnap?.commsBytesSentPerS ?? 0) > 0 && (
-                                            <HStack justify="space-between">
-                                                <Text fontSize="xs">Upload</Text>
-                                                <Text fontSize="xs" fontWeight="mono" color="green.300">{fmt((rocketSnap?.commsBytesSentPerS ?? 0) / 1024, 2)} KB/s</Text>
-                                            </HStack>
-                                        )}
+
+                                        <HStack justify="space-between">
+                                            <Text fontSize="xs">Upload</Text>
+                                            <Text fontSize="xs" fontWeight="mono" color={rocketSnap?.commsInRange ? "green.300" : "red.300"}>{fmt((rocketSnap?.commsBytesSentPerS ?? 0) / 1024, 2)} KB/s</Text>
+                                        </HStack>
+
                                     </VStack>
                                 </Card.Body>
                             </Card.Root>
@@ -218,10 +219,17 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                 <Card.Body>
                                     <VStack align="stretch" gap={3}>
                                         <Box>
-                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Battery</Text><Text fontSize="xs" fontWeight="mono">{fmt(energy)} J</Text></HStack>
+                                            <HStack justify="space-between" mb={1}>
+                                                <Text fontSize="xs">Battery</Text>
+                                                <Text fontSize="xs" fontWeight="mono">{fmt(energy)} J</Text>
+                                            </HStack>
                                             <Progress.Root value={batPct} max={100} size="xs" colorPalette={batPct < 20 ? "red" : "green"}>
                                                 <Progress.Track><Progress.Range /></Progress.Track>
                                             </Progress.Root>
+                                            <HStack justify="space-between" mt={1}>
+                                                <Text fontSize="xx-small" color="green.400">+{fmt(rocketSnap?.energyGainJPerS ?? 0, 1)} W</Text>
+                                                <Text fontSize="xx-small" color="orange.400">-{fmt(rocketSnap?.energyDrawJPerS ?? 0, 1)} W</Text>
+                                            </HStack>
                                         </Box>
                                         <Box>
                                             <HStack justify="space-between" mb={1}><Text fontSize="xs">Temp</Text><Text fontSize="xs" fontWeight="mono" color={temp > maxTemp * 0.8 ? "red.300" : "gray.300"}>{fmt(temp)} / {maxTemp}</Text></HStack>
@@ -230,7 +238,49 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                             </Progress.Root>
                                             <HStack justify="end" mt={1} color="gray.500"><Icon as={FaThermometerHalf} boxSize={3} /><Text fontSize="xx-small">GLOBAL</Text></HStack>
                                         </Box>
+
+                                        {/* Status Badges */}
+                                        <HStack gap={2} mt={1}>
+                                            <Badge variant={rocketSnap?.solarDeployed ? "solid" : "subtle"} colorPalette={rocketSnap?.solarDeployed ? "green" : "gray"} size="xs">
+                                                {rocketSnap?.solarDeployed ? "SOLAR: ON" : "SOLAR: OFF"}
+                                            </Badge>
+                                            <Badge variant={rocketSnap?.parachuteDeployed ? "solid" : "subtle"} colorPalette={rocketSnap?.parachuteDeployed ? "green" : "gray"} size="xs">
+                                                {rocketSnap?.parachuteDeployed ? "CHUTE: ON" : "CHUTE: OFF"}
+                                            </Badge>
+                                        </HStack>
                                     </VStack>
+                                </Card.Body>
+                            </Card.Root>
+
+                            {/* SCIENCE */}
+                            <Card.Root size="sm" variant="subtle" bg="gray.800">
+                                <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="cyan.400">SCIENCE</Text><Icon as={FaFlask} size="xs" color="cyan.400" /></HStack></Card.Header>
+                                <Card.Body>
+                                    {rocketSnap?.science?.length ? (
+                                        <VStack align="stretch" gap={2}>
+                                            {rocketSnap.science.map((s: any) => (
+                                                <HStack key={s.id} justify="space-between">
+                                                    <Text fontSize="xs" color="gray.300">{s.name}</Text>
+                                                    <Text fontSize="xs" fontWeight="bold" color={s.hasData ? "green.300" : "gray.500"}>{s.hasData ? "READY" : "IDLE"}</Text>
+                                                </HStack>
+                                            ))}
+                                            <Box pt={1} borderTopWidth="1px" borderColor="gray.700">
+                                                <Grid templateColumns="1fr 1fr" gap={2}>
+                                                    {rocketSnap.science.some((s: any) => s.id === "science.temp") && (
+                                                        <StatBox label="TEMP" value={fmt(rocketSnap.ambientTemperature ?? 0, 1)} unit="K" />
+                                                    )}
+                                                    {rocketSnap.science.some((s: any) => s.id === "science.atmos") && (
+                                                        <StatBox label="PRESSURE" value={fmt(rocketSnap.ambientPressure ?? 0, 1)} unit="Pa" />
+                                                    )}
+                                                    {rocketSnap.science.some((s: any) => s.id === "science.surface") && (
+                                                        <StatBox label="TERRAIN" value={rocketSnap?.currentTerrain ?? "-"} unit="" />
+                                                    )}
+                                                </Grid>
+                                            </Box>
+                                        </VStack>
+                                    ) : (
+                                        <Text fontSize="xs" color="gray.500" fontStyle="italic">No Experiments Installed</Text>
+                                    )}
                                 </Card.Body>
                             </Card.Root>
 
@@ -306,7 +356,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                         <StatBox label="TURN RATE" value={fmt((rocketSnap?.angularVelocityRadPerS ?? 0) * 57.3, 1)} unit="°/s" />
                                         <StatBox label="APOAPSIS" value={fmt(rocketSnap?.apAltitude ?? 0)} unit="m" />
                                         <StatBox label="PERIAPSIS" value={fmt(rocketSnap?.peAltitude ?? 0)} unit="m" />
-                                        <StatBox label="TERRAIN" value={rocketSnap?.currentTerrain ?? "-"} unit="" />
+
                                     </Grid>
                                 </Card.Body>
                             </Card.Root>
@@ -388,3 +438,5 @@ function ScriptLogsPanel({ manager }: any) {
         </Card.Root>
     )
 }
+
+

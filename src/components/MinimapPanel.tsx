@@ -166,6 +166,39 @@ export function MinimapPanel({ envSnap, width = "100%", height = "100%" }: Minim
         } catch {
         }
 
+        // Draw connection line to base if connected
+        try {
+            const r = envSnap.rocket;
+            if (r && (r.commsInRange || (r.commState?.connected))) {
+                const baseBody = envSnap.bodies.find((b: any) => b.id === envSnap.primaryId) ?? primary;
+                // Base is roughly at (0, R) relative to primary center in world space (initial launch pos)
+                // Actually launch happens at (0, R).
+                // Base coordinates in world space:
+                const bx = baseBody.position.x;
+                const by = baseBody.position.y + baseBody.radiusMeters;
+
+                const pRocket = toMini(r.position.x, r.position.y);
+                const pBase = toMini(bx, by);
+
+                ctx.save();
+                ctx.beginPath();
+                ctx.setLineDash([2, 4]); // Dotted
+                ctx.strokeStyle = "#48bb78"; // Green-400
+                ctx.lineWidth = 1.5;
+                ctx.moveTo(pBase.x, pBase.y);
+                ctx.lineTo(pRocket.x, pRocket.y);
+                ctx.stroke();
+
+                // Draw small base icon/dot
+                ctx.fillStyle = "#48bb78";
+                ctx.beginPath();
+                ctx.arc(pBase.x, pBase.y, 2.5, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.restore();
+            }
+        } catch { }
+
         const rocketsDraw = Array.isArray((envSnap as any).rockets) ? (envSnap as any).rockets : [envSnap.rocket];
         const activeIdxMM = Number((envSnap as any).activeRocketIndex ?? 0) | 0;
         for (let i = 0; i < rocketsDraw.length; i++) {

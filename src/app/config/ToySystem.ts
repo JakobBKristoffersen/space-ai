@@ -14,8 +14,8 @@ export const ToySystem: CelestialSystemDef = {
       surfaceGravity: 12.0,
       color: "#2e5d2e",
       // Keep a small scale height per previous tuning; Environment constructs
-      // AtmosphereWithCutoff with cutoffFactor, so effective cutoff ~ H*7
-      atmosphereScaleHeightMeters: 350,
+      // Explicit atmosphere cutoff at 2000m (Physics scaled to this)
+      atmosphereHeightMeters: 2000,
       atmosphereColor: "rgba(90,160,255,1)",
       terrain: [
         { type: "Plains", color: "#2e5d2e", startRad: 0, endRad: 1.5 },

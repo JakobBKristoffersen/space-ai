@@ -25,7 +25,19 @@ export type StoredLayout = {
   scriptId?: string; // ID of script to run on the main CPU
 };
 
+import { ScienceManager } from "../../game/ScienceManager";
+
 export class LayoutService {
+  private scienceManager: ScienceManager;
+
+  constructor(scienceManager?: ScienceManager) {
+    this.scienceManager = scienceManager || new ScienceManager(null);
+  }
+
+  getScienceManager(): ScienceManager {
+    return this.scienceManager;
+  }
+
   buildDefaultRocket(): Rocket {
     // Default to Basic template with basic parts
     const r = new Rocket();

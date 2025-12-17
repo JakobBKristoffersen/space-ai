@@ -30,7 +30,7 @@ export interface CommPath {
 
 export interface DataPacket {
     id: string;
-    type: 'telemetry' | 'science' | 'command';
+    type: 'telemetry' | 'science' | 'command' | 'science_data_bulk';
     sizeKb: number;
     progressKb: number;
     sourceId: string;
@@ -170,65 +170,55 @@ export class CommSystem {
                 distanceMeters: connected ? (distTo.get(r.id) ?? 0) : 0,
             };
 
-            // Process Packet Queue
-            if (connected && r.packetQueue.length > 0) {
-                // Find effective antenna stats
-                // Default fallback if no antenna found (should allow small debug?)
-                let bandwidth = 5; // 5 B/s fallback (very slow)
-                let powerCost = 0.1;
-
-                if (r.antennas && r.antennas.length > 0) {
-                    // Use the best antenna? Or the first?
-                    // Let's assume best range/bandwidth antenna is primary.
-                    // For now, simple: use the first one that connects (simplification)
-                    // Or actually, check part definition.
-                    // Since 'Rocket' stores instances which now have 'bandwidth' property from our update
-                    const antenna = r.antennas[0];
-                    if (antenna.bandwidth) bandwidth = antenna.bandwidth;
-                    if (antenna.power) powerCost = antenna.power;
-
-                    // Future: check if this specific antenna can reach the target
-                }
-
-                // Check Energy
-                const energyNeeded = powerCost * dt;
-                const energyAvailable = r.drawEnergy ? r.drawEnergy(energyNeeded) : energyNeeded;
-
-                // If not enough energy, throughput drops
-                const efficiency = energyNeeded > 0 ? (energyAvailable / energyNeeded) : 1.0;
-
-                const bandwidthKb = bandwidth / 1024;
-                const sentKb = bandwidthKb * dt * efficiency;
-
-                // Peek first packet
-                const pkt = r.packetQueue[0];
-
-                // Debug log occasionally if stuck
-                if (Math.random() < 0.01) {
-                    console.log(`[CommSystem] Processing pkt ${pkt.id} type=${pkt.type} size=${pkt.sizeKb.toFixed(4)} prog=${pkt.progressKb.toFixed(4)} sent=${sentKb.toFixed(5)} eff=${efficiency}`);
-                }
-
-                pkt.progressKb += sentKb;
-                // UI wants Bytes/s rate. sentKb is KB sent in 'dt' seconds.
-                // Rate = (sentKb * 1024) / dt
-                (r as any)._commsSentPerS = (dt > 0) ? (sentKb * 1024) / dt : 0;
-
-                if (pkt.progressKb >= pkt.sizeKb) {
-                    // Send complete
-                    r.packetQueue.shift();
-                    // Hack to signal completion to missions
-                    (r as any)._lastPacketSentId = pkt.id;
-                    (r as any)._lastPacketSentType = pkt.type;
-
-                    // Store in Base logs if target is base
-                    if (pkt.targetId === 'base') {
-                        this.receivedPackets.push({ ...pkt, type: pkt.type as any, progressKb: pkt.sizeKb });
-                        // Limit log size
-                        if (this.receivedPackets.length > 50) this.receivedPackets.shift();
-                    }
-                }
-            } else {
+            // Explicit idle check: if not connected or no data, do not process or consume energy
+            if (!connected || r.packetQueue.length === 0) {
                 (r as any)._commsSentPerS = 0;
+                continue;
+            }
+
+            // At this point, we are connected AND have data to send.
+            // Calculate Energy Cost for Transmission
+            let bandwidth = 5; // 5 B/s fallback
+            let powerCost = 0.1; // 0.1W fallback
+
+            if (r.antennas && r.antennas.length > 0) {
+                // Use the first antenna for now (simplification)
+                const antenna = r.antennas[0];
+                if (antenna.bandwidth) bandwidth = antenna.bandwidth;
+                if (antenna.power) powerCost = antenna.power;
+            }
+
+            // Check Energy
+            const energyNeeded = powerCost * dt;
+            const energyAvailable = r.drawEnergy ? r.drawEnergy(energyNeeded) : energyNeeded;
+
+            // If not enough energy, throughput drops
+            const efficiency = energyNeeded > 0 ? (energyAvailable / energyNeeded) : 1.0;
+
+            const bandwidthKb = bandwidth / 1024;
+            const sentKb = bandwidthKb * dt * efficiency;
+
+            // Peek first packet
+            const pkt = r.packetQueue[0];
+
+            pkt.progressKb += sentKb;
+            // UI wants Bytes/s rate. sentKb is KB sent in 'dt' seconds.
+            // Rate = (sentKb * 1024) / dt
+            (r as any)._commsSentPerS = (dt > 0) ? (sentKb * 1024) / dt : 0;
+
+            if (pkt.progressKb >= pkt.sizeKb) {
+                // Send complete
+                r.packetQueue.shift();
+                // Hack to signal completion to missions
+                (r as any)._lastPacketSentId = pkt.id;
+                (r as any)._lastPacketSentType = pkt.type;
+
+                // Store in Base logs if target is base
+                if (pkt.targetId === 'base') {
+                    this.receivedPackets.push({ ...pkt, type: pkt.type as any, progressKb: pkt.sizeKb });
+                    // Limit log size
+                    if (this.receivedPackets.length > 50) this.receivedPackets.shift();
+                }
             }
         }
     }
