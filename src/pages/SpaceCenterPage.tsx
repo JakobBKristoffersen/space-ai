@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { SimpleGrid, Card, Heading, Text, VStack, Icon, Flex, Box, Dialog, Button, Badge, Separator, HStack } from "@chakra-ui/react";
-import { FaRocket, FaSatelliteDish, FaFlag, FaFlask, FaCode, FaBuilding, FaArrowUp, FaCoins } from "react-icons/fa";
+import { FaRocket, FaSatelliteDish, FaFlag, FaFlask, FaCode, FaBuilding, FaArrowUp, FaCoins, FaGlobe } from "react-icons/fa";
 import { useAppCore } from "../app/AppContext";
 import { FacilityType } from "../app/services/UpgradesService";
 
@@ -37,7 +37,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
     };
 
     const cards = [
-        { id: "world_scene", title: "Launch Control", icon: FaSatelliteDish, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
+        { id: "world_scene", title: "Launch Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
         { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500" },
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400", type: "vab" },
         { id: "facility_pad", title: "Launch Pad", icon: FaArrowUp, desc: "Manage launch capabilities.", color: "red.400", type: "launchPad" },

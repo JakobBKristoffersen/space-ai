@@ -11,6 +11,7 @@ import BuildPage from "./pages/BuildPage";
 import SpaceCenterPage from "./pages/SpaceCenterPage";
 import { CommsCenterPage } from "./pages/CommsCenterPage";
 import { DebugToolbox } from "./ui/DebugToolbox";
+import { Sidebar } from "./components/Sidebar";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -91,46 +92,50 @@ export default function App() {
   // Render logic: specific pages + persistent WorldScene
   return (
     <AppCoreContext.Provider value={core}>
-      <Flex id="app" direction="column" minH="100dvh" bg={appBg} color={appFg}>
-        {/* App header */}
-        <HStack px={4} py={3} justify="space-between" borderBottomWidth="1px" bg="gray.800" borderColor="gray.700">
-          <HStack>
-            <Button size="sm" variant="ghost" mr={2} onClick={() => setCurrentView("space_center")}>
-              🚀 Space Center
-            </Button>
-            <Heading size="md" display={{ base: "none", md: "block" }}>Space AI</Heading>
-          </HStack>
+      <Flex id="app" direction="row" minH="100dvh" bg={appBg} color={appFg}>
 
-          <HStack gap={6}>
-            <Text fontFamily="mono" fontSize="sm">{clock}</Text>
-            {perf.tps > 0 && (
-              <Text fontFamily="mono" fontSize="xs" color="gray.500" title="Ticks/Sec | Frames/Sec">
-                {perf.tps} TPS / {perf.fps} FPS
-              </Text>
-            )}
-            <HStack gap={4}>
-              <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
+        {/* Sidebar Navigation */}
+        <Sidebar currentView={currentView} onNavigate={setCurrentView} />
+
+        {/* Main Content Area */}
+        <Flex direction="column" flex={1} overflow="hidden">
+          {/* App header */}
+          <HStack px={4} py={3} justify="space-between" borderBottomWidth="1px" bg="gray.800" borderColor="gray.700">
+            <HStack>
+              <Heading size="md" fontFamily="mono" color="cyan.400">{`> Space AI`}</Heading>
+            </HStack>
+
+            <HStack gap={6}>
+              <Text fontFamily="mono" fontSize="sm">{clock}</Text>
+              {perf.tps > 0 && (
+                <Text fontFamily="mono" fontSize="xs" color="gray.500" title="Ticks/Sec | Frames/Sec">
+                  {perf.tps} TPS / {perf.fps} FPS
+                </Text>
+              )}
+              <HStack gap={4}>
+                <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
+              </HStack>
+            </HStack>
+
+            <HStack gap={3}>
+              <DebugToolbox />
             </HStack>
           </HStack>
 
-          <HStack gap={3}>
-            <DebugToolbox />
-          </HStack>
-        </HStack>
+          {/* Views */}
+          <Box flex={1} overflow="hidden" position="relative">
+            <Box h="100%" display={currentView === 'world_scene' ? 'block' : 'none'}>
+              <WorldScenePage onNavigate={setCurrentView} />
+            </Box>
 
-        {/* Views */}
-        <Box flex={1} overflow="hidden" position="relative">
-          <Box h="100%" display={currentView === 'world_scene' ? 'block' : 'none'}>
-            <WorldScenePage onNavigate={setCurrentView} />
+            {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}
+            {currentView === 'comms' && <CommsCenterPage onNavigate={setCurrentView} />}
+            {currentView === 'build' && <BuildPage onNavigate={setCurrentView} />}
+            {currentView === 'science' && <SciencePage onNavigate={setCurrentView} />}
+            {currentView === 'research' && <ResearchPage onNavigate={setCurrentView} />}
+            {currentView === 'scripts' && <ScriptsPage onNavigate={setCurrentView} />}
           </Box>
-
-          {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}
-          {currentView === 'comms' && <CommsCenterPage onNavigate={setCurrentView} />}
-          {currentView === 'build' && <BuildPage onNavigate={setCurrentView} />}
-          {currentView === 'science' && <SciencePage onNavigate={setCurrentView} />}
-          {currentView === 'research' && <ResearchPage onNavigate={setCurrentView} />}
-          {currentView === 'scripts' && <ScriptsPage onNavigate={setCurrentView} />}
-        </Box>
+        </Flex>
       </Flex>
     </AppCoreContext.Provider>
   );
