@@ -33,33 +33,9 @@ export interface SandboxOptions {
 
 export class Sandbox {
   /** Compiles and validates user code into a callable update function. */
-  async compile(userCode: string, opts: SandboxOptions, language: 'typescript' | 'python' = 'typescript'): Promise<CompiledScript> {
+  async compile(userCode: string, opts: SandboxOptions, language: 'typescript' = 'typescript'): Promise<CompiledScript> {
     if (userCode.length > opts.maxChars) {
       throw new Error(`Script too large. Max ${opts.maxChars} chars.`);
-    }
-
-    if (language === 'python') {
-      const { PyodideService } = await import("../services/PyodideService");
-      const pyodide = PyodideService.getInstance();
-      const updateFn = await pyodide.prepareScript(userCode);
-
-      return {
-        update(api: RocketAPI, budget: SimpleTickBudget): void {
-          const start = performance.now();
-          api.beginTick(budget);
-          try {
-            updateFn(api);
-          } catch (e: any) {
-            // Re-throw or log? Python errors might be objects
-            throw new Error("Python Error: " + String(e));
-          } finally {
-            api.endTick();
-            if (opts.timeLimitMs != null && performance.now() - start > opts.timeLimitMs) {
-              throw new Error("Script time limit exceeded");
-            }
-          }
-        }
-      };
     }
 
     // TypeScript/JavaScript path

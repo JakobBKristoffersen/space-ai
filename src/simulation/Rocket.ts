@@ -14,7 +14,9 @@ export interface RocketState {
   position: Vec2; // meters
   velocity: Vec2; // m/s
   orientationRad: number; // radians; 0 points along +X, pi/2 along +Y
-  temperature: number; // arbitrary units
+  temperature: number; // internal/average
+  noseTemperature: number;
+  tailTemperature: number;
 }
 
 export interface RocketSnapshot {
@@ -23,6 +25,10 @@ export interface RocketSnapshot {
   velocity: Readonly<Vec2>;
   orientationRad: number;
   temperature: number;
+  noseTemperature: number;
+  tailTemperature: number;
+  maxNoseTemperature?: number;
+  maxTailTemperature?: number;
   massKg: number;
   altitude: number;
   /** Current atmospheric density at rocket altitude (kg/m^3), if available. */
@@ -132,6 +138,23 @@ export type RocketCommand =
   | { type: "deploySolar" }
   | { type: "retractSolar" };
 
+/**
+ * Cached orbital state for "Rails" physics.
+ * Allows analytical propagation without recalculating elements every frame.
+ */
+export interface RailsState {
+  a: number;        // Semi-major axis (meters)
+  e: number;        // Eccentricity
+  i: number;        // Inclination (2D: usually 0 or PI)
+  w: number;        // Argument of Periapsis (radians)
+  M0: number;       // Mean Anomaly at epoch t0 (radians)
+  n: number;        // Mean Motion (rad/s), signed for retrograde
+  t0: number;       // Epoch time (seconds)
+  soiId: string;    // ID of the body we are orbiting
+  mu: number;       // Gravitational parameter for velocity storage
+}
+
+
 export interface RocketCommandQueue {
   drain(): RocketCommand[];
 }
@@ -186,6 +209,7 @@ export interface ProcessingUnitPart { // Alias for CPUPart
   readonly massKg: number;
   readonly scriptSlots: number;
   readonly processingBudgetPerTick: number;
+  readonly energyPerTickJ: number;
   readonly maxScriptChars: number;
   readonly processingIntervalSeconds?: number;
   readonly exposes?: string[];
@@ -253,9 +277,9 @@ export interface PayloadPart {
 }
 
 // Simple parts
-export interface NoseConePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; }
+export interface NoseConePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; readonly heatTolerance?: number; /* Base Drag Modifier: e.g. -0.2 to reduce drag */ readonly dragModifier?: number; }
 export interface FinPart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; }
-export interface HeatShieldPart { readonly id: string; readonly name: string; readonly massKg: number; readonly maxTemp: number; }
+export interface HeatShieldPart { readonly id: string; readonly name: string; readonly massKg: number; readonly maxTemp: number; readonly heatTolerance?: number; /* Re-entry protection factor? */ }
 export interface SciencePart { readonly id: string; readonly name: string; readonly massKg: number; readonly scienceValue?: number; }
 
 
@@ -269,6 +293,8 @@ export class Rocket {
     velocity: { x: 0, y: 0 },
     orientationRad: 0,
     temperature: 0,
+    noseTemperature: 0,
+    tailTemperature: 0,
   };
 
   currentTerrain: string | undefined;
@@ -330,7 +356,11 @@ export class Rocket {
   private _commsSentPerS: number | undefined = undefined;
   private _commsRecvPerS: number | undefined = undefined;
   private _maxTurnRateForSnapshot: number | undefined = undefined;
+  // private _maxTurnRateForSnapshot: number | undefined = undefined; // duplicate removed
   private _atmosphereCutoffForSnapshot: number | undefined = undefined;
+
+  // Cache for Persistent Rails Physics
+  _railsState?: RailsState;
 
   // Energy Tracking
   private _lastEnergyGainJPerS = 0;
@@ -576,13 +606,21 @@ export class Rocket {
 
     const parachuteDeployed = this.parachutes.some(p => p.deployed);
 
+    // --- Runtime Cache for Rails Physics ---
+    const _railsState = (this as any)._railsState; // Include in debug if needed?
+
+
     // Estimate total drag coefficient (Cd)
     // Base shape
-    let cd = this.dragCoefficient;
+    let cd = this.dragCoefficient; // e.g. 0.5 base
     // Addtional parts
     for (const p of this.parachutes) if (p.deployed) cd += p.deployedDrag;
     for (const f of this.fins) cd += (f.dragCoefficient ?? 0);
-    for (const n of this.noseCones) cd += (n.dragCoefficient ?? 0);
+    // Nose cones reduce drag (negative modifier)
+    for (const n of this.noseCones) {
+      if (n.dragCoefficient) cd += n.dragCoefficient;
+      if (n.dragModifier) cd += n.dragModifier;
+    }
 
     return {
       name: this.name,
@@ -590,6 +628,8 @@ export class Rocket {
       velocity: { ...this.state.velocity },
       orientationRad: this.state.orientationRad,
       temperature: this.state.temperature,
+      noseTemperature: this.state.noseTemperature,
+      tailTemperature: this.state.tailTemperature,
       massKg: this.totalMass(),
       altitude: this._altitudeForSnapshot,
       airDensity: this._airDensityForSnapshot,

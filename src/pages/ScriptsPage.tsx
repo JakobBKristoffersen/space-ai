@@ -194,6 +194,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
               }}
               onCompile={save}
               theme={editorTheme}
+              unlockedTechs={services.research?.system?.unlockedTechs}
             />
           </Card.Body>
         </Card.Root>

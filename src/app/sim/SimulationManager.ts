@@ -165,11 +165,7 @@ export class SimulationManager {
 
     // Render wiring: draw scene first, then notify UI for overlays/metrics
     this.loop.onRender((alpha, now) => {
-      // If fast-forward is enabled (>1x), advance extra fixed steps per render frame.
-      if (this.speedMultiplier > 1) {
-        const extra = Math.min(8, Math.floor(this.speedMultiplier) - 1); // cap to avoid long frames
-        if (extra > 0) this.loop.stepTicks(extra);
-      }
+      // timeScale handles speed now, no manual stepping needed.
       this.renderer.render(alpha, now);
       this.postRenderListeners.forEach((fn) => {
         try { fn(alpha, now); } catch { }
@@ -180,8 +176,10 @@ export class SimulationManager {
   // --- Public API for UI layers ---
 
   setSpeedMultiplier(mult: number): void {
-    if (!Number.isFinite(mult) || mult <= 0) { this.speedMultiplier = 1; return; }
-    this.speedMultiplier = Math.min(16, Math.max(0.25, mult));
+    if (!Number.isFinite(mult) || mult <= 0) { this.speedMultiplier = 1; this.loop.timeScale = 1; return; }
+    // Cap at 50x as requested, or higher if stable.
+    this.speedMultiplier = Math.min(50, Math.max(0.1, mult));
+    this.loop.timeScale = this.speedMultiplier;
   }
   getSpeedMultiplier(): number { return this.speedMultiplier; }
 
@@ -228,6 +226,8 @@ export class SimulationManager {
 
   // Expose CommSystem packets for UI
   getReceivedPackets() { return this.commSystem.receivedPackets; }
+
+  getPerf() { return this.loop.getPerformanceMetrics(); }
 
   // --- Fleet naming ---
   getRocketNames(): string[] {

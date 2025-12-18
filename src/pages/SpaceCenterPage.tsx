@@ -24,11 +24,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
         );
     }
 
-    const handleUpgrade = (type: FacilityType) => {
-        // Upgrade (Free for now)
-        upgrades.upgrade(type);
-        setUpdater(prev => prev + 1); // trigger re-render
-    };
+
 
     const getFacilityInfo = (type: FacilityType) => {
         const level = upgrades.getLevel(type);
@@ -45,7 +41,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
         { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500" },
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400", type: "vab" },
         { id: "facility_pad", title: "Launch Pad", icon: FaArrowUp, desc: "Manage launch capabilities.", color: "red.400", type: "launchPad" },
-        { id: "missions", title: "Science Achievements", icon: FaFlag, desc: "View research goals.", color: "orange.400", type: "missionControl" },
+        { id: "science", title: "Science Data", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
         { id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" },
         { id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400" }, // No upgrade yet
     ];
@@ -132,7 +128,9 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
                                 const type = selectedFacility.type;
                                 const level = upgrades.getLevel(type);
                                 const cost = upgrades.getUpgradeCost(type, level);
-                                const nextDesc = cost ? upgrades.getUpgradeDescription(type, level + 1) : "Max Level Reached";
+                                const nextDesc = cost !== null ? upgrades.getUpgradeDescription(type, level + 1) : "Max Level Reached";
+                                const currentRp = services.research?.system.points ?? 0;
+                                const canAfford = cost !== null && currentRp >= cost;
 
                                 return (
                                     <VStack align="stretch" gap={4}>
@@ -145,12 +143,23 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
                                             {type === "vab" && <Text>Templates: Tier {level}</Text>}
                                         </Box>
 
-                                        {cost ? (
-                                            <Box p={4} borderWidth="1px" borderColor="green.600" borderRadius="md" bg="green.900/20">
-                                                <Text fontWeight="bold" color="green.300" mb={1}>NEXT UPGRADE</Text>
+                                        {cost !== null ? (
+                                            <Box p={4} borderWidth="1px" borderColor={canAfford ? "green.600" : "red.600"} borderRadius="md" bg={canAfford ? "green.900/20" : "red.900/10"}>
+                                                <Text fontWeight="bold" color={canAfford ? "green.300" : "red.300"} mb={1}>NEXT UPGRADE</Text>
                                                 <Text mb={2}>{nextDesc}</Text>
-                                                <Button w="full" colorScheme="green" onClick={() => handleUpgrade(type)}>
-                                                    Upgrade (Free)
+                                                <Text mb={4} fontWeight="bold">Cost: {cost} RP</Text>
+                                                <Button
+                                                    w="full"
+                                                    colorScheme={canAfford ? "green" : "red"}
+                                                    disabled={!canAfford}
+                                                    onClick={() => {
+                                                        if (canAfford) {
+                                                            services.research?.system.addPoints(-cost);
+                                                            upgrades.upgrade(type);
+                                                            setUpdater(prev => prev + 1);
+                                                        }
+                                                    }}>
+                                                    Upgrade
                                                 </Button>
                                             </Box>
                                         ) : (

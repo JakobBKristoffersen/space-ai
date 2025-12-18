@@ -390,9 +390,28 @@ export class Environment {
       r.state.position.x += r.state.velocity.x * dt;
       r.state.position.y += r.state.velocity.y * dt;
 
-      // Heating
-      const heatRate2 = this.heatingModel.heatingRate(atm.density, speed2);
-      r.state.temperature += heatRate2 * dt;
+      // Heating (Background)
+      const ox2 = Math.cos(r.state.orientationRad);
+      const oy2 = Math.sin(r.state.orientationRad);
+      const align2 = speed2 > 0.1 ? (r.state.velocity.x * ox2 + r.state.velocity.y * oy2) / speed2 : 0;
+
+      const K_flux2 = 1.0e-7;
+      const cool2 = 0.8;
+      const baseFlux2 = 0.5 * atm.density * Math.pow(speed2, 3.0) * K_flux2;
+
+      const noseFlux2 = baseFlux2 * Math.max(0, align2);
+      const tailFlux2 = baseFlux2 * Math.max(0, -align2);
+      const skinFlux2 = baseFlux2 * (1 - Math.abs(align2)) * 0.2;
+
+      const ambT = atm.temperature || 4;
+
+      r.state.noseTemperature += (noseFlux2 - cool2 * (r.state.noseTemperature - ambT)) * dt;
+      r.state.tailTemperature += (tailFlux2 - cool2 * (r.state.tailTemperature - ambT)) * dt;
+      r.state.temperature += (skinFlux2 - cool2 * (r.state.temperature - ambT)) * dt;
+
+      if (r.state.noseTemperature < ambT) r.state.noseTemperature = ambT;
+      if (r.state.tailTemperature < ambT) r.state.tailTemperature = ambT;
+      if (r.state.temperature < ambT) r.state.temperature = ambT;
       r.tickInternal(dt);
 
       // Ground collision
@@ -495,226 +514,515 @@ export class Environment {
     this.destroyed = false; // Reset destroyed flag if environment was considered "failed"
   }
 
-  /** Encapsulated physics for the active rocket (thrust, reaction wheels, etc.). */
+  /**
+   * Helper: Manages rotation via Reaction Wheels and Fins.
+   * Consumes energy and updates orientation.
+   * Usable in both Numerical and Rails physics modes.
+   */
+  private tickRotation(dt: number, rocket: Rocket, primary: BodyState): void {
+    const desired = (rocket as any).getDesiredAngularVelocityRadPerS ? rocket.getDesiredAngularVelocityRadPerS() : 0;
+    // Combine reaction wheels capability and energy cost
+    const wheels = (rocket as any).reactionWheels as any[] | undefined;
+    let maxOmega = 0;
+    let energyPerRadPerS = 0;
+    if (Array.isArray(wheels) && wheels.length > 0) {
+      for (const rw of wheels) {
+        const m = Number(rw.maxOmegaRadPerS) || 0;
+        const c = Number(rw.energyPerRadPerS) || 0;
+        maxOmega += Math.max(0, m);
+        energyPerRadPerS += Math.max(0, c);
+      }
+    }
+
+    // Add Fin Authority (Aerodynamic Control Surfaces)
+    const fins = (rocket as any).fins as any[] | undefined;
+    if (Array.isArray(fins) && fins.length > 0) {
+      const rx = rocket.state.position.x;
+      const ry = rocket.state.position.y;
+      const r = Math.hypot(rx, ry);
+      const alt = r - primary.radiusMeters;
+      // We can use a simplified check or the full property fetch for fins
+      const atm = this.atmosphere.getProperties(alt);
+
+      // Fins effective if density > 0.001 kg/m3.
+      if (atm.density > 0.001) {
+        const scale = Math.min(1.0, atm.density / 0.1);
+        const finAuthority = 0.5 * fins.length * scale;
+        maxOmega += finAuthority;
+      }
+    }
+
+    let actual = 0;
+    if (maxOmega > 0 && Number.isFinite(desired) && Number.isFinite(dt) && dt > 0) {
+      const target = Math.max(-maxOmega, Math.min(maxOmega, desired));
+      // Need energy to CHANGE velocity? or just MAINTAIN torque against nothing?
+      // In this simple model, we assume generic "effort" to turn.
+      const needPerSec = Math.abs(target) * energyPerRadPerS;
+      const need = needPerSec * dt;
+      if (need > 0) {
+        const drawn = rocket.drawEnergy(need);
+        const scale = Math.max(0, Math.min(1, drawn / need));
+        actual = target * scale;
+      } else {
+        actual = target;
+      }
+    } else {
+      actual = 0;
+    }
+
+    // Store actual for snapshot purposes and for next integration
+    try { (rocket as any).setTurnStatsForSnapshot?.(maxOmega); } catch { }
+    if ((rocket as any)._setActualAngularVelocityRadPerS) {
+      (rocket as any)._setActualAngularVelocityRadPerS(actual);
+    }
+    if (Number.isFinite(actual) && Number.isFinite(dt)) {
+      rocket.state.orientationRad += actual * dt;
+      // Normalize angle to [0, 2π)
+      const TWO_PI = Math.PI * 2;
+      let a = rocket.state.orientationRad % TWO_PI;
+      if (a < 0) a += TWO_PI;
+      rocket.state.orientationRad = a;
+    }
+  }
+
+  /**
+   * Encapsulated physics for the active rocket (Thrust, Drag, Gravity, Heating).
+   * Now includes "Rails" optimization for stable orbits.
+   */
   private tickActiveRocketPhysics(dt: number, primary: BodyState): void {
     const rocket = this.rocket!; // Assumed valid when called
+    const rPos = rocket.state.position;
+    const rVel = rocket.state.velocity;
 
-    // 1.5) Determine actual angular velocity from reaction wheels and available battery, then integrate orientation.
-    {
-      const desired = (rocket as any).getDesiredAngularVelocityRadPerS ? rocket.getDesiredAngularVelocityRadPerS() : 0;
-      // Combine reaction wheels capability and energy cost
-      const wheels = (rocket as any).reactionWheels as any[] | undefined;
-      let maxOmega = 0;
-      let energyPerRadPerS = 0;
-      if (Array.isArray(wheels) && wheels.length > 0) {
-        for (const rw of wheels) {
-          const m = Number(rw.maxOmegaRadPerS) || 0;
-          const c = Number(rw.energyPerRadPerS) || 0;
-          maxOmega += Math.max(0, m);
-          energyPerRadPerS += Math.max(0, c);
-        }
-      }
+    // 0) Basic State & Rotation
+    // Always run rotation (fin/wheel authority) even on rails
+    this.tickRotation(dt, rocket, primary);
 
-      // Add Fin Authority (Aerodynamic Control Surfaces)
-      const fins = (rocket as any).fins as any[] | undefined;
-      if (Array.isArray(fins) && fins.length > 0) {
-        const r = Math.hypot(rocket.state.position.x, rocket.state.position.y);
-        const alt = r - primary.radiusMeters;
-        const atm = this.atmosphere.getProperties(alt); // Use props
+    // Calculate generic altitude/radius for decision making
+    const dxp = primary.position.x - rPos.x;
+    const dyp = primary.position.y - rPos.y;
+    // Current Radius from Center
+    const rCurrent = Math.sqrt(dxp * dxp + dyp * dyp);
+    const altitude = rCurrent - primary.radiusMeters;
 
-        // Fins effective if density > 0.001 kg/m3.
-        if (atm.density > 0.001) {
-          const scale = Math.min(1.0, atm.density / 0.1);
-          const finAuthority = 0.5 * fins.length * scale;
-          maxOmega += finAuthority;
-        }
-      }
-      let actual = 0;
-      if (maxOmega > 0 && Number.isFinite(desired) && Number.isFinite(dt) && dt > 0) {
-        const target = Math.max(-maxOmega, Math.min(maxOmega, desired));
-        const needPerSec = Math.abs(target) * energyPerRadPerS; // J/s needed to sustain target
-        const need = needPerSec * dt; // J this tick
-        if (need > 0) {
-          const drawn = rocket.drawEnergy(need);
-          const scale = Math.max(0, Math.min(1, drawn / need));
-          actual = target * scale;
-        } else {
-          actual = 0;
-        }
-      } else {
-        actual = 0; // no wheels or zero capability -> no turning
-      }
-      // Store actual for snapshot purposes and for next integration
-      try { (rocket as any).setTurnStatsForSnapshot?.(maxOmega); } catch { }
-      if ((rocket as any)._setActualAngularVelocityRadPerS) {
-        (rocket as any)._setActualAngularVelocityRadPerS(actual);
-      }
-      if (Number.isFinite(actual) && Number.isFinite(dt)) {
-        rocket.state.orientationRad += actual * dt;
-        // Normalize angle to [0, 2π)
-        const TWO_PI = Math.PI * 2;
-        let a = rocket.state.orientationRad % TWO_PI;
-        if (a < 0) a += TWO_PI;
-        rocket.state.orientationRad = a;
-      }
-    }
-
-    // 2) Compute gravity vector from all bodies using inverse-square falloff from surface gravity.
-    const rx = rocket.state.position.x;
-    const ry = rocket.state.position.y;
-    let ax_g = 0, ay_g = 0;
-    const perBodyGrav: { id: string; name: string; fx: number; fy: number }[] = [];
-    // Track body with strongest gravitational acceleration (SOI approximation)
-    let soiBody: BodyState | null = null;
-    let soiG = -Infinity;
-    for (const b of this.bodies) {
-      const dx = b.position.x - rx;
-      const dy = b.position.y - ry;
-      const r2 = dx * dx + dy * dy;
-      const r = Math.max(1e-3, Math.sqrt(r2));
-      const nx = dx / r, ny = dy / r;
-      const g = b.surfaceGravity * (b.radiusMeters / Math.max(b.radiusMeters, r)) ** 2; // clamp inside
-      if (g > soiG) { soiG = g; soiBody = b; }
-      ax_g += g * nx;
-      ay_g += g * ny;
-      perBodyGrav.push({ id: b.id, name: b.name, fx: g * nx, fy: g * ny });
-    }
-    // Persist per-rocket SOI id for snapshot consumers
-    try { (rocket as any).setSoIForSnapshot?.(soiBody?.id ?? this.system.primaryId); } catch { }
-
-    // Altitude over primary
-    const dxp = primary.position.x - rx;
-    const dyp = primary.position.y - ry;
-    const rp = Math.sqrt(dxp * dxp + dyp * dyp);
-    const altitude = rp - primary.radiusMeters;
+    // Set Snapshot Altitude
     rocket.setAltitudeForSnapshot(altitude);
 
-    // 2.5) Orbital analysis relative to strongest-gravity (SOI) body
-    try {
-      const body = soiBody ?? primary;
-      const rxRel = rx - body.position.x;
-      const ryRel = ry - body.position.y;
-      const vxRel = rocket.state.velocity.x;
-      const vyRel = rocket.state.velocity.y;
-      const r = Math.hypot(rxRel, ryRel);
-      const v2 = vxRel * vxRel + vyRel * vyRel;
-      const mu = body.surfaceGravity * body.radiusMeters * body.radiusMeters;
-      if (mu > 0 && r > 0) {
-        const eps = 0.5 * v2 - mu / r;
-        const rv = rxRel * vxRel + ryRel * vyRel;
-        const ex = ((v2 - mu / r) * rxRel - rv * vxRel) / mu;
-        const ey = ((v2 - mu / r) * ryRel - rv * vyRel) / mu;
-        const e = Math.hypot(ex, ey);
-        if (eps < 0 && e < 1) {
-          const a = -mu / (2 * eps);
-          const rp_orb = a * (1 - e);
-          const ra_orb = a * (1 + e);
-          const peAlt = rp_orb - body.radiusMeters;
-          const apAlt = ra_orb - body.radiusMeters;
-          (rocket as any).setApPeForSnapshot?.(apAlt, peAlt);
-        } else {
-          (rocket as any).setApPeForSnapshot?.(Number.NaN, Number.NaN);
+    // Determine Atmosphere Cutoff
+    const atmCutoff = (this.atmosphere as any).cutoffAlt ?? 100000;
+    const inVacuum = altitude > atmCutoff;
+
+    // Snapshot Prop
+    try { (rocket as any).setAtmosphereCutoffForSnapshot?.(atmCutoff); } catch { }
+    try { (rocket as any).setInAtmosphereForSnapshot?.(!inVacuum); } catch { }
+
+    // --- OPTIMIZATION: RAILS PHYSICS ---
+
+    // Condition 1: Engines Check (Must be OFF)
+    const engines = rocket.engines || [];
+    const isThrottleZero = engines.length === 0 || engines.every((e: any) => (e.power ?? 0) <= 0.001);
+    // Be strict: actual thrust must be effectively 0
+    const isEnginesOff = isThrottleZero && (!rocket.currentThrust || rocket.currentThrust(0, 1.225) <= 1e-3);
+
+    // Condition 2: Vacuum Check
+    // (Already calc: inVacuum)
+
+    // A) Try to Use Existing Rails State
+    if (rocket._railsState && inVacuum && isEnginesOff) {
+      const rs = rocket._railsState;
+      // Ensure we are still in same SOI (basic check, though position update should handle it)
+      const soi = this.bodies.find(b => b.id === rs.soiId);
+
+      if (soi) {
+        // --- PROPAGATE FROM CACHE ---
+        // M(t) = M0 + n * (t - t0)
+        let dtOrbit = this.timeSeconds - rs.t0;
+        let M = rs.M0 + rs.n * dtOrbit;
+
+        // Solve Kepler for E
+        // E - e sin E = M
+        let E = M; // Initial guess
+        for (let iter = 0; iter < 10; iter++) {
+          const f = E - rs.e * Math.sin(E) - M;
+          const df = 1 - rs.e * Math.cos(E);
+          E -= f / df;
+          if (Math.abs(f) < 1e-6) break;
+        }
+
+        // Calculate Position in Orbital Plane (Perifocal)
+        // x = a(cos E - e)
+        // y = a sqrt(1-e^2) sin E
+        const cosE = Math.cos(E);
+        const sinE = Math.sin(E);
+        const beta = Math.sqrt(Math.max(0, 1 - rs.e * rs.e));
+
+        const xp = rs.a * (cosE - rs.e);
+        const yp = rs.a * beta * sinE;
+
+        // Rotate by Argument of Periapsis (w) to get Inertial Relative Position
+        // SoI-centric frame
+        const cw = Math.cos(rs.w);
+        const sw = Math.sin(rs.w);
+
+        const rxNew = xp * cw - yp * sw;
+        const ryNew = xp * sw + yp * cw;
+
+        // Calculate Velocity
+        // v_x = -sqrt(mu/a) / (1-e cos E) * sin E
+        // v_y =  sqrt(mu/a) * beta / (1-e cos E) * cos E
+        const r_dist = rs.a * (1 - rs.e * cosE); // Distance from focus
+        // Use cached mu if available, else derive
+        const muUsed = rs.mu || (Math.abs(rs.n) * Math.abs(rs.n) * rs.a * rs.a * rs.a);
+        const v_scale = Math.sqrt(muUsed * rs.a) / r_dist;
+        // const v_fac = (rs.n * rs.a) / (1 - rs.e * cosE); // Unused
+
+        const v_fac = (rs.n * rs.a) / (1 - rs.e * cosE); // Note: n carries sign? No, velocity magnitude logic usually assumes positive n for formula, direction comes from trig.
+        // Actually, if n is negative (retrograde), does this formula hold?
+        // E moves backwards. 
+        // Let's rely on standard derivation where n > 0. If n < 0, M decreases, E decreases.
+        // dx/dt = dx/dE * dE/dt. dE/dt = n / (1 - e cos E).
+        // If n < 0, dE/dt < 0. Velocity vector flips?
+        // Let's trust the formula with signed n.
+        const vx_p = -rs.a * sinE * (rs.n / (1 - rs.e * cosE));
+        const vy_p = rs.a * beta * cosE * (rs.n / (1 - rs.e * cosE));
+
+        const vxNew = vx_p * cw - vy_p * sw;
+        const vyNew = vx_p * sw + vy_p * cw;
+
+        // Update Rocket State
+        rocket.state.position.x = soi.position.x + rxNew;
+        rocket.state.position.y = soi.position.y + ryNew;
+        rocket.state.velocity.x = vxNew; // we assume body is inertial for 2-body rails
+        rocket.state.velocity.y = vyNew;
+
+        // Update Ap/Pe for snapshot from Cache (constant)
+        const rp = rs.a * (1 - rs.e);
+        const ra = rs.a * (1 + rs.e);
+        (rocket as any).setApPeForSnapshot?.(ra - soi.radiusMeters, rp - soi.radiusMeters);
+        (rocket as any).setSoIForSnapshot?.(soi.id);
+
+        return; // SKIP NUMERICAL INTEGRATION
+      }
+    }
+
+    // B) Not on rails yet? Check if we should ENTER rails.
+    // Need current SOI and State
+    let soiBody = primary;
+    let maxG = -1;
+    if (this.bodies.length > 1) {
+      // Find dominant body
+      for (const b of this.bodies) {
+        const dx = rPos.x - b.position.x;
+        const dy = rPos.y - b.position.y;
+        const r2 = dx * dx + dy * dy;
+        const g = b.surfaceGravity * (b.radiusMeters * b.radiusMeters) / r2;
+        if (g > maxG) { maxG = g; soiBody = b; }
+      }
+    }
+
+    // Orbital Elements Calculation for Entry Check
+    const muSOI = soiBody.surfaceGravity * soiBody.radiusMeters * soiBody.radiusMeters;
+    const rxRel = rPos.x - soiBody.position.x;
+    const ryRel = rPos.y - soiBody.position.y;
+    const vxRel = rVel.x;
+    const vyRel = rVel.y;
+
+    const rRelMag = Math.hypot(rxRel, ryRel);
+    const v2 = vxRel * vxRel + vyRel * vyRel;
+
+    // Energy & Eccentricity
+    const eps = 0.5 * v2 - muSOI / rRelMag;
+    const rvDot = rxRel * vxRel + ryRel * vyRel;
+    const ex = ((v2 - muSOI / rRelMag) * rxRel - rvDot * vxRel) / muSOI;
+    const ey = ((v2 - muSOI / rRelMag) * ryRel - rvDot * vyRel) / muSOI;
+    const e = Math.hypot(ex, ey);
+
+    // Stability Conditions
+    // 1. Vacuum, Engines Off (Checked)
+    // 2. Bound Orbit (e < 1, a > 0)
+    // 3. Periapsis Safe (> Cutoff + 100m)
+    let canEnterRails = false;
+
+    if (inVacuum && isEnginesOff && e < 0.999 && muSOI > 0) {
+      const a = -muSOI / (2 * eps);
+      if (a > 0) {
+        const soiCutoff = (soiBody.id === this.system.primaryId) ? atmCutoff : 0;
+        const periapsis = a * (1 - e);
+        if (periapsis > (soiBody.radiusMeters + soiCutoff + 100)) {
+          canEnterRails = true;
+
+          // --- ENTER RAILS: CALCULATE & CACHE ---
+          // 1. Mean Motion
+          let n = Math.sqrt(muSOI / (a * a * a));
+
+          // 2. Retrograde Check (Angular Momentum)
+          // h = r x v (2D z-component)
+          const h = rxRel * vyRel - ryRel * vxRel;
+          if (h < 0) n = -n; // Clockwise motion
+
+          // 3. Argument of Periapsis (w)
+          // Angle of eccentricity vector
+          const w = Math.atan2(ey, ex);
+
+          // 4. Mean Anomaly at Epoch (Current Time)
+          // Angle-based approach to avoid Retrograde sign issues
+          const phi = Math.atan2(ryRel, rxRel);
+
+          let nu = phi - w;
+          // Normalize nu
+          while (nu > Math.PI) nu -= 2 * Math.PI;
+          while (nu <= -Math.PI) nu += 2 * Math.PI;
+
+          // Eccentric Anomaly E0 from True Anomaly nu
+          const tanE2 = Math.sqrt((1 - e) / (1 + e)) * Math.tan(nu / 2);
+          const E0 = 2 * Math.atan(tanE2);
+
+          const M0 = E0 - e * Math.sin(E0);
+
+          // SAVE TO CACHE
+          rocket._railsState = {
+            a, e, i: 0, w, M0, n, t0: this.timeSeconds,
+            mu: muSOI, soiId: soiBody.id
+          };
+
+          // Do one "null" propagation step or just fall through?
+          // We can fall through to "Numerical" this one tick, or return.
+          // Let's fall through to update snapshots, next tick will catch cache.
         }
       }
-    } catch {
-      // ignore
     }
 
-    // 3) Atmospheric properties
-    const atm = this.atmosphere.getProperties(altitude);
-
-    // Expose properties to rocket snapshot for scripts/UI
-    try { (rocket as any).setAirDensityForSnapshot?.(atm.density); } catch { }
-    try { (rocket as any).setAtmospherePropertiesForSnapshot?.(atm.temperature, atm.pressure); } catch { }
-    try { (rocket as any).setAtmosphereCutoffForSnapshot?.((this.atmosphere as any).cutoffAlt); } catch { }
-
-    // Determine cutoff and in-atmosphere flag
-    try { (rocket as any).setInAtmosphereForSnapshot?.(((atm.density ?? 0) > 0)); } catch { }
-
-    // 4) Drag force magnitude
-    const speed = Math.hypot(rocket.state.velocity.x, rocket.state.velocity.y);
-    const dragMag = this.dragModel.computeDrag(atm.density, speed, rocket.dragCoefficient, rocket.referenceArea);
-
-    // Direction of drag opposes velocity.
-    const dragFx = speed > 0 ? -dragMag * (rocket.state.velocity.x / speed) : 0;
-    const dragFy = speed > 0 ? -dragMag * (rocket.state.velocity.y / speed) : 0;
-
-    // 5) Thrust from engines (each engine applies its own vacuum bonus based on air density).
-    const rho0 = (this.atmosphere as any)?.rho0 ?? 1.225;
-    const thrust = rocket.currentThrust(atm.density, rho0);
-    const thrustFx = thrust * Math.cos(rocket.state.orientationRad);
-    const thrustFy = thrust * Math.sin(rocket.state.orientationRad);
-
-    // 6) Sum accelerations: gravity, drag, thrust/mass
-    const mass = rocket.totalMass();
-    // Build forces (Newtons) for UI: thrust, drag, gravity (total + per-body)
-    const gravFx = mass * ax_g;
-    const gravFy = mass * ay_g;
-    const perBodyForces = perBodyGrav.map(g => ({ id: g.id, name: g.name, fx: g.fx * mass, fy: g.fy * mass }));
-    try {
-      (rocket as any).setForcesForSnapshot?.({
-        thrust: { fx: thrustFx, fy: thrustFy },
-        drag: { fx: dragFx, fy: dragFy },
-        gravity: { fx: gravFx, fy: gravFy, perBody: perBodyForces },
-      });
-    } catch { }
-
-    const ax = ax_g + (dragFx + thrustFx) / Math.max(1e-6, mass);
-    const ay = ay_g + (dragFy + thrustFy) / Math.max(1e-6, mass);
-
-    // 7) Integrate acceleration -> velocity -> position (semi-implicit Euler).
-    rocket.state.velocity.x += ax * dt;
-    rocket.state.velocity.y += ay * dt;
-    rocket.state.position.x += rocket.state.velocity.x * dt;
-    rocket.state.position.y += rocket.state.velocity.y * dt;
-
-    // 7.5) Determine Terrain
-    const primaryBodyForTerrain = this.bodies.find(b => b.id === this.system.primaryId);
-    if (primaryBodyForTerrain && primaryBodyForTerrain.terrain) {
-      // Angle from center of primary to rocket
-      const dx = rocket.state.position.x - primaryBodyForTerrain.position.x;
-      const dy = rocket.state.position.y - primaryBodyForTerrain.position.y;
-      let angle = Math.atan2(dy, dx); // -PI to PI
-      if (angle < 0) angle += Math.PI * 2; // 0 to 2PI
-
-      const segment = primaryBodyForTerrain.terrain.find(t => angle >= t.startRad && angle < t.endRad);
-      rocket.currentTerrain = segment?.type;
+    // If we failed checks, invalidate cache
+    if (!canEnterRails) {
+      rocket._railsState = undefined;
     }
 
-    // 8) Heating.
-    const heatRate = this.heatingModel.heatingRate(atm.density, speed);
-    rocket.state.temperature += heatRate * dt;
+    // Fallback to Numerical Integration if not returned above
+    const onRails = false; // We only set onRails=true inside the cache block above which returns.
+    if (!onRails) {
+      // --- NUMERICAL INTEGRATION (Euler/Verlet) ---
 
-    // 9) Rocket internal updates (fuel usage, mass changes, energy/battery).
+      // Forces
+      // 1. Gravity (Sum from all bodies)
+      // Already calculated soiBody above, but let's do the full sum for accuracy as per original
+      let ax_g = 0, ay_g = 0;
+      const perBodyGrav: any[] = [];
+      const mass = rocket.totalMass();
+
+      for (const b of this.bodies) {
+        const dx = b.position.x - rPos.x;
+        const dy = b.position.y - rPos.y;
+        const r2 = Math.max(1e-1, dx * dx + dy * dy);
+        const r = Math.sqrt(r2);
+        const forceMag = b.surfaceGravity * (b.radiusMeters * b.radiusMeters) / r2; // g = G*M/r^2. internal surfaceGrav is at R.
+        // Wait, b.surfaceGravity is g_surf. mu = g_surf * R^2. g_r = mu / r^2.
+        // Formula used in original: g = b.surfaceGravity * (b.radiusMeters / max(R, r))**2.
+        // That formula handles clamping inside planet (gravity doesn't go infinite).
+        const g = b.surfaceGravity * Math.pow(b.radiusMeters / Math.max(b.radiusMeters, r), 2);
+
+        ax_g += g * (dx / r);
+        ay_g += g * (dy / r);
+        perBodyGrav.push({ id: b.id, name: b.name, fx: g * (dx / r) * mass, fy: g * (dy / r) * mass });
+      }
+
+      // 2. Atmosphere & Drag
+      let dragFx = 0, dragFy = 0;
+      let heatingPower = 0;
+      const speed = Math.hypot(rVel.x, rVel.y);
+      let atmDensity = 0;
+
+      if (!inVacuum) {
+        // Compute Atmosphere
+        const atm = this.atmosphere.getProperties(altitude);
+        atmDensity = atm.density;
+
+        // Drag
+        const dragMag = this.dragModel.computeDrag(atm.density, speed, rocket.dragCoefficient, rocket.referenceArea);
+        if (speed > 0) {
+          dragFx = -dragMag * (rVel.x / speed);
+          dragFy = -dragMag * (rVel.y / speed);
+        }
+
+        // Heating Base Calculation
+        // Use active Drag Coeff for heating (includes nose cones)
+        let activeCd = rocket.dragCoefficient;
+        if (rocket.noseCones) {
+          for (const n of rocket.noseCones) {
+            if (n.dragModifier) activeCd += n.dragModifier;
+          }
+        }
+        if (activeCd < 0.1) activeCd = 0.1;
+
+        const K_thermal = 1.5e-2;
+        heatingPower = 0.5 * atm.density * Math.pow(speed, 3.0) * activeCd * K_thermal;
+
+        // Snapshots
+        try { (rocket as any).setAirDensityForSnapshot?.(atm.density); } catch { }
+        try { (rocket as any).setAtmospherePropertiesForSnapshot?.(atm.temperature, atm.pressure); } catch { }
+      } else {
+        // Vacuum snapshots
+        try { (rocket as any).setAirDensityForSnapshot?.(0); } catch { }
+        try { (rocket as any).setAtmospherePropertiesForSnapshot?.(4, 0); } catch { }
+      }
+
+      // 3. Thrust
+      // Engine vacuum ISP bonus applies if density is low
+      const rho0 = (this.atmosphere as any)?.rho0 ?? 1.225;
+      const thrust = rocket.currentThrust(atmDensity, rho0);
+      const thrustFx = thrust * Math.cos(rocket.state.orientationRad);
+      const thrustFy = thrust * Math.sin(rocket.state.orientationRad);
+
+      // 4. Integration
+      const ax = ax_g + (dragFx + thrustFx) / Math.max(1e-6, mass);
+      const ay = ay_g + (dragFy + thrustFy) / Math.max(1e-6, mass);
+
+      rocket.state.velocity.x += ax * dt;
+      rocket.state.velocity.y += ay * dt;
+      rocket.state.position.x += rocket.state.velocity.x * dt;
+      rocket.state.position.y += rocket.state.velocity.y * dt;
+
+      // 5. Thermal Update
+      const ambientT = 4; // Space
+      const coolingRate = 0.5;
+
+      let noseFlux = 0, tailFlux = 0, skinFlux = 0;
+
+      if (heatingPower > 0) {
+        // Directional Heating
+        const vx = rVel.x;
+        const vy = rVel.y;
+        const ox = Math.cos(rocket.state.orientationRad);
+        const oy = Math.sin(rocket.state.orientationRad);
+        const alignment = speed > 0.1 ? (vx * ox + vy * oy) / speed : 0;
+
+        const noseFactor = Math.max(0, alignment);
+        const tailFactor = Math.max(0, -alignment);
+        const sideFactor = (1 - Math.abs(alignment)) * 0.2;
+
+        noseFlux = heatingPower * noseFactor;
+        tailFlux = heatingPower * tailFactor;
+        skinFlux = heatingPower * sideFactor;
+      }
+
+      // Apply heat (Heating + Cooling)
+      // Nose
+      const dT_nose = noseFlux - coolingRate * (rocket.state.noseTemperature - ambientT);
+      rocket.state.noseTemperature += dT_nose * dt;
+
+      // Tail
+      const dT_tail = tailFlux - coolingRate * (rocket.state.tailTemperature - ambientT);
+      rocket.state.tailTemperature += dT_tail * dt;
+
+      // Skin
+      const dT_skin = skinFlux - coolingRate * (rocket.state.temperature - ambientT);
+      rocket.state.temperature += dT_skin * dt;
+
+      // Clamp
+      if (rocket.state.noseTemperature < ambientT) rocket.state.noseTemperature = ambientT;
+      if (rocket.state.tailTemperature < ambientT) rocket.state.tailTemperature = ambientT;
+      if (rocket.state.temperature < ambientT) rocket.state.temperature = ambientT;
+
+      // Snapshot forces
+      const gravFx = ax_g * mass;
+      const gravFy = ay_g * mass;
+      try {
+        (rocket as any).setForcesForSnapshot?.({
+          thrust: { fx: thrustFx, fy: thrustFy },
+          drag: { fx: dragFx, fy: dragFy },
+          gravity: { fx: gravFx, fy: gravFy, perBody: perBodyGrav },
+        });
+      } catch { }
+
+      // Ap/Pe Calculation (approximate for display)
+      // Use updated position/velocity
+      const rxRel2 = rocket.state.position.x - soiBody.position.x;
+      const ryRel2 = rocket.state.position.y - soiBody.position.y;
+      const rRelMag2 = Math.hypot(rxRel2, ryRel2);
+
+      if (muSOI > 0 && rRelMag2 > 0) {
+        try {
+          const vxRel2 = rocket.state.velocity.x;
+          const vyRel2 = rocket.state.velocity.y;
+          const v2 = vxRel2 * vxRel2 + vyRel2 * vyRel2;
+
+          const eps = 0.5 * v2 - muSOI / rRelMag2;
+          const rvDot = rxRel2 * vxRel2 + ryRel2 * vyRel2;
+          const ex = ((v2 - muSOI / rRelMag2) * rxRel2 - rvDot * vxRel2) / muSOI;
+          const ey = ((v2 - muSOI / rRelMag2) * ryRel2 - rvDot * vyRel2) / muSOI;
+          const e = Math.hypot(ex, ey);
+
+          if (eps < 0 && e < 1) {
+            const a = -muSOI / (2 * eps);
+            const rp_orb = a * (1 - e);
+            const ra_orb = a * (1 + e);
+            (rocket as any).setApPeForSnapshot?.(ra_orb - soiBody.radiusMeters, rp_orb - soiBody.radiusMeters);
+          } else {
+            (rocket as any).setApPeForSnapshot?.(Number.NaN, Number.NaN);
+          }
+        } catch { }
+      }
+    } // End Numerical Integration
+
+    // Common Updates (Fuel, Resources, Collision)
     rocket.tickInternal(dt);
 
-    // 10) Spherical ground collision with primary; destroy on hard impact, otherwise stop.
-    const dxpc = rocket.state.position.x - primary.position.x;
-    const dypc = rocket.state.position.y - primary.position.y;
-    const rnow = Math.sqrt(dxpc * dxpc + dypc * dypc);
-    if (rnow < primary.radiusMeters) {
-      const nx = dxpc / Math.max(1e-6, rnow);
-      const ny = dypc / Math.max(1e-6, rnow);
-      // impact speed (component along normal inward)
-      const v = Math.hypot(rocket.state.velocity.x, rocket.state.velocity.y);
-      const impactSpeed = v; // simple
-      if (impactSpeed > 25) {
-        this.destroyed = true;
+    // Collision Detection with Primary
+    // (Simple sphere check)
+    {
+      const dx = rocket.state.position.x - primary.position.x;
+      const dy = rocket.state.position.y - primary.position.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < primary.radiusMeters) {
+        const nx = dx / dist; const ny = dy / dist;
+
+        // Destruction Check
+        const speed = Math.hypot(rocket.state.velocity.x, rocket.state.velocity.y);
+
+        // Retrograde calculation
+        const vx = rocket.state.velocity.x;
+        const vy = rocket.state.velocity.y;
+        const ox = Math.cos(rocket.state.orientationRad);
+        const oy = Math.sin(rocket.state.orientationRad);
+        // Alignment: 1 = Nose into velocity. -1 = Tail into velocity.
+        const alignment = speed > 0.1 ? (vx * ox + vy * oy) / speed : 0;
+        const isRetrograde = alignment < -0.8;
+
+        let crash = false;
+        if (speed > 10) crash = true;
+        else if (speed > 5 && !isRetrograde) crash = true;
+
+        if (crash) {
+          this.destroyed = true;
+          rocket.state.velocity.x = 0; rocket.state.velocity.y = 0;
+        } else {
+          // Landed safe
+          rocket.state.position.x = primary.position.x + nx * primary.radiusMeters;
+          rocket.state.position.y = primary.position.y + ny * primary.radiusMeters;
+          rocket.state.velocity.x = 0; rocket.state.velocity.y = 0;
+        }
       }
-      // place on surface
-      rocket.state.position.x = primary.position.x + nx * primary.radiusMeters;
-      rocket.state.position.y = primary.position.y + ny * primary.radiusMeters;
-      // stop
-      rocket.state.velocity.x = 0;
-      rocket.state.velocity.y = 0;
     }
+
+    // Thermal Limitations / Destruction
+    const noseLimit = rocket.noseCones.length > 0 ? (rocket.noseCones[0].heatTolerance ?? 2400) : 1200;
+    const tailLimit = rocket.heatShields.length > 0 ? (rocket.heatShields[0].heatTolerance ?? 3400) : 1200;
+    const bodyLimit = 1500;
+
+    if (rocket.state.noseTemperature > noseLimit ||
+      rocket.state.tailTemperature > tailLimit ||
+      rocket.state.temperature > bodyLimit) {
+      this.destroyed = true;
+    }
+
+    // Snapshot Updates for max temps
+    try {
+      (rocket as any).maxNoseTemperature = noseLimit;
+      (rocket as any).maxTailTemperature = tailLimit;
+    } catch { }
+
   }
 
-  /** Simple gravity model kept for reference (unused now). */
-  private computeGravityLegacy(altitudeMeters: number, planetRadius: number, g0: number): number {
-    const factor = (planetRadius / Math.max(1, planetRadius + altitudeMeters)) ** 2;
-    return g0 * factor;
-  }
+
 }
 
 // --- Default simple models for initial bootstrapping ---

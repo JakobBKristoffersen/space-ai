@@ -1,7 +1,7 @@
 /**
  * PartStore and simple economy framework.
  * - Exposes available parts based on progression (e.g., completed missions).
- * - Allows purchasing parts using in-game money.
+ * - Parts are free to purchase once unlocked via Tech Tree.
  * - Independent from rendering and physics.
  */
 
@@ -286,7 +286,7 @@ export const DefaultCatalog: Catalog = {
       name: "Nose Cone",
       category: "cone",
 
-      make: () => new NoseCone(),
+      make: () => ({ ...new NoseCone(), dragModifier: -0.2, heatTolerance: 2400 }) as unknown as NoseCone,
       isUnlocked: () => true,
     }
   ],
@@ -316,7 +316,7 @@ export const DefaultCatalog: Catalog = {
       name: "Heat Shield",
       category: "heatShield",
 
-      make: () => new HeatShield(),
+      make: () => ({ ...new HeatShield(), heatTolerance: 3400 }) as unknown as HeatShield,
       isUnlocked: () => true,
     }
   ],

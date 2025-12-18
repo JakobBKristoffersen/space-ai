@@ -42,7 +42,7 @@ export class ScriptRunner {
   }
 
   /** Install script into a specific slot (default 0) */
-  async installScriptToSlot(userCode: string, opts?: ScriptRunnerOptions, slotIndex = 0, name?: string, language: 'typescript' | 'python' = 'typescript'): Promise<void> {
+  async installScriptToSlot(userCode: string, opts?: ScriptRunnerOptions, slotIndex = 0, name?: string, language: 'typescript' = 'typescript'): Promise<void> {
     if (!this.rocket || !this.rocket.cpu) throw new Error("No CPU installed on rocket");
     const cpu = this.rocket.cpu;
     this.resizeSlots();

@@ -25,7 +25,7 @@ export class AdvancedCPU implements ProcessingUnitPart {
   readonly maxScriptChars = 32000;
   readonly processingBudgetPerTick = 100;
   readonly energyPerTickJ = 5;
-  readonly scriptSlots = 2;
+  readonly scriptSlots = 1;
   readonly processingIntervalSeconds = 0.2;
 }
 
@@ -36,7 +36,7 @@ export class OrbitalProcessingUnit implements ProcessingUnitPart {
   readonly maxScriptChars = 64000;
   readonly processingBudgetPerTick = 250;
   readonly energyPerTickJ = 25; // High power
-  readonly scriptSlots = 4;
+  readonly scriptSlots = 1;
   readonly processingIntervalSeconds = 0.1; // Fast updates
 
   readonly exposes = [

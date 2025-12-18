@@ -5,6 +5,7 @@ export class NoseCone implements NoseConePart {
     name = "Nose Cone";
     massKg = 50;
     dragCoefficient = 0.2;
+    heatTolerance = 2400;
 }
 
 export class Fin implements FinPart {
@@ -27,4 +28,5 @@ export class HeatShield implements HeatShieldPart {
     name = "Heat Shield";
     massKg = 100;
     maxTemp = 3000;
+    heatTolerance = 3400;
 }

@@ -29,6 +29,15 @@ export class SimulationLoop {
   private running = false;
   private tickIndex = 0;
 
+  public timeScale = 1.0;
+
+  // Performance metrics
+  private ticksThisSecond = 0;
+  private framesThisSecond = 0;
+  private lastPerfTimeMs = 0;
+  private currentTps = 0;
+  private currentFps = 0;
+
   private tickListeners: Set<TickListener> = new Set();
   private renderListeners: Set<RenderListener> = new Set();
   private lastRenderTimeMs = 0;
@@ -66,14 +75,29 @@ export class SimulationLoop {
       this.lastTimeMs = now;
 
       // Accumulate time and step the fixed simulation.
-      this.accumulatedTime += frameTime / 1000;
-      const maxSteps = 240; // safety to avoid too many catch-up steps
+      this.accumulatedTime += (frameTime / 1000) * this.timeScale;
+      // Safety: if we fall too far behind (e.g. breakpoint or massive lag), cap the catch-up to avoid freeze.
+      // At 50x speed, we expect ~6000 TPS. In a 16ms frame, that is ~100 ticks.
+      // We'll set maxSteps generously to allow high speed, but break if spiraling.
+      const maxSteps = 500;
       let steps = 0;
       while (this.accumulatedTime >= this.fixedDt && steps < maxSteps) {
         this.tickListeners.forEach(l => l(this.fixedDt, this.tickIndex));
         this.accumulatedTime -= this.fixedDt;
         this.tickIndex++;
         steps++;
+        this.ticksThisSecond++;
+      }
+
+      this.framesThisSecond++;
+
+      // Performance monitoring (1s window)
+      if (now - this.lastPerfTimeMs >= 1000) {
+        this.currentTps = this.ticksThisSecond;
+        this.currentFps = this.framesThisSecond;
+        this.ticksThisSecond = 0;
+        this.framesThisSecond = 0;
+        this.lastPerfTimeMs = now;
       }
 
       // Interpolation factor for rendering between ticks.
@@ -111,5 +135,9 @@ export class SimulationLoop {
       this.tickListeners.forEach(l => l(this.fixedDt, this.tickIndex));
       this.tickIndex++;
     }
+  }
+
+  getPerformanceMetrics() {
+    return { fps: this.currentFps, tps: this.currentTps };
   }
 }

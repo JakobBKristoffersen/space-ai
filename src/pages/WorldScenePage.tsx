@@ -44,7 +44,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
     // Speed options
     const speedOptions = useMemo(() => createListCollection({
-        items: [{ label: "0.5x", value: "0.5" }, { label: "1x", value: "1" }, { label: "2x", value: "2" }, { label: "4x", value: "4" }],
+        items: [{ label: "0.5x", value: "0.5" }, { label: "1x", value: "1" }, { label: "2x", value: "2" }, { label: "4x", value: "4" }, { label: "10x", value: "10" }, { label: "50x", value: "50" }],
     }), []);
 
     // Loop
@@ -131,15 +131,19 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                     <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
                     <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
                         <Select.Control>
-                            <Select.Trigger><Select.ValueText /></Select.Trigger>
+                            <Select.Trigger h="24px" minH="unset" py={0}><Select.ValueText /></Select.Trigger>
                         </Select.Control>
-                        <Select.Content>
-                            {speedOptions.items.map((opt: any) => (
-                                <Select.Item item={opt} key={opt.value}>
-                                    {opt.label}
-                                </Select.Item>
-                            ))}
-                        </Select.Content>
+                        <Portal>
+                            <Select.Positioner>
+                                <Select.Content>
+                                    {speedOptions.items.map((opt: any) => (
+                                        <Select.Item item={opt} key={opt.value}>
+                                            {opt.label}
+                                        </Select.Item>
+                                    ))}
+                                </Select.Content>
+                            </Select.Positioner>
+                        </Portal>
                     </Select.Root>
                     {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH ROCKET</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET ROCKET</Button>}
                 </HStack>
@@ -232,11 +236,25 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                             </HStack>
                                         </Box>
                                         <Box>
-                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Temp</Text><Text fontSize="xs" fontWeight="mono" color={temp > maxTemp * 0.8 ? "red.300" : "gray.300"}>{fmt(temp)} / {maxTemp}</Text></HStack>
-                                            <Progress.Root value={(temp / maxTemp) * 100} max={100} size="xs" colorPalette="orange">
+                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Thermal Status</Text></HStack>
+
+                                            {/* Nose Temp */}
+                                            <HStack justify="space-between" mb={0.5}>
+                                                <Text fontSize="xx-small" color="orange.300">NOSE</Text>
+                                                <Text fontSize="xx-small" fontWeight="mono" color="gray.400">{fmt(rocketSnap?.noseTemperature ?? 0, 0)} / {rocketSnap?.maxNoseTemperature ?? 1200}</Text>
+                                            </HStack>
+                                            <Progress.Root value={((rocketSnap?.noseTemperature ?? 0) / (rocketSnap?.maxNoseTemperature ?? 2400)) * 100} max={100} size="xs" colorPalette="orange">
                                                 <Progress.Track><Progress.Range /></Progress.Track>
                                             </Progress.Root>
-                                            <HStack justify="end" mt={1} color="gray.500"><Icon as={FaThermometerHalf} boxSize={3} /><Text fontSize="xx-small">GLOBAL</Text></HStack>
+
+                                            {/* Tail Temp */}
+                                            <HStack justify="space-between" mb={0.5} mt={2}>
+                                                <Text fontSize="xx-small" color="blue.300">TAIL</Text>
+                                                <Text fontSize="xx-small" fontWeight="mono" color="gray.400">{fmt(rocketSnap?.tailTemperature ?? 0, 0)} / {rocketSnap?.maxTailTemperature ?? 1200}</Text>
+                                            </HStack>
+                                            <Progress.Root value={((rocketSnap?.tailTemperature ?? 0) / (rocketSnap?.maxTailTemperature ?? 3400)) * 100} max={100} size="xs" colorPalette="cyan">
+                                                <Progress.Track><Progress.Range /></Progress.Track>
+                                            </Progress.Root>
                                         </Box>
 
                                         {/* Status Badges */}
@@ -308,8 +326,17 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
                 {/* CENTER: Canvas */}
                 <Box bg="black" position="relative" display="flex" flexDirection="column">
-                    <Box flex={1} display="flex" alignItems="center" justifyContent="center" overflow="hidden">
+                    <Box flex={1} display="flex" alignItems="center" justifyContent="center" overflow="hidden" position="relative">
                         <Box as="canvas" id="game" width={900} height={600} w="100%" h="100%" objectFit="contain" />
+
+                        {/* DESTRUCTION OVERLAY */}
+                        {envSnap?.destroyed && (
+                            <Center position="absolute" inset={0} bg="rgba(0,0,0,0.7)" zIndex={10} flexDirection="column">
+                                <Heading size="2xl" color="red.500" mb={2}>MISSION FAILED</Heading>
+                                <Text color="white" mb={4}>Rocket destroyed by heat or impact.</Text>
+                                <Button colorPalette="red" variant="solid" onClick={onResetRocket}>RESET MISSION</Button>
+                            </Center>
+                        )}
                     </Box>
                     {/* Overlay Stats? */}
                     <Box position="absolute" top={2} left={2} pointerEvents="none">

@@ -3,17 +3,9 @@ import { Dialog, Button, VStack, HStack, Input, Text, Box, Icon, Separator, Head
 import { FaCoins, FaFlask, FaTrash, FaUnlock, FaGift, FaRocket } from "react-icons/fa";
 
 export function DebugToolbox() {
-    const [addMoneyVal, setAddMoneyVal] = useState("100000");
     const [addRpVal, setAddRpVal] = useState("1000");
 
     const svcs = (window as any).__services;
-
-    const handleAddMoney = () => {
-        const v = Number(addMoneyVal);
-        if (!svcs || isNaN(v)) return;
-        const current = svcs.getMoney?.() || 0;
-        svcs.setMoney?.(current + v);
-    };
 
     const handleAddRp = () => {
         const v = Number(addRpVal);
@@ -52,19 +44,6 @@ export function DebugToolbox() {
                                 <Heading size="sm" mb={2} color="gray.400">Resources</Heading>
                                 <VStack gap={3}>
                                     <HStack>
-                                        <Icon as={FaCoins} color="green.300" />
-                                        <Input
-                                            value={addMoneyVal}
-                                            onChange={(e: any) => setAddMoneyVal(e.target.value)}
-                                            w="120px"
-                                            size="sm"
-                                            borderColor="gray.600"
-                                        />
-                                        <Button size="sm" colorScheme="green" onClick={handleAddMoney} flex={1}>
-                                            Add Money
-                                        </Button>
-                                    </HStack>
-                                    <HStack>
                                         <Icon as={FaFlask} color="cyan.300" />
                                         <Input
                                             value={addRpVal}
@@ -74,7 +53,7 @@ export function DebugToolbox() {
                                             borderColor="gray.600"
                                         />
                                         <Button size="sm" colorScheme="cyan" onClick={handleAddRp} flex={1}>
-                                            Add Science
+                                            Add Research Points
                                         </Button>
                                     </HStack>
                                 </VStack>

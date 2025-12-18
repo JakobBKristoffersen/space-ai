@@ -1,6 +1,6 @@
-import React, { useEffect, useRef, useImperativeHandle, forwardRef } from "react";
+import React, { useEffect, useRef, useImperativeHandle, forwardRef, useState } from "react";
 import Editor, { Monaco } from "@monaco-editor/react";
-import { ROCKET_API_DTS } from "./editor/rocketApiTypes";
+import { generateRocketApiDts } from "./editor/RocketApiTypeGenerator";
 
 export interface MonacoScriptEditorProps {
     initialValue?: string;
@@ -13,6 +13,7 @@ export interface MonacoScriptEditorProps {
     // language prop removed as it is always typescript
     files?: { name: string, code: string }[];
     currentFileName?: string;
+    unlockedTechs?: string[];
 }
 
 export interface MonacoScriptEditorRef {
@@ -20,7 +21,8 @@ export interface MonacoScriptEditorRef {
 }
 
 const MonacoScriptEditor = React.memo(forwardRef<MonacoScriptEditorRef, MonacoScriptEditorProps>(
-    ({ value, initialValue, theme = "dark", onChange, onCompile, telemetryKeys, disabled, files = [], currentFileName = "main.ts" }, ref) => {
+    ({ value, initialValue, theme = "dark", onChange, onCompile, telemetryKeys, disabled, files = [], currentFileName = "main.ts", unlockedTechs = [] }, ref) => {
+        const [editorMounted, setEditorMounted] = useState(false);
         const editorRef = useRef<any>(null);
         const monacoRef = useRef<Monaco | null>(null);
 
@@ -44,7 +46,7 @@ const MonacoScriptEditor = React.memo(forwardRef<MonacoScriptEditorRef, MonacoSc
                     }
                 }
             });
-        }, [files, currentFileName]);
+        }, [files, currentFileName, editorMounted]);
 
         // Expose compile via ref
         useImperativeHandle(ref, () => ({
@@ -151,6 +153,7 @@ const module = { exports };
         const handleEditorDidMount = (editor: any, monaco: Monaco) => {
             editorRef.current = editor;
             monacoRef.current = monaco;
+            setEditorMounted(true);
 
             // Configure TypeScript
             monaco.languages.typescript.typescriptDefaults.setCompilerOptions({
@@ -162,37 +165,32 @@ const module = { exports };
                 typeRoots: ["node_modules/@types"],
             });
 
-            // Inject RocketAPI types
-            monaco.languages.typescript.typescriptDefaults.addExtraLib(
-                ROCKET_API_DTS,
-                "ts:filename/rocketApi.d.ts"
-            );
-
             // Add keybinding for Compile (Cmd/Ctrl + Enter)
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
                 onCompile?.();
             });
         };
 
-        // Update Telemetry keys dynamically
+        // Update Types dynamically
         useEffect(() => {
             if (!monacoRef.current) return;
             const monaco = monacoRef.current;
 
-            const telemetryTypeFields = (telemetryKeys || []).map(k => `${k}: number;`).join("\n    ");
-            const dynamicDts = ROCKET_API_DTS.replace(
-                "readonly data: Record<string, any>;",
-                `readonly data: {
-            ${telemetryTypeFields}
-            [key: string]: any;
-        };`
-            );
+            let dts = generateRocketApiDts(unlockedTechs);
+            // Also handle telemetry keys dynamic injection
+            if (telemetryKeys && telemetryKeys.length > 0) {
+                const telemetryTypeFields = telemetryKeys.map(k => `${k}: number;`).join("\n        ");
+                dts = dts.replace(
+                    "readonly telemetry: {",
+                    `readonly telemetry: {\n        ${telemetryTypeFields}`
+                );
+            }
 
             monaco.languages.typescript.typescriptDefaults.setExtraLibs([
-                { content: dynamicDts, filePath: "ts:filename/rocketApi.d.ts" }
+                { content: dts, filePath: "ts:filename/rocketApi.d.ts" }
             ]);
 
-        }, [telemetryKeys]);
+        }, [telemetryKeys, unlockedTechs, editorMounted]);
 
         return (
             <div style={{ width: "100%", height: "100%" }}>

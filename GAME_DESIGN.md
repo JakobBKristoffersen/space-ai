@@ -1,254 +1,157 @@
-### Space AI — Game Design Specification
+# Space AI - Game Design
 
-Last updated: 2025-12-11
-
-This document describes the current game systems, data models, player UI, and extensibility points for Space AI. It is intended to be shared with an LLM to brainstorm improvements to game progression, balance, and content.
-
----
-
-## 1) High‑level overview
-
-- You pilot and program small rockets/satellites in a toy two‑body system (a planet with atmosphere and a moon). 
-- The simulation always runs in real time with a fixed physics tick. You can pause/resume and adjust speed.
-- You write simple JavaScript “autopilot” scripts that run on a rocket’s Guidance System (CPU). Scripts run periodically (e.g., every 2 seconds for basic CPUs) with processing and energy limits.
-- Earn money by completing missions (reach altitudes, speeds, orbit, SOI, etc.). Use money to buy and upgrade parts.
-- Manage multiple rockets; switch which one is “active” (receives controls and drives the main panels). Upgrades are queued and applied on the next Reset Rocket.
-
-Core loops:
-- Build → Script → Launch → Observe → Earn → Upgrade → Repeat
-- Strategic progression across missions and parts; tactical execution through autopilot scripting and manual controls.
+**Version**: 2.1 (Precise)
+**Core Concept**: A programming-focused space exploration game. You build rockets, write software to control them (TypeScript), and explore a toy solar system.
 
 ---
 
-## 2) Time & simulation
+## 1. The World (Toy System)
+The universe is a fixed-timestep simulation. Scale is roughly 1/60th of reality but with Earth-like surface gravity to keep launch profiles familiar.
 
-- Physics loop: fixed time step dt = 1/120 s; rendering at ~30 Hz (throttled).
-- Game clock: advances only when the simulation runs.
-  - 1 simulated second equals 1 in‑game minute (scale 60×).
-  - Calendar is a simple 12×30 months; the header displays HH:MM.
-- Speed: 0.5×, 1×, 2×, 4× (fast‑forward steps extra ticks; capped for frame stability).
-- Reset Rocket: rebuilds the active rocket from layout, refills resources, clears trails, resets turn state, and requires Take Off again.
-- Reset All: resets everything (missions, money, layouts, scripts, upgrades, game clock).
+### Primary Body: "Toy Planet"
+- **Radius**: 8,000 m (8 km)
+- **Surface Gravity**: 12.0 m/s² (~1.2 G)
+- **Atmosphere Height**: 2,000 m (Cutoff)
+- **Atmospheric Density**: Exponential decay.
+- **Terrain**: Plains, Mountains, Water, Desert, Forest, Ice.
 
----
-
-## 3) World & celestial system
-
-- Toy System (configurable):
-  - Planet “Toy Planet” — radius 5,000 m; surface gravity 9.81 m/s²; green disk; atmosphere scale height ≈ 200 m.
-  - Moon “Big Moon” — radius 800 m; surface gravity 1.62 m/s²; circular orbit around the planet (radius 25 km, period 600 s).
-- Sphere of Influence (SOI): each tick, the body that exerts the strongest gravitational acceleration on the rocket is considered primary for orbital analysis (Ap/Pe) and predicted elliptic path drawing.
+### Satellite: "Big Moon"
+- **Radius**: 800 m
+- **Surface Gravity**: 1.62 m/s² (0.165 G)
+- **Orbit Radius**: 25,000 m (25 km)
+- **Orbital Period**: ~600 s
 
 ---
 
-## 4) Atmosphere, drag, thrust, heating
+## 2. Parts Catalog
+All parts have mass, cost (RP for unlock), and physical properties.
 
-- Atmospheric density ρ(h): exponential barometric falloff with a hard cutoff altitude Hcut = scaleHeight × 7.
-  - ρ(h) = ρ₀·exp(−h/H), for 0 ≤ h < Hcut; ρ(h) = 0 beyond cutoff.
-- Drag: quadratic model, Fd = 0.5·ρ·v²·Cd·A along −v direction.
-- Heating: proportional to dynamic pressure times speed (tunable placeholder).
-- Engine thrust vs atmosphere: each engine defines its own vacuum bonus. Actual thrust is:
-  - T(h) = Tmax × [1 + bonus × (1 − clamp(ρ/ρ₀, 0..1))].
-  - Small Engine bonus: +25% at vacuum.
-- Visuals: 
-  - World scene fills black when in space; draws a faded blue atmospheric disk around the planet while in atmosphere.
-  - Minimap shows the atmosphere cutoff circle as a dashed ring.
+### Engines
+| ID | Name | Mass (Dry) | Thrust (Vac) | Thrust (SL) | Burn Rate | ISP (Vac) |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| `engine.small` | Small Engine | 50 kg | 2.5 kN | 2.0 kN | 2.5 kg/s | ~100s |
+| `engine.precision` | Precision Engine | Variable | Variable | Variable | Variable | High |
+| `engine.vacuum` | Vacuum Engine | 300 kg | 25.0 kN | 10.0 kN | 7.5 kg/s | ~340s |
+| `engine.ion` | Ion Thruster | Variable | Low | N/A | Very Low | Very High |
 
----
+### Fuel Tanks
+| ID | Name | Mass (Dry) | Fuel Capacity | Total Mass |
+| :--- | :--- | :--- | :--- | :--- |
+| `fueltank.small` | Small Tank | 20 kg | 60 kg | 80 kg |
+| `fueltank.medium` | Medium Tank | 40 kg | 120 kg | 160 kg |
+| `fueltank.large` | Large Tank | 60 kg | 200 kg | 260 kg |
 
-## 5) Orbits
+### Batteries
+| ID | Name | Mass | Capacity |
+| :--- | :--- | :--- | :--- |
+| `battery.small` | Small Battery | 10 kg | 50 kJ |
+| `battery.medium` | Medium Battery | 25 kg | 150 kJ |
 
-- Apoapsis (Ap) and Periapsis (Pe) are computed each tick when orbit is bound (e < 1) relative to the current SOI body. 
-- The minimap overlays the predicted elliptical trajectory for bound orbits (focus at SOI body).
+### Communications
+| ID | Name | Range | Bandwidth | Power (Tx) |
+| :--- | :--- | :--- | :--- | :--- |
+| `antenna.small` | Comm 16 | 500 km | 20 B/s | 0.5 W |
+| `antenna.medium` | Comm DTS-M1 | 50,000 km | 120 B/s | 2.5 W |
+| `antenna.relay` | Relay Dish | 50,000 km | 500 B/s | 10 W |
+| `antenna.deep` | Deep Space Dish | 500,000 km | 2,000 B/s | 50 W |
 
----
-
-## 6) Rockets — state & controls
-
-- State: position (m), velocity (m/s), orientation (rad), mass (kg), temperature (arb.), fuel and battery resources, per‑tick forces breakdown.
-- Attitude control: Reaction Wheels provide a maximum turn rate (rad/s). Turning consumes battery energy proportional to angular speed.
-- Turning model: commands set a persistent angular velocity (rad/s) that persists until set to 0.
-  - API: `api.setTurnRate(rateRadPerS)` (preferred), or compatibility `turnLeft/turnRight` (internally mapped to rates).
-- Launch gating: engines cannot be turned on by scripts until “Take Off” has been clicked for the active rocket (turning is allowed pre‑launch).
-- Multi‑rocket: all rockets are simulated and drawn; camera focuses on the active rocket. Take Off applies per‑rocket.
-
----
-
-## 7) Parts (catalog & specs)
-
-Starter catalog (expandable). Prices are used by the store; missions unlock some parts.
-
-- Engines
-  - Small Engine (engine.small)
-    - Dry mass 50 kg, Tmax 2,000 N, Burn 2.5 kg/s, Vacuum bonus +25%.
-- Fuel Tanks
-  - Small Fuel Tank (fueltank.small): dry 20 kg; 60 kg fuel capacity (starts full).
-  - Large Fuel Tank (fueltank.large): dry 60 kg; 200 kg fuel; unlocked by Reach 500 m mission.
-- Batteries
-  - Small Battery (battery.small): mass 10 kg; capacity 50,000 J.
-- Guidance (CPU)
-  - Basic Guidance System (cpu.basic): mass 8 kg; budget/tick 100; energy/tick 50 J; max chars 40k; slots 1; processing interval 2 s.
-  - Advanced Guidance System (cpu.advanced): mass 10 kg; budget/tick 350; energy/tick 120 J; max chars 12k; slots 2; processing interval 1 s; unlocked by Reach 1 km.
-- Sensors
-  - Basic Navigation Sensor (sensor.nav.basic): exposes position/velocity/altitude/orientation, Ap, Pe, airDensity.
-- Reaction Wheels
-  - Small Reaction Wheels (rw.small): mass 5 kg; max ω 0.5 rad/s; energy cost 40 J per (rad/s) per second.
-- Antennas
-  - Small Antenna (antenna.small): mass 3 kg; range 15,000 m.
-
-Telemetry: many parts expose snapshot keys (e.g., `fuelConsumptionKgPerS`, `fuelKg`, battery fields, CPU metrics, RW metrics) used by the UI and made available to scripts through sensors/parts whitelisting.
+### Guidance Systems (CPUs)
+| ID | Name | Ops/Tick | Memory | Slots | Unlock |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| `cpu.basic` | Basic Guidance | 50 | 10 KB | 1 | Start |
+| `cpu.advanced` | Adv Guidance | 100 | 32 KB | 2 | Tier 1 |
+| `cpu.orbital` | Orbital Comp | 250 | 64 KB | 4 | Tier 2 |
 
 ---
 
-## 8) Scripting (user code)
+## 3. Technology Tree
+Progression is driven by Research Points (RP).
 
-- Environment: JavaScript `function update(api) { ... }`. Runs in a sandbox with budgets and energy cost provided by the installed Guidance System.
-- Execution cadence: determined by the CPU’s `processingIntervalSeconds`.
-  - Basic CPU: runs your update every ~2 s.
-  - Advanced CPU: every ~1 s.
-  - Interval ≤0 would mean every physics tick (not used by current parts).
-- Budgets per run:
-  - Processing budget (abstract cost units): charged by API operations. Exceeding throws and aborts the tick.
-  - Energy (J/tick): drawn from batteries per script slot that runs.
-- API surface (core):
-  - `api.getSnapshot().data` → read‑only bag limited by installed sensors & part exposes.
-  - `api.setEnginePower(0|1)` → binary throttle; subject to launch gating.
-  - `api.setTurnRate(rateRadPerS)` → persistent angular velocity; 0 stops turning.
-  - `api.memory.get/set/remove/clear` → ephemeral per‑CPU memory (64 KB limit).
-  - `api.log(message)` → log line in the World page Script Logs panel.
-- Autocomplete: the editor suggests API methods after `api.` and telemetry keys after `api.getSnapshot().data.` or `snap.`; keys are published dynamically based on current rocket composition.
-- Example: the default autopilot demonstrates liftoff (until ρ halves), raising Ap, coasting to Ap, and circularizing to a ~2 km orbit using Ap/Pe and prograde alignment.
-
-Notes for progression design:
-- Smaller CPU intervals (e.g., advanced CPUs), higher budgets, and more slots increase control fidelity; missions and costs should scale accordingly.
+| ID | Name | Cost (RP) | Unlocks |
+| :--- | :--- | :--- | :--- |
+| **Start** | Basic Rocketry | 0 | Small Engine, Small Tank, Basic CPU, Comm 16 |
+| `tech.batteries_med` | Enhanced Storage | 10 | Med Tank, Med Battery |
+| `tech.guidance_adv` | Advanced Guidance | 25 | Adv CPU, Adv Nav Sensor |
+| `tech.propulsion_prec` | Precision Prop. | 40 | Precision Engine, Med RW |
+| `tech.comms_basic` | Basic Comms | 50 | Comm DTS-M1 (Med Antenna) |
+| `tech.satellite` | Miniaturized Sys | 75 | CubeSat Deployer |
+| `tech.solar` | Solar Power | 100 | Basic Solar Panel |
+| `tech.orbital_comp` | Orbital Computing | 150 | Orbital CPU |
+| `tech.comms_relay` | Relay Networks | 200 | Relay Antenna |
+| `tech.propulsion_vac` | High Vac Engines | 300 | Vacuum Engine |
+| `tech.deep_space` | Deep Space Comms | 500 | Deep Space Dish |
+| `tech.ion` | Ion Propulsion | 1000 | Ion Thruster |
 
 ---
 
-## 9) Missions & economy
+## 4. RocketAPI Reference
+The `RocketAPI` object is passed to your `update(api)` function.
 
-- Missions are checked post‑tick; on completion, a reward (money) is added once.
-- Seeded missions include:
-  - Reach 500 m, 1 km, 2 km (altitude goals).
-  - Speed 100 m/s, 200 m/s.
-  - Reach Space (ρ→0).
-  - Circularize ~2 km (Ap & Pe ≥ 2 km within 10%).
-  - Enter Moon SOI.
-  - Stay above 200 m for 30 s.
-- Part unlocks (examples):
-  - Large Fuel Tank: Reach 500 m.
-  - Advanced Guidance System: Reach 1 km.
-- Money UI: displayed in the header; updated live.
+### `api.control`
+- `throttle(value: number)`: Set throttle 0.0-1.0.
+- `turn(rate: number)`: Set turn rate (rad/s). Requires **Reaction Wheels** (Space/Atmo) OR **Fins** (Atmosphere only).
+- `deployParachute()`: Deploy parachutes.
+- `deploySolar()` / `retractSolar()`: Manage solar panels.
 
-Store & upgrades:
-- Upgrading is queued (pending) per rocket and applied only on the next Reset Rocket.
-- Selecting the same part as current is disallowed.
-- Downgrades (choosing cheaper parts) are free.
-- Items show price and are disabled if locked or unaffordable (except free downgrades).
+### `api.telemetry`
+Access depends on installed sensors and CPU Tier.
+- `altitude`: Surface altitude (m).
+- `velocity`: Vector `{x, y}` (m/s).
+- `position`: Vector `{x, y}` relative to planet center.
+- `speed`: Scalar speed (m/s).
+- `apoapsis`: Orbit Ap (m). Requires `cpu.orbital`.
+- `periapsis`: Orbit Pe (m). Requires `cpu.orbital`.
 
----
+### `api.nav`
+- `heading`: Current orientation (rad).
+- `alignTo(targetRad)`: Helper to turn towards angle.
+- `prograde` / `retrograde`: Flight path angles (rad).
 
-## 10) Enterprise management (multi‑rocket)
+### `api.comms`
+- `transmitMessage(msg: string)`: Send text log to base.
+- `transmitData(key, value)`: Send key-value telemetry.
 
-- Per‑rocket naming (persisted for the session); names appear in the World page selector.
-- Per‑rocket script assignment (slot 0): assign a saved script and enable/disable it.
-- Per‑rocket pending upgrades summary; upgrades queue is applied on that rocket’s next reset.
-- General upgrades (per rocket): Heating Protection level (UI shows derived max temperature in World → Structure panel).
+### `api.science`
+- `temperature.collect()`: Buffer temp reading.
+- `temperature.transmit()`: Send buffered readings (Earn RP).
+- `atmosphere.collect()` / `transmit()`: Buffer/Send pressure data.
+- `surface.collect()` / `transmit()`: Buffer/Send surface type scan.
 
----
+### `api.memory`
+- `get(key)`, `set(key, val)`, `remove(key)`, `clear()`: Persist data between ticks.
 
-## 11) Player UI (Chakra UI v3)
+### API Visibility & Unlocks
+The Editor only exposes API methods corresponding to unlocked technologies:
 
-Pages:
-- World Scene
-  - Controls: Play/Pause, Speed, Take Off / Reset Rocket, active rocket selector.
-  - Panels (cards):
-    - Navigation: altitude, position, velocity, orientation, turn rate (actual & desired), Ap/Pe, air density.
-    - Rocket: fuel, burn rate, estimated Δv, battery bar and values, mass, RW max turn rate, temperature (with per‑rocket max).
-    - Guidance System: processing interval & next run ETA, scripts running, last‑tick cost & energy.
-    - Forces: thrust/drag/gravity (total & per body), air density.
-    - Minimap: whole system, atmosphere cutoff ring, all rockets (active highlighted), predicted orbit overlay.
-    - Script Logs: per‑slot tabs (if multi‑slot), clear current/all.
-  - Canvas: main scene (planet, moon, base structure at top of planet, rockets, plumes, thrust trail, atmosphere glow).
-- Scripts
-  - Scripts Directory (create, delete), Editor (CodeMirror with lint and autocomplete), Save, Compile; compiles to the active rocket’s runner.
-- Enterprise
-  - Base tab: base info and per‑rocket general upgrades (heating protection).
-  - Rockets tab: select rocket; rename; assign/enable script; show installed parts/specs; upgrade selectors; Upgrade (grid) dialog with part specs.
-- Missions
-  - Cards with description, reward, status, and live progress bars; filter by Active/Completed/All.
+| Method | Required Tech |
+| :--- | :--- |
+| `science.temperature` | **Enhanced Storage** (`tech.batteries_med`) (Placeholder: Basic Science) |
+| `science.atmosphere` | **Advanced Guidance** (`tech.guidance_adv`) |
+| `science.surface` | **Miniaturized Systems** (`tech.satellite`) |
+| `telemetry.apoapsis` | **Orbital Computing** (`tech.orbital_comp`) |
+| `telemetry.periapsis` | **Orbital Computing** (`tech.orbital_comp`) |
+| `nav.alignTo` | **Advanced Guidance** (`tech.guidance_adv`) |
 
 ---
 
-## 12) Telemetry & editor integration
+## 5. Economy & Science Rewards
+You earn RP by completing Science Milestones.
 
-- Telemetry keys are collected from installed sensors and parts (`exposes` arrays). 
-- `TelemetryService` publishes `telemetry-keys` events whenever composition changes (e.g., after reset/upgrades).
-- The editor listens to these keys to suggest completions for `snap.`.
+### Milestone Tiers & Zones
+**Zones**:
+1. Lower Atmosphere (0-660m)
+2. Mid Atmosphere (660-1,320m)
+3. Upper Atmosphere (1,320-2,000m)
+4. Space (>2,000m)
 
----
-
-## 13) Data & persistence (session‑scoped)
-
-- Layouts: stored per rocket index; default rocket is saved on first run.
-- Scripts library: `{ id, name, code, updatedAt }[]`; slot assignments include optional `rocketIndex`.
-- Pending upgrades: stored per rocket index by category; applied on Reset Rocket.
-- Upgrades: per rocket (heating protection level).
-- Money: stored in memory during a session (reset on Reset All).
-- Names: per rocket names persisted in session storage.
-
----
-
-## 14) Extension points & roadmap suggestions
-
-These are intentionally designed to be independent of the physics hot path:
-
-- Parts
-  - Engines with different ISPs/vacuum bonuses and throttling (0..1 power) and gimbal.
-  - Tanks with different dry mass ratios; multiple tanks and staging.
-  - Batteries and energy generation (solar panels, RTGs) and consumers (reaction wheels, transmitters).
-  - Guidance with variable intervals, budgets, slot counts, and fault behaviors (throttle/thermal limits).
-  - Sensors (altimeter, horizon/attitude, SOI body ID, terrain, proximity, radiation, sun angle).
-  - Antennas (range, bandwidth), relay satellites, link budgets.
-- Economy & missions
-  - Chains of missions culminating in lunar flyby/landing and multi‑launch objectives (deploy network, map planet, etc.).
-  - Part blueprints and research trees; mission rewards unlock blueprints rather than direct parts.
-- Base and comms
-  - Base mass pad limits gating heavy launches; upgradable via missions.
-  - Base global memory as a shared data store; rockets transmit logs/measurements when in range.
-  - Antenna network (satellite relays) to extend range and coverage.
-- Scripting
-  - Typed ambient definitions for RocketAPI for richer IntelliSense.
-  - Multiple scripts with message passing between slots.
-  - On‑rocket local file storage with quotas and upload when in range.
-- UI/UX
-  - Charts for resource histories (fuel, battery, CPU cost).
-  - Problem panels for script errors, mission hints, and part health.
-
-Note: A `BaseService` exists for base upgrades, global memory, and link rate accounting. It is a good foundation for the comms/memory progression proposed above.
-
----
-
-## 15) Glossary
-
-- Ap/Pe — Apoapsis/Periapsis: highest/lowest orbital altitude over the current SOI body.
-- SOI — Sphere of Influence (approx.): body with strongest instantaneous gravitational acceleration.
-- Δv — Delta‑V estimate: ve·ln(m0/m1) with ve≈T/ṁ at full thrust.
-- ρ0 — Sea‑level air density.
-- Cd, A — Drag coefficient and reference area.
-- CPU interval — Minimum seconds between script runs on a rocket’s Guidance System.
-
----
-
-## 16) Balancing hooks (for LLM discussion)
-
-Provide candidate knobs the LLM can tune or propose curves for:
-- Atmosphere: `scaleHeight`, `cutoffFactor`, ρ0.
-- Engines: Tmax, fuel burn, vacuum bonus, power curve.
-- Reaction wheels: max ω, energy per ω.
-- CPUs: interval, budget/tick, energy/tick, slots.
-- Tanks & batteries: capacities, masses.
-- Mission thresholds, rewards, and unlock dependencies.
-- Store prices and base starting money.
-- Header time scale (currently 60×).
-
-This specification mirrors the current codebase behavior while highlighting planned extension points suitable for progression design.
+**Rewards**:
+- **Temperature/Pressure Scans**:
+    - Lower: 20 RP
+    - Mid: 40 RP
+    - Upper: 80 RP
+    - Space: 200 RP (Single reading)
+- **Surface Scans** (Global coverage):
+    - 25% Coverage: 50 RP
+    - 50% Coverage: 100 RP
+    - 75% Coverage: 200 RP
+    - 100% Coverage: 500 RP

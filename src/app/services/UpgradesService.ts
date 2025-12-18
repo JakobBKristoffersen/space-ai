@@ -50,10 +50,25 @@ export class UpgradesService {
   // --- Game Logic / Stats ---
 
   getUpgradeCost(type: FacilityType, currentLevel: number): number | null {
-    // Costs removed for Science update (free upgrades for now, or could switch to RP later)
-    // Return 0 to indicate free.
     const maxLevels: Record<string, number> = { launchPad: 4, vab: 3, trackingStation: 3 };
     if (currentLevel >= (maxLevels[type] || 1)) return null;
+
+    // RP Costs
+    switch (type) {
+      case "vab":
+        if (currentLevel === 1) return 100; // to lvl 2
+        if (currentLevel === 2) return 300; // to lvl 3
+        break;
+      case "launchPad":
+        if (currentLevel === 1) return 50;
+        if (currentLevel === 2) return 150;
+        if (currentLevel === 3) return 300;
+        break;
+      case "trackingStation":
+        if (currentLevel === 1) return 100;
+        if (currentLevel === 2) return 250;
+        break;
+    }
     return 0;
   }
 

@@ -5,11 +5,12 @@ import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
 import WorldScenePage from "./pages/WorldScenePage";
 import ScriptsPage from "./pages/ScriptsPage";
-import MissionsPage from "./pages/MissionsPage";
+import SciencePage from "./pages/SciencePage";
 import ResearchPage from "./pages/ResearchPage";
 import BuildPage from "./pages/BuildPage";
 import SpaceCenterPage from "./pages/SpaceCenterPage";
 import { CommsCenterPage } from "./pages/CommsCenterPage";
+import { DebugToolbox } from "./ui/DebugToolbox";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -33,8 +34,6 @@ function useManagerAndServices() {
   }, []);
   return core;
 }
-
-import { DebugToolbox } from "./ui/DebugToolbox";
 
 function formatGameTime(parts: { year: number; month: number; day: number; hours: number; minutes: number }): string {
   const pad = (n: number) => String(n).padStart(2, "0");
@@ -69,6 +68,8 @@ export default function App() {
 
   // Simulation-driven clock (updates only while the simulation is rendering)
   const [clock, setClock] = useState<string>("");
+  const [perf, setPerf] = useState<{ fps: number, tps: number }>({ fps: 0, tps: 0 });
+
   useEffect(() => {
     const mgr: any = (core as any)?.manager;
     if (!mgr) return;
@@ -76,6 +77,9 @@ export default function App() {
       try {
         const parts = mgr.getGameTimeParts?.();
         if (parts) setClock(formatGameTime(parts));
+
+        const p = mgr.getPerf?.();
+        if (p) setPerf(p);
       } catch { }
     };
     const unsub = mgr.onPostRender?.((_alpha: number, _now: number) => update());
@@ -99,6 +103,11 @@ export default function App() {
 
           <HStack gap={6}>
             <Text fontFamily="mono" fontSize="sm">{clock}</Text>
+            {perf.tps > 0 && (
+              <Text fontFamily="mono" fontSize="xs" color="gray.500" title="Ticks/Sec | Frames/Sec">
+                {perf.tps} TPS / {perf.fps} FPS
+              </Text>
+            )}
             <HStack gap={4}>
               <Text fontFamily="mono" color="cyan.300">RP {rp}</Text>
             </HStack>
@@ -118,7 +127,7 @@ export default function App() {
           {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}
           {currentView === 'comms' && <CommsCenterPage onNavigate={setCurrentView} />}
           {currentView === 'build' && <BuildPage onNavigate={setCurrentView} />}
-          {currentView === 'missions' && <MissionsPage onNavigate={setCurrentView} />}
+          {currentView === 'science' && <SciencePage onNavigate={setCurrentView} />}
           {currentView === 'research' && <ResearchPage onNavigate={setCurrentView} />}
           {currentView === 'scripts' && <ScriptsPage onNavigate={setCurrentView} />}
         </Box>

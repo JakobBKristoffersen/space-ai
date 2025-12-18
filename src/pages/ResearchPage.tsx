@@ -1,20 +1,16 @@
+import React, { useState, useEffect } from "react";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 import { FaFlask } from "react-icons/fa";
 import {
     HStack,
     VStack,
-    Heading,
     Text,
-    Button,
     Box,
-    Card,
-    SimpleGrid,
-    Badge,
 } from "@chakra-ui/react";
-import { useState, useEffect } from "react";
 
 import { useAppCore } from "../app/AppContext";
-import { TechTree } from "../game/research/TechDefinitions";
+import { ResearchTree } from "../components/ResearchTree";
+import { TechTreeDefinition } from "../game/Unlocks";
 
 interface Props {
     onNavigate: (view: string) => void;
@@ -25,46 +21,42 @@ export default function ResearchPage({ onNavigate }: Props) {
     const research = services?.research;
     const [points, setPoints] = useState(0);
     const [unlocked, setUnlocked] = useState<string[]>([]);
-    // We need to force update to detect changes if research service changes internally
-    const [tick, setTick] = useState(0);
 
     useEffect(() => {
+        // Debug logging
+        // console.log("ResearchPage mounted. Research service:", !!research);
         if (!research) return;
-        const interval = setInterval(() => {
+        const sync = () => {
             setPoints(research.system.points);
             setUnlocked([...research.system.unlockedTechs]);
-            setTick(t => t + 1);
-        }, 500);
+        };
+        const interval = setInterval(sync, 500);
+        sync();
         return () => clearInterval(interval);
     }, [research]);
 
-    const handleUnlock = (techId: string) => {
-        console.log("Attempting to unlock:", techId);
-        if (!research) {
-            console.error("Research service not found");
-            return;
-        }
-        const tech = TechTree.find(t => t.id === techId);
-        if (!tech) {
-            console.error("Tech not found:", techId);
-            return;
-        }
-        console.log("Current points:", research.system.points, "Cost:", tech.costRP);
-        if (research.system.unlock(tech)) {
-            console.log("Unlock successful");
-            research.save(); // persist
-            // Optimistic update
-            setPoints(research.system.points);
-            setUnlocked([...research.system.unlockedTechs]);
-        } else {
-            console.warn("Unlock failed. verification:", research.system.canUnlock(tech));
+    const handleUnlock = (techId: string, cost: number) => {
+        if (!research) return;
+
+        const techNode = TechTreeDefinition.find((t) => t.id === techId);
+
+        if (techNode) {
+            // Adapt to legacy TechDefinition type which requires unlocksParts to be string[] (not undefined)
+            const techDef = {
+                ...techNode,
+                unlocksParts: techNode.unlocksParts || []
+            };
+
+            if (research.system.unlock(techDef)) {
+                research.save();
+                setPoints(research.system.points);
+                setUnlocked([...research.system.unlockedTechs]);
+            }
         }
     };
 
     return (
-        <VStack align="stretch" gap={4} p={6} bg="gray.900" minH="100%">
-            {/* HEADER */}
-            {/* HEADER */}
+        <VStack align="stretch" gap={0} h="100vh" w="100vw" bg="gray.950" overflow="hidden">
             <SpaceCenterHeader
                 title="R&D Laboratory"
                 icon={FaFlask}
@@ -77,53 +69,13 @@ export default function ResearchPage({ onNavigate }: Props) {
                 </HStack>
             </SpaceCenterHeader>
 
-            <SimpleGrid columns={{ base: 1, md: 2, lg: 3 }} gap={4}>
-                {TechTree.map(tech => {
-                    const isUnlocked = unlocked.includes(tech.id);
-                    const canUnlock = !isUnlocked && points >= tech.costRP;
-
-                    return (
-                        <Card.Root key={tech.id} variant={isUnlocked ? "subtle" : "outline"} borderColor={isUnlocked ? "green.500/30" : undefined}>
-                            <Card.Header>
-                                <HStack justify="space-between">
-                                    <Heading size="sm">{tech.name}</Heading>
-                                    {isUnlocked && <Badge colorPalette="green">Unlocked</Badge>}
-                                </HStack>
-                            </Card.Header>
-                            <Card.Body>
-                                <VStack align="stretch" gap={3}>
-                                    <Text fontSize="sm" color="gray.500">{tech.description}</Text>
-
-                                    {tech.unlocksParts && tech.unlocksParts.length > 0 && (
-                                        <Box>
-                                            <Text fontSize="xs" fontWeight="bold" mb={1}>Unlocks parts:</Text>
-                                            <HStack wrap="wrap" gap={1}>
-                                                {tech.unlocksParts.map(p => (
-                                                    <Badge key={p} variant="outline" size="sm">{p}</Badge>
-                                                ))}
-                                            </HStack>
-                                        </Box>
-                                    )}
-
-                                    <HStack justify="space-between" mt={2}>
-                                        <Text fontWeight="mono" color={isUnlocked ? "gray.500" : (canUnlock ? "cyan.400" : "red.400")}>
-                                            {tech.costRP} RP
-                                        </Text>
-                                        <Button
-                                            size="sm"
-                                            variant={isUnlocked ? "ghost" : "solid"}
-                                            disabled={isUnlocked || !canUnlock}
-                                            onClick={() => handleUnlock(tech.id)}
-                                        >
-                                            {isUnlocked ? "Researched" : "Unlock"}
-                                        </Button>
-                                    </HStack>
-                                </VStack>
-                            </Card.Body>
-                        </Card.Root>
-                    );
-                })}
-            </SimpleGrid>
+            <Box flex={1} w="100%" h="100%" overflow="hidden" position="relative">
+                <ResearchTree
+                    unlockedTechs={unlocked}
+                    researchPoints={points}
+                    onUnlock={handleUnlock}
+                />
+            </Box>
         </VStack>
     );
 }
