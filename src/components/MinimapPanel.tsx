@@ -108,6 +108,21 @@ export function MinimapPanel({ envSnap, width = "100%", height = "100%" }: Minim
             ctx.fillStyle = b.id === envSnap.primaryId ? (b.color || "#2e5d2e") : (b.color || "#888");
             ctx.arc(p.x, p.y, R, 0, Math.PI * 2);
             ctx.fill();
+
+            // Draw SOI if defined (and not primary)
+            if (b.soiRadius && b.soiRadius > 0) {
+                const rSOI = b.soiRadius * scale;
+                if (rSOI > R + 1) { // Only drawn if visible outside body
+                    ctx.save();
+                    ctx.beginPath();
+                    ctx.setLineDash([2, 3]);
+                    ctx.strokeStyle = "rgba(255,255,200,0.3)"; // Faint yellow
+                    ctx.lineWidth = 1;
+                    ctx.arc(p.x, p.y, rSOI, 0, Math.PI * 2);
+                    ctx.stroke();
+                    ctx.restore();
+                }
+            }
         }
 
         // Atmosphere cutoff circle (if defined) drawn around the primary

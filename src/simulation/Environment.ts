@@ -149,6 +149,7 @@ export interface BodySnapshot {
   atmosphereColor?: string;
   terrain?: TerrainSegment[];
   angle?: number;
+  soiRadius?: number;
 }
 
 
@@ -280,7 +281,17 @@ export class Environment {
       angle: 0, // TODO: Body rotation if needed
       atmosphereScaleHeightMeters: b.atmosphereScaleHeight,
       atmosphereColor: b.atmosphereColor,
-      terrain: b.terrain
+      terrain: b.terrain,
+      soiRadius: (() => {
+        if (!b.orbitDef) return undefined;
+        // Find parent
+        const parent = this.bodies.find(p => p.id === b.orbitDef!.aroundId);
+        if (!parent) return undefined;
+        // SOI = a * (m/M)^(2/5)
+        // Ratio of masses is same as ratio of mus: mu = GM => m ~ mu
+        const massRatio = b.mu / parent.mu;
+        return b.orbitDef.radiusMeters * Math.pow(massRatio, 0.4);
+      })()
     }));
 
     const structs = this.structuresDef.map(s => {
