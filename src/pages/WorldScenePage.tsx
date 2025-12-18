@@ -36,23 +36,14 @@ function fmt(n: number, digits = 2): string {
 
 export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string) => void }) {
     const { manager, services } = useAppCore();
-    const [running, setRunning] = useState<boolean>(false);
-    const [speed, setSpeed] = useState<number>(1);
     const [snapKey, setSnapKey] = useState<number>(0);
     const [launched, setLaunched] = useState<boolean>(false);
     const [showVectors, setShowVectors] = useState<boolean>(false);
-
-    // Speed options
-    const speedOptions = useMemo(() => createListCollection({
-        items: [{ label: "0.5x", value: "0.5" }, { label: "1x", value: "1" }, { label: "2x", value: "2" }, { label: "4x", value: "4" }, { label: "10x", value: "10" }, { label: "50x", value: "50" }],
-    }), []);
 
     // Loop
     useEffect(() => {
         if (!manager) return;
         const sync = () => {
-            setRunning(manager.isRunning());
-            setSpeed(manager.getSpeedMultiplier ? manager.getSpeedMultiplier() : 1);
             try { setLaunched(!!manager.hasLaunched?.()); } catch { }
         };
         let lastTs = 0;
@@ -88,8 +79,6 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     const activeIdx = Number(envSnap?.activeRocketIndex ?? 0) | 0;
 
     // Controls
-    const onPlayPause = () => { if (manager) { if (manager.isRunning()) manager.pause(); else manager.start(); setRunning(manager.isRunning()); } };
-    const onSpeedChange = (v: string) => { const n = parseFloat(v); if (isFinite(n)) { setSpeed(n); manager?.setSpeedMultiplier?.(n); } };
     const onResetRocket = () => manager?.resetSimulationOnly?.();
     const onTakeOff = () => { try { manager?.takeOff?.(); } catch { } };
 
@@ -132,23 +121,6 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                 onNavigate={onNavigate}
                 currentView="world_scene"
             > <HStack gap={2} >
-                    <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>{running ? "PAUSE" : "RESUME"}</Button>
-                    <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
-                        <Select.Control>
-                            <Select.Trigger h="24px" minH="unset" py={0}><Select.ValueText /></Select.Trigger>
-                        </Select.Control>
-                        <Portal>
-                            <Select.Positioner>
-                                <Select.Content>
-                                    {speedOptions.items.map((opt: any) => (
-                                        <Select.Item item={opt} key={opt.value}>
-                                            {opt.label}
-                                        </Select.Item>
-                                    ))}
-                                </Select.Content>
-                            </Select.Positioner>
-                        </Portal>
-                    </Select.Root>
                     {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH ROCKET</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET ROCKET</Button>}
                 </HStack>
             </SpaceCenterHeader>

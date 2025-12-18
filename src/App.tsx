@@ -1,5 +1,5 @@
-import React, { useEffect, useState } from "react";
-import { Box, Flex, HStack, Heading, Tabs, Button, Text, Dialog } from "@chakra-ui/react";
+import React, { useEffect, useMemo, useState } from "react";
+import { Box, Flex, HStack, Heading, Tabs, Button, Text, Dialog, Icon, Select, Portal, createListCollection } from "@chakra-ui/react";
 import { useColorModeValue } from "@/components/ui/color-mode";
 import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
@@ -12,6 +12,7 @@ import SpaceCenterPage from "./pages/SpaceCenterPage";
 import { CommsCenterPage } from "./pages/CommsCenterPage";
 import { DebugToolbox } from "./ui/DebugToolbox";
 import { Sidebar } from "./components/Sidebar";
+import { FaPause, FaPlay } from "react-icons/fa";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -67,6 +68,32 @@ export default function App() {
     return () => clearInterval(t);
   }, []);
 
+  // Time control state
+  const [running, setRunning] = useState<boolean>(false);
+  const [speed, setSpeed] = useState<number>(1);
+
+  // Speed options
+  const speedOptions = useMemo(() => createListCollection({
+    items: [{ label: "0.5x", value: "0.5" }, { label: "1x", value: "1" }, { label: "2x", value: "2" }, { label: "4x", value: "4" }, { label: "10x", value: "10" }, { label: "50x", value: "50" }],
+  }), []);
+
+  const onPlayPause = () => {
+    const mgr = (window as any).__manager;
+    if (mgr) {
+      if (mgr.isRunning()) mgr.pause();
+      else mgr.start();
+      setRunning(mgr.isRunning());
+    }
+  };
+  const onSpeedChange = (v: string) => {
+    const n = parseFloat(v);
+    const mgr = (window as any).__manager;
+    if (isFinite(n)) {
+      setSpeed(n);
+      mgr?.setSpeedMultiplier?.(n);
+    }
+  };
+
   // Simulation-driven clock (updates only while the simulation is rendering)
   const [clock, setClock] = useState<string>("");
   const [perf, setPerf] = useState<{ fps: number, tps: number }>({ fps: 0, tps: 0 });
@@ -80,7 +107,14 @@ export default function App() {
         if (parts) setClock(formatGameTime(parts));
 
         const p = mgr.getPerf?.();
-        if (p) setPerf(p);
+        if (p) {
+          setPerf(p);
+        }
+
+        // Also sync state
+        setRunning(mgr.isRunning());
+        setSpeed(mgr.getSpeedMultiplier ? mgr.getSpeedMultiplier() : 1);
+
       } catch { }
     };
     const unsub = mgr.onPostRender?.((_alpha: number, _now: number) => update());
@@ -106,6 +140,30 @@ export default function App() {
             </HStack>
 
             <HStack gap={6}>
+              {/* Time Controls */}
+              <HStack gap={2}>
+                <Button onClick={onPlayPause} variant="subtle" size="xs" colorPalette={running ? "yellow" : "green"}>
+                  <Icon as={running ? FaPause : FaPlay} />
+                  {running ? "PAUSE" : "RESUME"}
+                </Button>
+                <Select.Root size="xs" w="70px" collection={speedOptions} value={[String(speed)]} onValueChange={(d: any) => onSpeedChange(d.value[0])}>
+                  <Select.Control>
+                    <Select.Trigger h="24px" minH="unset" py={0}><Select.ValueText /></Select.Trigger>
+                  </Select.Control>
+                  <Portal>
+                    <Select.Positioner>
+                      <Select.Content>
+                        {speedOptions.items.map((opt: any) => (
+                          <Select.Item item={opt} key={opt.value}>
+                            {opt.label}
+                          </Select.Item>
+                        ))}
+                      </Select.Content>
+                    </Select.Positioner>
+                  </Portal>
+                </Select.Root>
+              </HStack>
+
               <Text fontFamily="mono" fontSize="sm">{clock}</Text>
               {perf.tps > 0 && (
                 <Text fontFamily="mono" fontSize="xs" color="gray.500" title="Ticks/Sec | Frames/Sec">
@@ -140,4 +198,5 @@ export default function App() {
     </AppCoreContext.Provider>
   );
 }
+
 

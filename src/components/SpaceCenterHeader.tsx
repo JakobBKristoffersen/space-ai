@@ -28,19 +28,6 @@ export function SpaceCenterHeader({ title, icon, description, onBack, onNavigate
                 <HStack gap={2}>
                     {children}
                 </HStack>
-                <HStack gap={2}>
-                    {onNavigate && (
-                        <>
-                            {/* Navigation is now handled by the Sidebar */}
-                        </>
-                    )}
-
-                    {!onNavigate && onBack && (
-                        <Button size="xs" variant="ghost" onClick={onBack}>
-                            <Icon as={FaChevronLeft} mr={1} /> Back
-                        </Button>
-                    )}
-                </HStack>
             </HStack>
         </Box>
     );
