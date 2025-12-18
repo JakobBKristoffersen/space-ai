@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { MinimapPanel } from "../components/MinimapPanel";
+import { ForceGauge } from "../components/ForceGauge";
 import {
     Badge,
     Box,
@@ -22,7 +23,7 @@ import {
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { estimateDeltaV, mag2 } from "../app/utils/rocketPerf";
-import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish, FaFlask } from "react-icons/fa";
+import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish, FaFlask, FaMapMarkedAlt, FaCircle } from "react-icons/fa";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 
 // --- Helpers ---
@@ -30,17 +31,25 @@ function fmt(n: number, digits = 2): string {
     if (!isFinite(n)) return "-";
     const a = Math.abs(n);
     if (a >= 10000) return n.toFixed(0);
-    if (a >= 1000) return n.toFixed(1);
+    if (a >= 10000) return n.toFixed(1); // Typo protection
     return n.toFixed(digits);
 }
+
+const StatRow = ({ label, value, unit, color = "white" }: any) => (
+    <HStack justify="space-between" w="100%">
+        <Text fontSize="xs" color="gray.500">{label}</Text>
+        <HStack gap={1}>
+            <Text fontSize="sm" fontFamily="mono" color={color}>{value}</Text>
+            {unit && <Text fontSize="xs" color="gray.600">{unit}</Text>}
+        </HStack>
+    </HStack>
+);
 
 export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string) => void }) {
     const { manager, services } = useAppCore();
     const [snapKey, setSnapKey] = useState<number>(0);
     const [launched, setLaunched] = useState<boolean>(false);
-    const [showVectors, setShowVectors] = useState<boolean>(false);
     const [milestonesCount, setMilestonesCount] = useState<number>(0);
-    const [lastMilestoneToast, setLastMilestoneToast] = useState<number>(0);
 
     // Loop
     useEffect(() => {
@@ -66,13 +75,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
             if (!mgr) return;
             const completed = mgr.getCompletedIds().length;
             if (completed > milestonesCount) {
-                if (milestonesCount > 0 && Date.now() - lastMilestoneToast > 5000) {
-                    // New milestone!
-                    // In a real app we'd show a toast here. For now let's show an Overlay or just log it?
-                    // Let's use a specialized overlay or Badge flash.
-                    // We'll trust the user to see the "Science Packet Received" in the log for now,
-                    // but we can add a visual indicator.
-                }
+                // Milestone toast logic here if needed
                 setMilestonesCount(completed);
             }
         };
@@ -86,247 +89,151 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
     const rocketSnap = envSnap?.rocket as any;
 
-    // Rocket selection
-    const rocketOptions = useMemo(() => {
-        try {
-            const names = manager?.getRocketNames?.();
-            if (Array.isArray(names) && names.length) {
-                return createListCollection({ items: names.map((label: string, i: number) => ({ label, value: String(i) })) });
-            }
-        } catch { }
-        const count = envSnap?.rockets?.length ?? 1;
-        const items = new Array(count).fill(0).map((_, i) => ({ label: `Rocket ${i + 1}`, value: String(i) }));
-        return createListCollection({ items });
-    }, [manager, envSnap?.rockets?.length]);
-
-    const activeIdx = Number(envSnap?.activeRocketIndex ?? 0) | 0;
-
     // Controls
     const onResetRocket = () => manager?.resetSimulationOnly?.();
     const onTakeOff = () => { try { manager?.takeOff?.(); } catch { } };
 
-    // Derived Data
+    // Derived Flight Data
     const alt = rocketSnap?.altitude ?? 0;
     const speedMag = rocketSnap ? mag2(rocketSnap.velocity?.x ?? 0, rocketSnap.velocity?.y ?? 0) : 0;
-    const verticalSpeed = rocketSnap?.velocity?.y ?? 0; // rough approx if y is up
+    const verticalSpeed = rocketSnap?.velocity?.y ?? 0;
     const fuel = rocketSnap?.fuelKg ?? 0;
     const fuelRate = rocketSnap?.fuelConsumptionKgPerS ?? 0;
-    // Throttle: provided by snapshot or 0
     const throttle = (rocketSnap?.avgEngineThrustPct ?? 0) * 100;
+    const mass = rocketSnap?.massKg ?? 1;
+
+    // TWR & DeltaV
+    const thrustN = rocketSnap?.forces ? mag2(rocketSnap.forces.thrust.fx, rocketSnap.forces.thrust.fy) : 0;
+    const weightN = mass * 9.81; // Using standard G for ref
+    const twr = weightN > 0 ? thrustN / weightN : 0;
+
+    // Delta V Estimate (Quick & Dirty using current ISP if available, or standard)
+    // We assume an average ISP of ~300s for generic liquid fuel engines if not exposed
+    // Ideally use estimateDeltaV from rocketPerf if we had the full parts list, but for now we use a heuristic or the helper if possible.
+    // Let's use the helper if we can get the rocket object, but we only have snapshot.
+    // The snapshot doesn't have full parts.
+    // We can try to calculate based on fuel mass.
+    // Dry Mass = Total - Fuel.
+    const dryMass = Math.max(1, mass - fuel);
+    const isp = 300; // Standardize for now
+    const dV = 9.81 * isp * Math.log(mass / dryMass);
+
+
     const energy = rocketSnap?.batteryJoules ?? 0;
     const capacity = rocketSnap?.batteryCapacityJoules ?? 0;
     const batPct = capacity > 0 ? (energy / capacity) * 100 : 0;
-    const temp = rocketSnap?.temperature ?? 0;
-    const maxTemp = services.upgrades?.getMaxTemperature?.(activeIdx) ?? 1000;
-    const chuteDeployed = !!rocketSnap?.parachuteDeployed;
-    const dragCd = rocketSnap?.totalDragCoefficient ?? 0.5;
 
-    // Latitude (Angle from primary)
-    const primaryId = envSnap?.primaryId;
-    const primaryBody = envSnap?.bodies?.find((b: any) => b.id === primaryId);
-    const primaryPos = primaryBody?.position ?? { x: 0, y: 0 };
-    const rPos = rocketSnap?.position ?? { x: 0, y: 0 };
-    // atan2(y, x) gives angle from +X axis (East). 
-    // -180 to 180.
-    const latDeg = Math.atan2(rPos.y - primaryPos.y, rPos.x - primaryPos.x) * (180 / Math.PI);
+    const latDeg = (() => {
+        const pId = envSnap?.primaryId;
+        const pBody = envSnap?.bodies?.find((b: any) => b.id === pId);
+        if (!pBody || !rocketSnap) return 0;
+        return Math.atan2(rocketSnap.position.y - pBody.position.y, rocketSnap.position.x - pBody.position.x) * (180 / Math.PI);
+    })();
 
-    // Heading (0=North, 90=East). Math: 0=East (+X), 90=North (+Y)
     const orientDeg = (rocketSnap?.orientationRad ?? 0) * (180 / Math.PI);
     const heading = (450 - orientDeg) % 360;
 
     return (
-        <VStack align="stretch" h="100%" gap={0} bg="gray.950">
+        <VStack align="stretch" h="100%" gap={0} bg="gray.950" className="dashboard-container">
             {/* Header */}
             <SpaceCenterHeader
                 title="Launch Control"
                 icon={FaGlobe}
-                description="Mission Telemetry"
+                description="Mission Dashboard"
                 onNavigate={onNavigate}
                 currentView="world_scene"
-            > <HStack gap={2} >
-                    {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH ROCKET</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET ROCKET</Button>}
+            >
+                <HStack gap={2} >
+                    {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET</Button>}
                 </HStack>
             </SpaceCenterHeader>
 
-            {/* Main Content Grid */}
-            <Grid templateColumns="280px 1fr 300px" flex={1} overflow="hidden">
+            {/* Main 3-Column Dashboard */}
+            <Grid templateColumns="320px 1fr 320px" flex={1} overflow="hidden" gap={0} bg="black">
 
-                {/* LEFT: Flight Instruments */}
-                <Box borderRightWidth="1px" borderColor="gray.800" bg="gray.900" p={2} overflowY="auto">
-                    {!rocketSnap ? (
-                        <VStack align="center" justify="center" h="100%" gap={4} color="gray.500">
-                            <Icon as={FaRocket} boxSize={8} opacity={0.3} />
-                            <Text fontSize="sm" textAlign="center">No Active Rocket</Text>
-                            <Button size="xs" variant="outline" onClick={() => onNavigate?.("build")}>Go to VAB</Button>
-                        </VStack>
-                    ) : (
-                        <VStack align="stretch" gap={4}>
+                {/* LEFT COL: Instruments */}
+                <Box borderRightWidth="1px" borderColor="gray.800" bg="gray.900" p={3} overflowY="auto" display="flex" flexDirection="column" gap={3}>
+                    <SectionHeader title="PROPULSION" icon={FaRocket} />
+                    <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
+                        <Card.Body gap={2}>
+                            <Box mb={2}>
+                                <HStack justify="space-between" mb={1}><Text fontSize="xs" color="gray.400">THROTTLE</Text><Text fontSize="xs" color="cyan.300">{fmt(throttle, 0)}%</Text></HStack>
+                                <Progress.Root value={throttle} max={100} size="sm" colorPalette="cyan">
+                                    <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
+                                </Progress.Root>
+                            </Box>
+                            <Box mb={2}>
+                                <HStack justify="space-between" mb={1}><Text fontSize="xs" color="gray.400">FUEL</Text><Text fontSize="xs" color={fuelRate > 0 ? "yellow.300" : "gray.400"}>{fmt(fuel, 0)} kg</Text></HStack>
+                                <Progress.Root value={fuel > 0 ? 100 : 0} max={100} size="sm" colorPalette="yellow" striped={fuelRate > 0} animated={fuelRate > 0}>
+                                    <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
+                                </Progress.Root>
+                                {fuelRate > 0 && <Text fontSize="xs" color="yellow.500" textAlign="right">-{fmt(fuelRate, 1)} kg/s</Text>}
+                            </Box>
+                            <Grid templateColumns="1fr 1fr" gap={2} mt={1}>
+                                <BigStat label="TWR" value={fmt(twr, 2)} color={twr > 1 ? "green.300" : "orange.300"} />
+                                <BigStat label="DELTA-V" value={fmt(dV, 0)} unit="m/s" color="blue.300" />
+                            </Grid>
+                        </Card.Body>
+                    </Card.Root>
 
-                            {/* Throttle & Fuel */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="gray.400">PROPULSION</Text><Icon as={FaRocket} size="xs" /></HStack></Card.Header>
-                                <Card.Body>
-                                    <VStack align="stretch" gap={3}>
-                                        <Box>
-                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Throttle</Text><Text fontSize="xs" fontWeight="mono" color="cyan.300">{fmt(throttle, 0)}%</Text></HStack>
-                                            <Progress.Root value={throttle} max={100} size="sm" colorPalette="cyan">
-                                                <Progress.Track><Progress.Range /></Progress.Track>
-                                            </Progress.Root>
-                                        </Box>
-                                        <Box>
-                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Fuel</Text><Text fontSize="xs" fontWeight="mono" color={fuelRate > 0 ? "yellow.300" : "gray.300"}>{fmt(fuel, 0)} kg</Text></HStack>
-                                            <Progress.Root value={fuel > 0 ? 100 : 0} max={100} size="sm" colorPalette="yellow" striped={fuelRate > 0} animated={fuelRate > 0}>
-                                                <Progress.Track><Progress.Range /></Progress.Track>
-                                            </Progress.Root>
-                                            {fuelRate > 0 && <Text fontSize="xs" color="yellow.500" textAlign="right" mt={1}>-{fmt(fuelRate, 1)} kg/s</Text>}
-                                        </Box>
-                                    </VStack>
-                                </Card.Body>
-                            </Card.Root>
+                    <SectionHeader title="AERODYNAMICS & FORCES" icon={FaWind} />
+                    <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
+                        <Card.Body>
+                            <ForceGauge forces={rocketSnap?.forces} orientationRad={rocketSnap?.orientationRad} />
+                            <VStack mt={3} gap={1}>
+                                <StatRow label="Drag Coeff" value={fmt(rocketSnap?.totalDragCoefficient ?? 0, 2)} />
+                                <StatRow label="Q (Dyn Pressure)" value={fmt(0.5 * (rocketSnap?.airDensity ?? 0) * speedMag * speedMag, 0)} unit="Pa" />
+                            </VStack>
+                        </Card.Body>
+                    </Card.Root>
 
-                            {/* COMMUNICATIONS */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><HStack justify="space-between"><Heading size="xs" color="gray.400">COMMUNICATIONS</Heading><Icon as={FaSatelliteDish} size="xs" /></HStack></Card.Header>
-                                <Card.Body>
-                                    <VStack align="stretch" gap={2}>
-                                        <HStack justify="space-between">
-                                            <Text fontSize="xs">Status</Text>
-                                            {rocketSnap?.commsInRange ?
-                                                <Box px={1.5} py={0.5} bg="green.900" color="green.300" borderRadius="sm" fontSize="xs" fontWeight="bold">CONNECTED</Box> :
-                                                <Box px={1.5} py={0.5} bg="red.900" color="red.300" borderRadius="sm" fontSize="xs" fontWeight="bold">NO SIGNAL</Box>
-                                            }
-                                        </HStack>
-                                        <Grid templateColumns="1fr 1fr" gap={2}>
-                                            <StatBox label="DISTANCE" value={fmt((rocketSnap?.commsDistanceMeters ?? 0) / 1000, 1)} unit="km" />
-                                            <Box bg="gray.950" p={2} borderRadius="md" borderWidth="1px" borderColor="gray.800">
-                                                <Text fontSize="xx-small" color="gray.500" fontWeight="bold">QUEUE</Text>
-                                                <HStack align="baseline" gap={1}>
-                                                    <Text fontSize="md" fontWeight="mono" color="white">{rocketSnap?.packetQueueLength ?? 0}</Text>
-                                                    <Text fontSize="xs" color="gray.400">/ {fmt(rocketSnap?.packetQueueSizeKb ?? 0, 2)} KB</Text>
-                                                </HStack>
-                                            </Box>
-                                        </Grid>
+                    <SectionHeader title="SYSTEMS STATUS" icon={FaTachometerAlt} />
+                    <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
+                        <Card.Body gap={2}>
 
-                                        <HStack justify="space-between">
-                                            <Text fontSize="xs">Upload</Text>
-                                            <Text fontSize="xs" fontWeight="mono" color={rocketSnap?.commsInRange ? "green.300" : "red.300"}>{fmt((rocketSnap?.commsBytesSentPerS ?? 0) / 1024, 2)} KB/s</Text>
-                                        </HStack>
+                            <Box mb={2}>
+                                <Text fontSize="xs" color="gray.400" mb={1}>THERMAL</Text>
+                                <HStack justify="space-between" mb={0.5}>
+                                    <Text fontSize="xx-small" color="orange.400">NOSE</Text>
+                                    <Text fontSize="xx-small" fontWeight="mono" color="gray.500">{fmt(rocketSnap?.noseTemperature ?? 0, 0)} / {rocketSnap?.maxNoseTemperature ?? 1200} K</Text>
+                                </HStack>
+                                <Progress.Root value={((rocketSnap?.noseTemperature ?? 0) / (rocketSnap?.maxNoseTemperature ?? 1200)) * 100} max={100} size="xs" colorPalette="orange">
+                                    <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
+                                </Progress.Root>
 
-                                    </VStack>
-                                </Card.Body>
-                            </Card.Root>
+                                <HStack justify="space-between" mb={0.5} mt={1}>
+                                    <Text fontSize="xx-small" color="blue.400">TAIL</Text>
+                                    <Text fontSize="xx-small" fontWeight="mono" color="gray.500">{fmt(rocketSnap?.tailTemperature ?? 0, 0)} / {rocketSnap?.maxTailTemperature ?? 1200} K</Text>
+                                </HStack>
+                                <Progress.Root value={((rocketSnap?.tailTemperature ?? 0) / (rocketSnap?.maxTailTemperature ?? 1200)) * 100} max={100} size="xs" colorPalette="cyan">
+                                    <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
+                                </Progress.Root>
+                            </Box>
+                            <Box mb={1}>
+                                <HStack justify="space-between" mb={1}><Text fontSize="xs" color="gray.400">BATTERY {fmt(batPct, 0)}%</Text><Text fontSize="xs" color={batPct < 20 ? "red.300" : "green.300"}>{fmt(energy)} J</Text></HStack>
+                                <Progress.Root value={batPct} max={100} size="xs" colorPalette={batPct < 20 ? "red" : "green"}>
+                                    <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
+                                </Progress.Root>
+                                <HStack justify="space-between" mt={1}>
+                                    <Text fontSize="xx-small" color="green.500">+{fmt(rocketSnap?.energyGainJPerS ?? 0, 0)}W</Text>
+                                    <Text fontSize="xx-small" color="orange.500">-{fmt(rocketSnap?.energyDrawJPerS ?? 0, 0)}W</Text>
+                                </HStack>
+                            </Box>
 
-                            {/* SYSTEMS */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="gray.400">SYSTEMS</Text><Icon as={FaTachometerAlt} size="xs" /></HStack></Card.Header>
-                                <Card.Body>
-                                    <VStack align="stretch" gap={3}>
-                                        <Box>
-                                            <HStack justify="space-between" mb={1}>
-                                                <Text fontSize="xs">Battery</Text>
-                                                <Text fontSize="xs" fontWeight="mono">{fmt(energy)} J</Text>
-                                            </HStack>
-                                            <Progress.Root value={batPct} max={100} size="xs" colorPalette={batPct < 20 ? "red" : "green"}>
-                                                <Progress.Track><Progress.Range /></Progress.Track>
-                                            </Progress.Root>
-                                            <HStack justify="space-between" mt={1}>
-                                                <Text fontSize="xx-small" color="green.400">+{fmt(rocketSnap?.energyGainJPerS ?? 0, 1)} W</Text>
-                                                <Text fontSize="xx-small" color="orange.400">-{fmt(rocketSnap?.energyDrawJPerS ?? 0, 1)} W</Text>
-                                            </HStack>
-                                        </Box>
-                                        <Box>
-                                            <HStack justify="space-between" mb={1}><Text fontSize="xs">Thermal Status</Text></HStack>
-
-                                            {/* Nose Temp */}
-                                            <HStack justify="space-between" mb={0.5}>
-                                                <Text fontSize="xx-small" color="orange.300">NOSE</Text>
-                                                <Text fontSize="xx-small" fontWeight="mono" color="gray.400">{fmt(rocketSnap?.noseTemperature ?? 0, 0)} / {rocketSnap?.maxNoseTemperature ?? 1200}</Text>
-                                            </HStack>
-                                            <Progress.Root value={((rocketSnap?.noseTemperature ?? 0) / (rocketSnap?.maxNoseTemperature ?? 2400)) * 100} max={100} size="xs" colorPalette="orange">
-                                                <Progress.Track><Progress.Range /></Progress.Track>
-                                            </Progress.Root>
-
-                                            {/* Tail Temp */}
-                                            <HStack justify="space-between" mb={0.5} mt={2}>
-                                                <Text fontSize="xx-small" color="blue.300">TAIL</Text>
-                                                <Text fontSize="xx-small" fontWeight="mono" color="gray.400">{fmt(rocketSnap?.tailTemperature ?? 0, 0)} / {rocketSnap?.maxTailTemperature ?? 1200}</Text>
-                                            </HStack>
-                                            <Progress.Root value={((rocketSnap?.tailTemperature ?? 0) / (rocketSnap?.maxTailTemperature ?? 3400)) * 100} max={100} size="xs" colorPalette="cyan">
-                                                <Progress.Track><Progress.Range /></Progress.Track>
-                                            </Progress.Root>
-                                        </Box>
-
-                                        {/* Status Badges */}
-                                        <HStack gap={2} mt={1}>
-                                            <Badge variant={rocketSnap?.solarDeployed ? "solid" : "subtle"} colorPalette={rocketSnap?.solarDeployed ? "green" : "gray"} size="xs">
-                                                {rocketSnap?.solarDeployed ? "SOLAR: ON" : "SOLAR: OFF"}
-                                            </Badge>
-                                            <Badge variant={rocketSnap?.parachuteDeployed ? "solid" : "subtle"} colorPalette={rocketSnap?.parachuteDeployed ? "green" : "gray"} size="xs">
-                                                {rocketSnap?.parachuteDeployed ? "CHUTE: ON" : "CHUTE: OFF"}
-                                            </Badge>
-                                        </HStack>
-                                    </VStack>
-                                </Card.Body>
-                            </Card.Root>
-
-                            {/* SCIENCE */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="cyan.400">SCIENCE</Text><Icon as={FaFlask} size="xs" color="cyan.400" /></HStack></Card.Header>
-                                <Card.Body>
-                                    {rocketSnap?.science?.length ? (
-                                        <VStack align="stretch" gap={2}>
-                                            {rocketSnap.science.map((s: any) => (
-                                                <HStack key={s.id} justify="space-between">
-                                                    <Text fontSize="xs" color="gray.300">{s.name}</Text>
-                                                    <Text fontSize="xs" fontWeight="bold" color={s.hasData ? "green.300" : "gray.500"}>{s.hasData ? "READY" : "IDLE"}</Text>
-                                                </HStack>
-                                            ))}
-                                            <Box pt={1} borderTopWidth="1px" borderColor="gray.700">
-                                                <Grid templateColumns="1fr 1fr" gap={2}>
-                                                    {rocketSnap.science.some((s: any) => s.id === "science.temp") && (
-                                                        <StatBox label="TEMP" value={fmt(rocketSnap.ambientTemperature ?? 0, 1)} unit="K" />
-                                                    )}
-                                                    {rocketSnap.science.some((s: any) => s.id === "science.atmos") && (
-                                                        <StatBox label="PRESSURE" value={fmt(rocketSnap.ambientPressure ?? 0, 1)} unit="Pa" />
-                                                    )}
-                                                    {rocketSnap.science.some((s: any) => s.id === "science.surface") && (
-                                                        <StatBox label="TERRAIN" value={rocketSnap?.currentTerrain ?? "-"} unit="" />
-                                                    )}
-                                                </Grid>
-                                            </Box>
-                                        </VStack>
-                                    ) : (
-                                        <Text fontSize="xs" color="gray.500" fontStyle="italic">No Experiments Installed</Text>
-                                    )}
-                                </Card.Body>
-                            </Card.Root>
-
-                            {/* Aerodynamics */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><HStack justify="space-between"><Text fontSize="xs" fontWeight="bold" color="gray.400">AERODYNAMICS</Text><Icon as={FaWind} size="xs" /></HStack></Card.Header>
-                                <Card.Body>
-                                    <HStack justify="space-between" mb={2}>
-                                        <Text fontSize="xs">Drag Coeff (Cd)</Text>
-                                        <Text fontSize="xs" fontWeight="mono">{fmt(dragCd, 2)}</Text>
-                                    </HStack>
-                                    <HStack justify="space-between">
-                                        <Text fontSize="xs">Parachutes</Text>
-                                        {chuteDeployed ?
-                                            <HStack gap={1} color="green.400"><Icon as={FaParachuteBox} /><Text fontSize="xs" fontWeight="bold">DEPLOYED</Text></HStack>
-                                            : <Text fontSize="xs" color="gray.500">STOWED</Text>
-                                        }
-                                    </HStack>
-                                </Card.Body>
-                            </Card.Root>
-
-                        </VStack>
-                    )}
+                            <Separator borderColor="gray.800" />
+                            <HStack justify="space-between">
+                                <Badge size="xs" colorPalette={rocketSnap?.solarDeployed ? "green" : "gray"}>{rocketSnap?.solarDeployed ? "SOLAR ON" : "SOLAR OFF"}</Badge>
+                                <Badge size="xs" colorPalette={rocketSnap?.parachuteDeployed ? "green" : "gray"}>{rocketSnap?.parachuteDeployed ? "CHUTE ON" : "CHUTE OFF"}</Badge>
+                            </HStack>
+                        </Card.Body>
+                    </Card.Root>
                 </Box>
 
-                {/* CENTER: Canvas */}
-                <Box bg="black" position="relative" display="flex" flexDirection="column">
-                    <Box flex={1} display="flex" alignItems="center" justifyContent="center" overflow="hidden" position="relative">
-                        <Box as="canvas" id="game" width={900} height={600} w="100%" h="100%" objectFit="contain" />
+                {/* CENTER COL: Canvas & Logs */}
+                <Box position="relative" display="flex" flexDirection="column" bg="black">
+                    {/* Viewport (Canvas) */}
+                    <Box flex={1} position="relative" minH="300px" overflow="hidden">
+                        <Box as="canvas" id="game" w="100%" h="100%" objectFit="contain" />
 
                         {/* DESTRUCTION OVERLAY */}
                         {envSnap?.destroyed && (
@@ -342,99 +249,91 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                             </Center>
                         )}
 
-                        {/* SUCCESS OVERLAY for Atmosphere/Space Entry? (Optional, maybe too intrusive) */}
-                        {/* We rely on Science Badges in the panel for positive feedback */}
-                    </Box>
-                    {/* Overlay Stats? */}
-                    <Box position="absolute" top={2} left={2} pointerEvents="none">
-                        <Text fontSize="xs" fontFamily="mono" color="white" textShadow="0 0 2px black">T+{fmt(manager?.getGameSeconds?.() ?? 0, 1)}s</Text>
+                        {/* Overlay Info (Top Left) */}
+                        <Box position="absolute" top={4} left={4} pointerEvents="none">
+                            <Heading size="xl" color="whiteAlpha.800" fontFamily="mono">T+{fmt(manager?.getGameSeconds?.() ?? 0, 1)}s</Heading>
+                        </Box>
                     </Box>
 
+                    {/* Guidance Computer Log (Bottom Console) */}
+                    <Box h="250px" borderTopWidth="1px" borderColor="gray.800" bg="gray.950" display="flex" flexDirection="column">
+                        <Box px={3} py={1} bg="gray.900" borderBottomWidth="1px" borderColor="gray.800" display="flex" alignItems="center" gap={2}>
+                            <Icon as={FaCircle} fontSize="8px" color="green.500" />
+                            <Text fontSize="xs" fontWeight="bold" color="gray.300" letterSpacing="wider">GUIDANCE COMPUTER</Text>
+                        </Box>
+                        <ScriptLogsPanel manager={manager} />
+                    </Box>
                 </Box>
 
-                {/* RIGHT: Telemetry & Logs */}
-                <Box borderLeftWidth="1px" borderColor="gray.800" bg="gray.900" p={2} overflowY="auto">
-                    {/* MINIMAP */}
-                    <Box bg="black" position="relative" display="flex" flexDirection="column" mb={2}>
+                {/* RIGHT COL: Nav & Science */}
+                <Box borderLeftWidth="1px" borderColor="gray.800" bg="gray.900" p={3} overflowY="auto" display="flex" flexDirection="column" gap={3}>
 
-                        <MinimapPanel envSnap={envSnap} height="280px" />
+                    {/* Minimap Box */}
+                    <Box bg="black" borderRadius="md" overflow="hidden" borderWidth="1px" borderColor="gray.800" h="240px">
+                        <MinimapPanel envSnap={envSnap} height="100%" />
                     </Box>
 
-                    {!rocketSnap ? (
-                        <VStack align="center" justify="center" h="100%" gap={4} color="gray.500">
-                            <Text fontSize="sm" textAlign="center" fontStyle="italic">Telemetry Offline</Text>
-                        </VStack>
-                    ) : (
+                    <SectionHeader title="FLIGHT DATA" icon={FaMapMarkedAlt} />
+                    <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
+                        <Card.Body gap={1}>
+                            <StatRow label="Altitude" value={fmt(alt, 0)} unit="m" />
+                            <StatRow label="Speed" value={fmt(speedMag, 0)} unit="m/s" color="cyan.300" />
+                            <StatRow label="V-Speed" value={fmt(verticalSpeed, 1)} unit="m/s" />
+                            <Separator borderColor="gray.800" my={1} />
+                            <StatRow label="Heading" value={fmt(heading, 0)} unit="°" />
+                            <StatRow label="Latitude" value={fmt(latDeg, 1)} unit="°" />
+                            {rocketSnap?.apAltitude > 0 && <StatRow label="Apoapsis" value={fmt(rocketSnap?.apAltitude, 0)} unit="m" color="blue.300" />}
+                            {rocketSnap?.peAltitude > 0 && <StatRow label="Periapsis" value={fmt(rocketSnap?.peAltitude, 0)} unit="m" />}
+                        </Card.Body>
+                    </Card.Root>
 
-                        <VStack align="stretch" gap={4}>
+                    <SectionHeader title="SCIENCE & COMMS" icon={FaSatelliteDish} />
+                    <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
+                        <Card.Body gap={2}>
+                            <HStack justify="space-between">
+                                <Text fontSize="xs" color="gray.500">Uplink</Text>
+                                <Badge size="xs" colorPalette={rocketSnap?.commsInRange ? "green" : "red"}>{rocketSnap?.commsInRange ? "CONNECTED" : "NO SIGNAL"}</Badge>
+                            </HStack>
+                            <StatRow label="Queue" value={`${rocketSnap?.packetQueueLength || 0} pkts`} unit="" />
 
-                            {/* FLIGHT DATA */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}>
-                                    <HStack justify="space-between">
-                                        <Heading size="xs" color="gray.400">FLIGHT DATA</Heading>
-                                        <Button size="2xs" variant={showVectors ? "solid" : "ghost"} colorPalette="cyan" onClick={() => setShowVectors(!showVectors)}>XY</Button>
-                                    </HStack>
-                                </Card.Header>
-                                <Card.Body>
-                                    <Grid templateColumns={showVectors ? "1fr" : "1fr 1fr"} gap={2}>
-                                        <StatBox label="MASS" value={fmt(rocketSnap?.massKg ?? 0, 0)} unit="kg" />
-                                        <StatBox label="ALTITUDE" value={fmt(alt)} unit="m" />
-                                        {showVectors ? (
-                                            <StatBox label="VELOCITY" value={`x: ${fmt(rocketSnap?.velocity?.x ?? 0, 0)}  y: ${fmt(rocketSnap?.velocity?.y ?? 0, 0)}`} unit="m/s" />
-                                        ) : (
-                                            <StatBox label="SPEED" value={fmt(speedMag)} unit="m/s" />
-                                        )}
-                                        <StatBox label="V-SPEED" value={fmt(verticalSpeed)} unit="m/s" />
-                                        <StatBox label="LATITUDE" value={`${fmt(latDeg, 1)}°`} unit="" />
-                                        <StatBox label="HEADING" value={`${fmt(heading, 0)}°`} unit="" />
-                                        <StatBox label="TURN RATE" value={fmt((rocketSnap?.angularVelocityRadPerS ?? 0) * 57.3, 1)} unit="°/s" />
-                                        <StatBox label="APOAPSIS" value={fmt(rocketSnap?.apAltitude ?? 0)} unit="m" />
-                                        <StatBox label="PERIAPSIS" value={fmt(rocketSnap?.peAltitude ?? 0)} unit="m" />
+                            <Separator borderColor="gray.800" my={1} />
 
-                                    </Grid>
-                                </Card.Body>
-                            </Card.Root>
+                            {/* Science Experiments */}
+                            {rocketSnap?.science?.length ? (
+                                <VStack align="stretch" gap={1}>
+                                    {rocketSnap.science.map((s: any) => (
+                                        <HStack key={s.id} justify="space-between">
+                                            <Text fontSize="xs" color="gray.400" truncate>{s.name}</Text>
+                                            <Text fontSize="xs" fontWeight="bold" color={s.hasData ? "green.300" : "gray.600"}>{s.hasData ? "READY" : "IDLE"}</Text>
+                                        </HStack>
+                                    ))}
+                                </VStack>
+                            ) : (
+                                <Text fontSize="xx-small" color="gray.600" fontStyle="italic">No Science Modules</Text>
+                            )}
+                        </Card.Body>
+                    </Card.Root>
 
-                            {/* FORCES */}
-                            <Card.Root size="sm" variant="subtle" bg="gray.800">
-                                <Card.Header pb={1}><Heading size="xs" color="gray.400">FORCES (N)</Heading></Card.Header>
-                                <Card.Body>
-                                    <Grid templateColumns={showVectors ? "1fr" : "1fr 1fr 1fr"} gap={2}>
-                                        {showVectors ? (
-                                            <>
-                                                <StatBox label="THRUST" value={`x: ${fmt(rocketSnap?.forces?.thrust?.fx ?? 0, 0)}  y: ${fmt(rocketSnap?.forces?.thrust?.fy ?? 0, 0)}`} unit="N" />
-                                                <StatBox label="DRAG" value={`x: ${fmt(rocketSnap?.forces?.drag?.fx ?? 0, 0)}  y: ${fmt(rocketSnap?.forces?.drag?.fy ?? 0, 0)}`} unit="N" />
-                                                <StatBox label="GRAVITY" value={`x: ${fmt(rocketSnap?.forces?.gravity?.fx ?? 0, 0)}  y: ${fmt(rocketSnap?.forces?.gravity?.fy ?? 0, 0)}`} unit="N" />
-                                            </>
-                                        ) : (
-                                            <>
-                                                <StatBox label="THRUST" value={fmt(rocketSnap?.forces ? mag2(rocketSnap.forces.thrust.fx ?? rocketSnap.forces.thrust.x, rocketSnap.forces.thrust.fy ?? rocketSnap.forces.thrust.y) : 0, 0)} unit="N" />
-                                                <StatBox label="DRAG" value={fmt(rocketSnap?.forces ? mag2(rocketSnap.forces.drag.fx ?? rocketSnap.forces.drag.x, rocketSnap.forces.drag.fy ?? rocketSnap.forces.drag.y) : 0, 0)} unit="N" />
-                                                <StatBox label="GRAVITY" value={fmt(rocketSnap?.forces ? mag2(rocketSnap.forces.gravity.fx, rocketSnap.forces.gravity.fy) : 0, 0)} unit="N" />
-                                            </>
-                                        )}
-                                    </Grid>
-                                </Card.Body>
-                            </Card.Root>
-
-                            {/* CONSOLE */}
-                            <ScriptLogsPanel manager={manager} />
-
-                        </VStack>
-                    )}
                 </Box>
-
             </Grid>
-        </VStack >
+        </VStack>
     );
 }
 
-const StatBox = ({ label, value, unit }: any) => (
-    <Box bg="gray.950" p={2} borderRadius="md" borderWidth="1px" borderColor="gray.800">
-        <Text fontSize="xx-small" color="gray.500" mb={0.5}>{label}</Text>
-        <Text fontSize="sm" fontFamily="mono" color="white" lineHeight={1}>{value}</Text>
-        <Text fontSize="xx-small" color="gray.600">{unit}</Text>
+// --- Subcomponents ---
+
+const SectionHeader = ({ title, icon }: any) => (
+    <HStack gap={2} mb={0} px={1}>
+        {icon && <Icon as={icon} color="cyan.600" size="xs" />}
+        <Text fontSize="xs" fontWeight="bold" color="cyan.600" letterSpacing="wide">{title}</Text>
+    </HStack>
+);
+
+const BigStat = ({ label, value, unit, color = "white" }: any) => (
+    <Box bg="gray.950" p={2} borderRadius="md" borderWidth="1px" borderColor="gray.800" textAlign="center">
+        <Text fontSize="xx-small" color="gray.500" mb={0}>{label}</Text>
+        <Text fontSize="lg" fontWeight="bold" color={color} lineHeight={1.1}>{value}</Text>
+        {unit && <Text fontSize="xx-small" color="gray.600">{unit}</Text>}
     </Box>
 );
 
@@ -444,7 +343,7 @@ function ScriptLogsPanel({ manager }: any) {
 
     const slotInfo = useMemo(() => {
         try { return manager?.getRunner().getSlotInfo() ?? []; } catch { return []; }
-    }, [manager, (manager as any)?.getGameSeconds?.()]); // force update on tick?
+    }, [manager, (manager as any)?.getGameSeconds?.()]);
 
     // Auto scroll
     useEffect(() => {
@@ -455,22 +354,32 @@ function ScriptLogsPanel({ manager }: any) {
     const lines = slotInfo[Number(activeTab)]?.logs ?? [];
 
     return (
-        <Card.Root size="sm" variant="subtle" bg="gray.800" flex={1} display="flex" flexDirection="column">
-            <Card.Header pb={1}><Heading size="xs" color="gray.400">GUIDANCE LOG</Heading></Card.Header>
-            <Card.Body display="flex" flexDirection="column" gap={2} flex={1} minH="200px">
-                <Tabs.Root value={activeTab} onValueChange={(d: any) => setActiveTab(d.value)} variant="plain" size="sm">
-                    <Tabs.List bg="gray.900" p={1} borderRadius="md">
-                        {slotInfo.map((s: any, i: number) => (
-                            <Tabs.Trigger key={i} value={String(i)} flex={1} fontSize="xs" py={1}>{s.name || `S${i}`}</Tabs.Trigger>
-                        ))}
-                    </Tabs.List>
-                    <Box mt={2} bg="black" color="green.300" fontFamily="mono" fontSize="xs" p={2} borderRadius="md" flex={1} overflowY="auto" maxH="200px" ref={scrollRef}>
-                        {lines.length === 0 && <Text color="gray.600" fontStyle="italic">_no data</Text>}
-                        {lines.map((l: string, i: number) => <Text key={i}>{l}</Text>)}
-                    </Box>
-                </Tabs.Root>
-            </Card.Body>
-        </Card.Root>
+        <Box display="flex" flexDirection="row" h="100%" overflow="hidden">
+            {/* Slot Tabs (Vertical or Horizontal? Let's go Left Vertical for Terminal feel) */}
+            <VStack w="60px" bg="gray.900" borderRightWidth="1px" borderColor="gray.800" pt={2} gap={1}>
+                {slotInfo.map((s: any, i: number) => (
+                    <Button
+                        key={i}
+                        size="xs"
+                        variant={activeTab === String(i) ? "solid" : "ghost"}
+                        colorPalette={activeTab === String(i) ? "green" : "gray"}
+                        onClick={() => setActiveTab(String(i))}
+                        w="40px"
+                    >
+                        S{i}
+                    </Button>
+                ))}
+            </VStack>
+
+            {/* Terminal View */}
+            <Box flex={1} bg="black" p={2} fontFamily="mono" fontSize="xs" color="green.300" overflowY="auto" ref={scrollRef}>
+                {lines.length === 0 && <Text color="gray.800" userSelect="none">_awaiting output_</Text>}
+                {lines.map((l: string, i: number) => (
+                    <Box key={i} borderBottomWidth="1px" borderColor="whiteAlpha.50" py={0.5}>{l}</Box>
+                ))}
+                <Box h="20px" /> {/* Pad bottom */}
+            </Box>
+        </Box>
     )
 }
 

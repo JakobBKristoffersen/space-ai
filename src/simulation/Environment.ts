@@ -217,7 +217,7 @@ export class Environment {
   }
 
   /** Advance physics by fixed time step (seconds). */
-  tick(dt: number, tickIndex: number, commands: RocketCommandQueue): void {
+  tick(dt: number, tickIndex: number, commands: RocketCommandQueue, activeRocketLaunched: boolean = true): void {
 
     // Update Bodies
     for (const b of this.bodies) {
@@ -239,14 +239,24 @@ export class Environment {
 
     // Update Rocket Physics (Active)
     if (!this.destroyed && this.rocket) {
-      PhysicsEngine.updateRocket(
-        dt,
-        this.rocket,
-        this.bodies,
-        this.timeSeconds,
-        this.system.primaryId,
-        () => { this.destroyed = true; }
-      );
+      if (activeRocketLaunched) {
+        PhysicsEngine.updateRocket(
+          dt,
+          this.rocket,
+          this.bodies,
+          this.timeSeconds,
+          this.system.primaryId,
+          () => { this.destroyed = true; }
+        );
+      } else {
+        // Force clamp to launch position (top of primary) to prevent any micro-drift
+        // especially if we are re-entering from a reset where precision might vary
+        const primary = this.bodies.find(b => b.id === this.system.primaryId);
+        if (primary && this.rocket.state.velocity.x === 0 && this.rocket.state.velocity.y === 0) {
+          this.rocket.state.position.x = 0;
+          this.rocket.state.position.y = primary.radiusMeters;
+        }
+      }
     }
 
     // Integrate other rockets (non-active) with same physics

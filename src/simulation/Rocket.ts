@@ -630,6 +630,8 @@ export class Rocket {
       temperature: this.state.temperature,
       noseTemperature: this.state.noseTemperature,
       tailTemperature: this.state.tailTemperature,
+      maxNoseTemperature: this.noseCones.length > 0 ? (this.noseCones.reduce((max, n) => Math.max(max, n.heatTolerance || 1200), 1200)) : 1200,
+      maxTailTemperature: this.engines.length > 0 ? 1200 : 1200, // Engine heat tolerance not yet fully defined in parts, defaulting to 1200
       massKg: this.totalMass(),
       altitude: this._altitudeForSnapshot,
       airDensity: this._airDensityForSnapshot,

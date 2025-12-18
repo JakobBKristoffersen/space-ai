@@ -157,7 +157,7 @@ export function MinimapPanel({ envSnap, width = "100%", height = "100%" }: Minim
             const soiId = (rocketSnap as any)?.soiBodyId ?? envSnap.primaryId;
             const baseBody = envSnap.bodies.find((b: any) => b.id === soiId) ?? primary;
             const orb = computeOrbit(baseBody, envSnap.rocket);
-            if (orb && isFinite(orb.a) && orb.e < 1 && orb.a > 0) {
+            if (orb && isFinite(orb.a) && orb.e < 1 && orb.a > 0 && orb.apAlt > 10) {
                 const a = orb.a;
                 const b = a * Math.sqrt(Math.max(0, 1 - orb.e * orb.e));
                 const cosW = Math.cos(orb.argPeri);

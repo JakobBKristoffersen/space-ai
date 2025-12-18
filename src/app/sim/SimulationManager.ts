@@ -129,7 +129,7 @@ export class SimulationManager {
           return cmds;
         },
       };
-      this.env.tick(dt, i, combined);
+      this.env.tick(dt, i, combined, isLaunched);
 
       // Update Communication Network
       try {

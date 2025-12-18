@@ -197,7 +197,7 @@ export class PhysicsEngine {
                 if (activeCd < 0.1) activeCd = 0.1;
 
                 if (speed > 100) {
-                    const K_thermal = 1.5e-2; // Legacy value
+                    const K_thermal = 1.0; // Calibrated: fast burn up at >260 m/s
                     heatingPower = 0.5 * density * Math.pow(speed, 3.0) * activeCd * K_thermal;
                 }
             }
@@ -219,11 +219,12 @@ export class PhysicsEngine {
             rPos.x += rVel.x * dt;
             rPos.y += rVel.y * dt;
 
-            // Thermal
+            // Thermal Physics
             const ambientT = inVacuum ? 4 : 288;
-            const kCool = 0.5; // Legacy value
+            const Cp = 50; // Low Heat Capacity (Gameplay-optimized) to allow ~3s thermal response time
+            const DissipationWPerK = 1000; // Constant cooling power (Watts/Kelvin)
 
-            // Distribute Heat
+            // Distribute Heat Limits
             const noseLimit = rocket.noseCones.length > 0 ? (rocket.noseCones[0].heatTolerance ?? 2400) : 1200;
             const tailLimit = rocket.heatShields.length > 0 ? (rocket.heatShields[0].heatTolerance ?? 3400) : 1200;
 
@@ -246,12 +247,28 @@ export class PhysicsEngine {
                 skinFlux = heatingPower * skinFac;
             }
 
-            // Apply Heating + Cooling (Legacy Style: Flux - Cooling)
-            rocket.state.noseTemperature += (noseFlux - kCool * (rocket.state.noseTemperature - ambientT)) * dt;
-            rocket.state.tailTemperature += (tailFlux - kCool * (rocket.state.tailTemperature - ambientT)) * dt;
-            rocket.state.temperature += (skinFlux - kCool * (rocket.state.temperature - ambientT)) * dt;
+            // Calculate Thermal Masses (J/K)
+            const noseThermalMass = (rocket.noseCones.reduce((m, p) => m + p.massKg, 0) + 50) * Cp;
+            const tailThermalMass = (rocket.engines.reduce((m, p) => m + p.dryMassKg, 0) + rocket.heatShields.reduce((m, p) => m + p.massKg, 0) + 50) * Cp;
+            const skinThermalMass = Math.max(10, rocket.totalMass()) * Cp;
 
-            // Clamp to ambient
+            // Universal Analytical Integration
+            // Model: M*Cp * dT/dt = Flux - Dissipation * (T - Ambient)
+            // Time Constant tau = (M*Cp) / Dissipation
+            // Equilibrium T_eq = Ambient + Flux / Dissipation
+            // T_new = T_eq + (T_old - T_eq) * exp(-dt / tau)
+
+            const updateTemp = (currentT: number, flux: number, thermalMass: number) => {
+                const tau = thermalMass / DissipationWPerK;
+                const T_eq = ambientT + (flux / DissipationWPerK);
+                return T_eq + (currentT - T_eq) * Math.exp(-dt / tau);
+            };
+
+            rocket.state.noseTemperature = updateTemp(rocket.state.noseTemperature, noseFlux, noseThermalMass);
+            rocket.state.tailTemperature = updateTemp(rocket.state.tailTemperature, tailFlux, tailThermalMass);
+            rocket.state.temperature = updateTemp(rocket.state.temperature, skinFlux, skinThermalMass);
+
+            // Clamp min
             if (rocket.state.noseTemperature < ambientT) rocket.state.noseTemperature = ambientT;
             if (rocket.state.tailTemperature < ambientT) rocket.state.tailTemperature = ambientT;
             if (rocket.state.temperature < ambientT) rocket.state.temperature = ambientT;
