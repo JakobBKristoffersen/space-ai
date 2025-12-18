@@ -192,6 +192,32 @@ class RocketControlAPI {
     this.api.charge(10);
     this.api.cmdQueue.enqueue({ type: "retractSolar" });
   }
+
+  /**
+   * Helper to steer the rocket to a specific compass heading (0=North, 90=East).
+   * Note: This uses degrees, whereas nav.heading is in radians.
+   * Requires CPU Tier 2 (for math) + Reaction Wheels.
+   */
+  setHeading(deg: number): void {
+    this.api.charge(5); // Higher cost helper
+    // Convert compass degrees to standard math radians
+    // Compass: 0=N (+Y), 90=E (+X) -> Standard: 0=(+X), 90=(+Y) ??
+    // Wait, standard map:
+    // Lat/Lon usually: North is +Y?
+    // If 0=North, 90=East.
+    // Game uses: Math.atan2(y, x).
+    // So East is 0 rad. North is PI/2 (90 deg).
+    // If input is "Compass Heading" (0=N, 90=E), then:
+    // Deg -> Rad:
+    // 0 -> 90 (PI/2)
+    // 90 -> 0 (0)
+    // 180 -> -90 (-PI/2)
+    // 270 -> 180 (PI)
+
+    // Formula: rad = (90 - deg) * DG2RAD
+    const rad = (90 - deg) * (Math.PI / 180);
+    this.api.nav.alignTo(rad);
+  }
 }
 
 class RocketTelemetryAPI {

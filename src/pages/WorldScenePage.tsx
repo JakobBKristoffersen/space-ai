@@ -39,6 +39,8 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     const [snapKey, setSnapKey] = useState<number>(0);
     const [launched, setLaunched] = useState<boolean>(false);
     const [showVectors, setShowVectors] = useState<boolean>(false);
+    const [milestonesCount, setMilestonesCount] = useState<number>(0);
+    const [lastMilestoneToast, setLastMilestoneToast] = useState<number>(0);
 
     // Loop
     useEffect(() => {
@@ -56,6 +58,27 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
         sync();
         return () => { unsub?.(); };
     }, [manager]);
+
+    // Milestones Check
+    useEffect(() => {
+        const check = () => {
+            const mgr = services.getScienceManager?.();
+            if (!mgr) return;
+            const completed = mgr.getCompletedIds().length;
+            if (completed > milestonesCount) {
+                if (milestonesCount > 0 && Date.now() - lastMilestoneToast > 5000) {
+                    // New milestone!
+                    // In a real app we'd show a toast here. For now let's show an Overlay or just log it?
+                    // Let's use a specialized overlay or Badge flash.
+                    // We'll trust the user to see the "Science Packet Received" in the log for now,
+                    // but we can add a visual indicator.
+                }
+                setMilestonesCount(completed);
+            }
+        };
+        const interval = setInterval(check, 1000);
+        return () => clearInterval(interval);
+    }, [services, milestonesCount]);
 
     const envSnap = useMemo(() => {
         try { return manager?.getEnvironment().snapshot(); } catch { return null; }
@@ -307,12 +330,20 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
                         {/* DESTRUCTION OVERLAY */}
                         {envSnap?.destroyed && (
-                            <Center position="absolute" inset={0} bg="rgba(0,0,0,0.7)" zIndex={10} flexDirection="column">
-                                <Heading size="2xl" color="red.500" mb={2}>MISSION FAILED</Heading>
-                                <Text color="white" mb={4}>Rocket destroyed by heat or impact.</Text>
-                                <Button colorPalette="red" variant="solid" onClick={onResetRocket}>RESET MISSION</Button>
+                            <Center position="absolute" inset={0} bg="blackAlpha.800" zIndex={20} flexDirection="column" backdropFilter="blur(4px)">
+                                <VStack gap={4} p={8} bg="gray.900" borderRadius="xl" borderWidth="1px" borderColor="red.900" shadow="xl">
+                                    <Heading size="3xl" color="red.500" letterSpacing="widest">MISSION FAILED</Heading>
+                                    <Text color="gray.300" fontSize="lg">Rapid Unscheduled Disassembly Detected.</Text>
+                                    <Button size="lg" colorPalette="red" variant="solid" onClick={onResetRocket}>
+                                        <Icon as={FaRocket} mr={2} />
+                                        REVERT TO LAUNCH
+                                    </Button>
+                                </VStack>
                             </Center>
                         )}
+
+                        {/* SUCCESS OVERLAY for Atmosphere/Space Entry? (Optional, maybe too intrusive) */}
+                        {/* We rely on Science Badges in the panel for positive feedback */}
                     </Box>
                     {/* Overlay Stats? */}
                     <Box position="absolute" top={2} left={2} pointerEvents="none">

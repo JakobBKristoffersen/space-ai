@@ -72,6 +72,18 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
 
   const createNew = () => {
     if (!scriptLib) return;
+
+    // Check Limit
+    const upgrades = services.upgrades;
+    const lvl = upgrades?.getLevel("software") ?? 1;
+    const max = upgrades?.getMaxScripts(lvl) ?? 3;
+    const currentCount = scriptLib.list().length;
+
+    if (currentCount >= max) {
+      alert(`Storage Full! Upgrade Software Engineering to store more scripts. (${currentCount}/${max})`);
+      return;
+    }
+
     const item = TemplateService.createNew(scriptLib);
     const next = refreshLib();
     selectFile(item.id, next);
@@ -96,6 +108,18 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
     while (existing.some((s: any) => s.name === name)) {
       name = `${base} (copy) (${n++})`;
     }
+
+    // Check Limit
+    const upgrades = services.upgrades;
+    const lvl = upgrades?.getLevel("software") ?? 1;
+    const max = upgrades?.getMaxScripts(lvl) ?? 3;
+    const currentCount = scriptLib.list().length;
+
+    if (currentCount >= max) {
+      alert(`Storage Full! Upgrade Software Engineering to store more scripts. (${currentCount}/${max})`);
+      return;
+    }
+
     const item = scriptLib.upsertByName(name, code);
     const next = refreshLib();
     selectFile(item.id, next);

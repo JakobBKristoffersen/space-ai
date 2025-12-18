@@ -1,6 +1,6 @@
 import { SessionKeys } from "./SessionKeys";
 
-export type FacilityType = "launchPad" | "vab" | "trackingStation" | "missionControl" | "researchCenter";
+export type FacilityType = "launchPad" | "vab" | "trackingStation" | "missionControl" | "researchCenter" | "software" | "comms";
 
 export interface FacilityLevels {
   launchPad: number;      // Determines Max Mass
@@ -8,6 +8,8 @@ export interface FacilityLevels {
   trackingStation: number;// Determines Max Active Rockets
   missionControl: number;
   researchCenter: number;
+  software: number;       // Determines Max Scripts
+  comms: number;          // Determines Max KV Storage
 }
 
 const KEY = "session:upgrades:facilities";
@@ -29,7 +31,9 @@ export class UpgradesService {
       vab: 1,
       trackingStation: 1,
       missionControl: 1, // Unused for now
-      researchCenter: 1  // Unused for now
+      researchCenter: 1,  // Unused for now
+      software: 1,
+      comms: 1
     };
   }
 
@@ -50,7 +54,7 @@ export class UpgradesService {
   // --- Game Logic / Stats ---
 
   getUpgradeCost(type: FacilityType, currentLevel: number): number | null {
-    const maxLevels: Record<string, number> = { launchPad: 4, vab: 3, trackingStation: 3 };
+    const maxLevels: Record<string, number> = { launchPad: 4, vab: 3, trackingStation: 3, software: 4, comms: 4 };
     if (currentLevel >= (maxLevels[type] || 1)) return null;
 
     // RP Costs
@@ -68,6 +72,16 @@ export class UpgradesService {
         if (currentLevel === 1) return 100;
         if (currentLevel === 2) return 250;
         break;
+      case "software":
+        if (currentLevel === 1) return 50;  // 3 -> 5 scripts
+        if (currentLevel === 2) return 150; // 5 -> 10 scripts
+        if (currentLevel === 3) return 500; // 10 -> Unlimited
+        break;
+      case "comms":
+        if (currentLevel === 1) return 50;  // 5 -> 20 keys
+        if (currentLevel === 2) return 150; // 20 -> 100 keys
+        if (currentLevel === 3) return 400; // 100 -> Unlimited
+        break;
     }
     return 0;
   }
@@ -77,6 +91,8 @@ export class UpgradesService {
       case "launchPad": return `Increases Max Launch Mass to ${(this.getMaxLaunchMass(nextLevel) / 1000).toFixed(0)}t`;
       case "vab": return `Unlocks Tier ${nextLevel} Rocket Templates`;
       case "trackingStation": return nextLevel === 2 ? "Support up to 3 active missions" : "Support Unlimited missions";
+      case "software": return `Increases Script Storage to ${this.getMaxScripts(nextLevel) === 999 ? "Unlimited" : this.getMaxScripts(nextLevel)}`;
+      case "comms": return `Increases Data Storage to ${this.getMaxKVKeys(nextLevel) === 999 ? "Unlimited" : this.getMaxKVKeys(nextLevel)} Keys`;
     }
     return "";
   }
@@ -104,5 +120,23 @@ export class UpgradesService {
   isTemplateUnlocked(tier: number, vabLevel: number): boolean {
     // Assumption: Template tiers match VAB levels (Basic=1, Tier2=2, Tier3=3)
     return tier <= vabLevel;
+  }
+
+  getMaxScripts(level: number): number {
+    switch (level) {
+      case 1: return 3;
+      case 2: return 5;
+      case 3: return 10;
+      default: return 999;
+    }
+  }
+
+  getMaxKVKeys(level: number): number {
+    switch (level) {
+      case 1: return 5;
+      case 2: return 20;
+      case 3: return 100;
+      default: return 999;
+    }
   }
 }

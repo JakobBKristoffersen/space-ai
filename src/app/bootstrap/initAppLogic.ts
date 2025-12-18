@@ -104,7 +104,7 @@ export function initAppLogic(): void {
 
   // 6) Science & Store
   // ScienceManager moved up
-  const commsSvc = new CommsService(scienceMgr); // Instantiate
+  const commsSvc = new CommsService(scienceMgr, upgrades); // Instantiate
   const store = new PartStore(DefaultCatalog);
 
   // Debug Service

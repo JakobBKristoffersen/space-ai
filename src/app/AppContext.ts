@@ -5,6 +5,7 @@ import type { ScriptLibraryService } from "./services/ScriptLibraryService";
 import type { TelemetryService } from "./services/TelemetryService";
 import type { UpgradesService } from "./services/UpgradesService";
 import type { ResearchService } from "./services/ResearchService";
+import type { ScienceManager } from "../game/ScienceManager";
 
 export interface AppCore {
   manager: SimulationManager | null;
@@ -16,6 +17,7 @@ export interface AppCore {
     research: ResearchService | null;
     pending: any | null;
     base?: any | null;
+    getScienceManager?: () => ScienceManager;
   };
 }
 

@@ -1,5 +1,6 @@
 import { ScienceManager } from "../game/ScienceManager";
-import { ScienceData } from "../simulation/parts/Science";
+import { UpgradesService } from "../app/services/UpgradesService";
+
 
 export interface CommsMessage {
     id: string;
@@ -14,23 +15,25 @@ export class CommsService {
     private kvStore: Map<string, any> = new Map();
     private listeners: (() => void)[] = [];
 
-    constructor(private readonly scienceMgr: ScienceManager) { }
+    constructor(private readonly scienceMgr: ScienceManager, private readonly upgrades: UpgradesService) { }
 
     /**
      * Called by rocket simulation when a packet arrives at base.
      */
     receivePacket(packet: { type: string; data: any; sourceId: string; timestamp?: number }) {
         const timestamp = packet.timestamp || Date.now();
-        if (packet.type === "science") {
+        if (packet.type === "science_data_bulk") {
+            const { type, values } = packet.data;
             // Forward to ScienceManager
-            this.scienceMgr.onScienceReceived(packet.data as ScienceData);
+            this.scienceMgr.onBulkDataReceived(type, values);
 
-            // Also log a system message?
+            // Log system message
+            const count = Object.keys(values || {}).length;
             this.addMessage({
                 id: Math.random().toString(36).slice(2),
                 sender: "SYSTEM",
                 timestamp,
-                content: `Science Packet Received from ${packet.sourceId}: ${(packet.data as ScienceData).description}`,
+                content: `Received ${count} ${type} readings from ${packet.sourceId}`,
                 read: false
             });
         } else if (packet.type === "message") {
@@ -45,6 +48,17 @@ export class CommsService {
         } else if (packet.type === "kv_update") {
             const { key, value } = packet.data;
             if (key) {
+                // Check limits
+                if (!this.kvStore.has(key)) {
+                    const lvl = this.upgrades.getLevel("comms");
+                    const max = this.upgrades.getMaxKVKeys(lvl);
+                    if (this.kvStore.size >= max) {
+                        // Drop and warn once?
+                        // Just drop for now.
+                        return;
+                    }
+                }
+
                 this.kvStore.set(key, value);
                 this.notify();
             }
