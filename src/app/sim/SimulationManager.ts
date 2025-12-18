@@ -10,7 +10,8 @@
  */
 
 import { SimulationLoop, type TickListener, type RenderListener } from "../../core/SimulationLoop";
-import { Environment, AtmosphereWithCutoff, QuadraticDrag, SimpleHeating, type CelestialSystemDef } from "../../simulation/Environment";
+import { Environment, AtmosphereWithCutoff, QuadraticDrag, SimpleHeating } from "../../simulation/Environment";
+import type { CelestialSystemDef } from "../../simulation/CelestialSystem";
 import { Rocket, SimpleQueue, type RocketCommand, type RocketCommandQueue } from "../../simulation/Rocket";
 import { CommSystem } from "../../comms/CommSystem";
 import { Renderer } from "../../rendering/Renderer";
@@ -69,10 +70,8 @@ export class SimulationManager {
     this.env = new Environment(this.rocket, {
       system: opts.system,
       atmosphere: new AtmosphereWithCutoff({
-        scaleHeightMeters: primaryDef.atmosphereScaleHeightMeters ?? 200,
-        atmosphereHeightMeters: primaryDef.atmosphereHeightMeters,
-        rho0: 1.225,
-        cutoffFactor: 7
+        cutoffAltitudeMeters: primaryDef.atmosphereHeightMeters ?? 2000,
+        useHybridToyModel: true
       }),
       drag: QuadraticDrag,
       heating: SimpleHeating,

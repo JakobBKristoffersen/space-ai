@@ -324,6 +324,7 @@ export class Rocket {
   packetQueue: { id: string; type: string; sizeKb: number; progressKb: number; sourceId: string; targetId: string; data: any }[] = [];
 
   desiredAngularVelocityRadPerS = 0;
+  _activeOmega = 0;
   private _lastFuelBurnKgPerS = 0;
 
   // Physics
@@ -361,6 +362,9 @@ export class Rocket {
 
   // Cache for Persistent Rails Physics
   _railsState?: RailsState;
+
+  // Realtime Orbital Elements (for API)
+  _orbitalElements?: RailsState;
 
   // Energy Tracking
   private _lastEnergyGainJPerS = 0;
@@ -519,14 +523,10 @@ export class Rocket {
   }
 
   getAngularVelocityRadPerS(): number {
-    // Only used for snapshot actual omega reporting from Environment; Rocket just stores rotation
-    // But since Environment computes it, we might not technically know it here unless we differentiate orientation.
-    // Environment uses this field to report back?
-    // Let's assume Environment writes a "rwOmegaRadPerS" to snapshot directly or we store it.
-    return (this as any)._rwOmegaRadPerS ?? 0;
+    return this._activeOmega;
   }
   // Internal setter for Environment
-  _setActualAngularVelocityRadPerS(w: number) { (this as any)._rwOmegaRadPerS = w; }
+  _setActualAngularVelocityRadPerS(w: number) { this._activeOmega = w; }
 
   getDesiredAngularVelocityRadPerS() { return this.desiredAngularVelocityRadPerS; }
 

@@ -118,6 +118,10 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     // -180 to 180.
     const latDeg = Math.atan2(rPos.y - primaryPos.y, rPos.x - primaryPos.x) * (180 / Math.PI);
 
+    // Heading (0=North, 90=East). Math: 0=East (+X), 90=North (+Y)
+    const orientDeg = (rocketSnap?.orientationRad ?? 0) * (180 / Math.PI);
+    const heading = (450 - orientDeg) % 360;
+
     return (
         <VStack align="stretch" h="100%" gap={0} bg="gray.950">
             {/* Header */}
@@ -380,6 +384,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                                         )}
                                         <StatBox label="V-SPEED" value={fmt(verticalSpeed)} unit="m/s" />
                                         <StatBox label="LATITUDE" value={`${fmt(latDeg, 1)}°`} unit="" />
+                                        <StatBox label="HEADING" value={`${fmt(heading, 0)}°`} unit="" />
                                         <StatBox label="TURN RATE" value={fmt((rocketSnap?.angularVelocityRadPerS ?? 0) * 57.3, 1)} unit="°/s" />
                                         <StatBox label="APOAPSIS" value={fmt(rocketSnap?.apAltitude ?? 0)} unit="m" />
                                         <StatBox label="PERIAPSIS" value={fmt(rocketSnap?.peAltitude ?? 0)} unit="m" />

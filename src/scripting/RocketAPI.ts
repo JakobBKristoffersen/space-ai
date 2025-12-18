@@ -9,6 +9,7 @@
  */
 import { DefaultCostModel, CostModel } from "./CostModel";
 import { Rocket, RocketCommand, RocketCommandQueue, RocketSnapshot, ParachutePart, SolarPanelPart } from "../simulation/Rocket";
+import { PhysicsEngine } from "../simulation/PhysicsEngine";
 import { CPUTier, getCPUTier } from "../simulation/CPUTier";
 
 export interface RocketAPICreationOptions {
@@ -312,6 +313,31 @@ class RocketNavigationAPI {
   get retrograde(): number {
     const v = this.api.telemetry.velocity;
     const a = Math.atan2(v.y, v.x) + Math.PI;
+    return a % (Math.PI * 2);
+  }
+
+  getOrbitalPrograde(location: "apoapsis" | "periapsis"): number {
+    this.api.charge(5);
+    this._checkTier(CPUTier.ORBITAL, 'orbitalPrograde');
+
+    const rs = (this.api.rocket as any)._orbitalElements || (this.api.rocket as any)._railsState;
+    if (!rs) {
+      // If not detailed rails, fallback to current prograde for safety
+      return this.prograde;
+    }
+
+    // Nu: 0 for Pe, PI for Ap
+    const nu = location === "periapsis" ? 0 : Math.PI;
+    const v = PhysicsEngine.getOrbitVelocityAtTrueAnomaly(rs, nu);
+
+    const angle = Math.atan2(v.y, v.x);
+    // Normalize 0..2PI
+    const TWO = Math.PI * 2;
+    return (angle % TWO + TWO) % TWO;
+  }
+
+  getOrbitalRetrograde(location: "apoapsis" | "periapsis"): number {
+    const a = this.getOrbitalPrograde(location) + Math.PI;
     return a % (Math.PI * 2);
   }
 }

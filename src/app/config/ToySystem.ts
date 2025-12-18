@@ -1,4 +1,4 @@
-import type { CelestialSystemDef } from "../../simulation/Environment";
+import type { CelestialSystemDef } from "../../simulation/CelestialSystem";
 
 /**
  * Shared toy solar system definition used across bootstrap and main.
@@ -15,6 +15,7 @@ export const ToySystem: CelestialSystemDef = {
       color: "#2e5d2e",
       // Keep a small scale height per previous tuning; Environment constructs
       // Explicit atmosphere cutoff at 2000m (Physics scaled to this)
+      atmosphereScaleHeightMeters: 285,
       atmosphereHeightMeters: 2000,
       atmosphereColor: "rgba(90,160,255,1)",
       terrain: [
