@@ -30,7 +30,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
         const level = upgrades.getLevel(type);
         let desc = `Level ${level}`;
         if (type === "trackingStation") desc = `Lvl ${level} (Max ${upgrades.getMaxActiveRockets(level)} Missions)`;
-        if (type === "vab") desc = `Lvl ${level} (T${level} Templates)`;
+        // VAB upgrades handled internally in VAB
         if (type === "software") desc = `Lvl ${level} (${upgrades.getMaxScripts(level) === 999 ? "Unlimited" : upgrades.getMaxScripts(level)} Scripts)`;
         if (type === "comms") desc = `Lvl ${level} (Max ${upgrades.getMaxKVKeys(level) === 999 ? "Unlimited" : upgrades.getMaxKVKeys(level)} Keys)`;
 
@@ -40,7 +40,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
     const cards = [
         { id: "world_scene", title: "Launch Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
         { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500", type: "comms" },
-        { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400", type: "vab" },
+        { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400" },
         { id: "science", title: "Science Data", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
         { id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" },
         { id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400", type: "software" },

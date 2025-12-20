@@ -803,9 +803,6 @@ export class Rocket {
           return (totalThrust / (totalFlow * 9.81));
         } else {
           const val = (theoreticalThrust / (theoreticalFlow * 9.81));
-          const totalMass = this.totalMass();
-          const fuelMass = this.fuelTanks.reduce((s, t) => s + t.fuelKg, 0);
-          console.log(`[Snapshot] Thrust=${theoreticalThrust.toFixed(1)}, Flow=${theoreticalFlow.toFixed(3)}, ISP=${val.toFixed(1)}, Mass=${totalMass.toFixed(1)}, Fuel=${fuelMass.toFixed(1)}`);
           return val;
         }
       })(),

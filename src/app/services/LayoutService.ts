@@ -209,16 +209,6 @@ export class LayoutService {
     // Initialize active stage to the bottom-most stage (highest index)
     r.activeStageIndex = Math.max(0, template.stages.length - 1);
 
-    const totalMass = r.totalMass();
-    console.log(`[LayoutService] Built Rocket. Template=${templateId}. Total Mass=${totalMass.toFixed(1)}kg. Parts:`);
-    r.engines.forEach(p => console.log(` - Engine: ${p.name} (${p.massKg || p.dryMassKg}kg)`));
-    r.fuelTanks.forEach(p => console.log(` - Tank: ${p.name} (${p.dryMassKg}dry + ${p.fuelKg}fuel)`));
-    r.batteries.forEach(p => console.log(` - Battery: ${p.name} (${p.massKg}kg)`));
-    r.reactionWheels.forEach(p => console.log(` - RW: ${p.name} (${p.massKg}kg)`));
-    r.antennas.forEach(p => console.log(` - Antenna: ${p.name} (${p.massKg}kg)`));
-    r.sensors.forEach(p => console.log(` - Sensor: ${p.name} (${p.massKg}kg)`));
-    if (r.cpu) console.log(` - CPU: ${r.cpu.name} (${r.cpu.massKg}kg)`);
-
     return r;
   }
 

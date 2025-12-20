@@ -228,7 +228,6 @@ export class Environment {
       // 1. Atmosphere
       const alt = Math.sqrt(r.state.position.x ** 2 + r.state.position.y ** 2) - primary.radiusMeters;
       const atm = this.atmosphere.getProperties(alt);
-      console.log(`[Prime] Alt: ${alt.toFixed(2)}, Density: ${atm.density.toFixed(5)}, Pressure: ${atm.pressure.toFixed(1)}`);
 
       r.setAltitudeForSnapshot(alt);
       r.setAirDensityForSnapshot(atm.density);

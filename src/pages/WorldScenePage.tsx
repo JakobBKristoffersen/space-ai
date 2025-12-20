@@ -104,14 +104,6 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     const isp = rocketSnap?.avgEngineIsp || 300;
     const dV = 9.81 * isp * Math.log(mass / dryMass);
 
-    if (rocketSnap) {
-        // Throttled logging? No, just once per render is spammy but necessary for "Prime" state which is static
-        // Or check if changed significantly? 
-        // Just log it. The user will reset and copy.
-        // console.log(`[Runtime dV] Mass=${mass.toFixed(1)}, Fuel=${fuel.toFixed(1)}, Dry=${dryMass.toFixed(1)}, ISP=${isp.toFixed(1)}, dV=${dV.toFixed(1)}`);
-    }
-
-
     const energy = rocketSnap?.batteryJoules ?? 0;
     const capacity = rocketSnap?.batteryCapacityJoules ?? 0;
     const batPct = capacity > 0 ? (energy / capacity) * 100 : 0;
