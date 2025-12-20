@@ -29,7 +29,6 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
     const getFacilityInfo = (type: FacilityType) => {
         const level = upgrades.getLevel(type);
         let desc = `Level ${level}`;
-        if (type === "launchPad") desc = `Lvl ${level} (Max ${upgrades.getMaxLaunchMass(level) / 1000}t)`;
         if (type === "trackingStation") desc = `Lvl ${level} (Max ${upgrades.getMaxActiveRockets(level)} Missions)`;
         if (type === "vab") desc = `Lvl ${level} (T${level} Templates)`;
         if (type === "software") desc = `Lvl ${level} (${upgrades.getMaxScripts(level) === 999 ? "Unlimited" : upgrades.getMaxScripts(level)} Scripts)`;
@@ -42,7 +41,6 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
         { id: "world_scene", title: "Launch Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
         { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500", type: "comms" },
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400", type: "vab" },
-        { id: "facility_pad", title: "Launch Pad", icon: FaArrowUp, desc: "Manage launch capabilities.", color: "red.400", type: "launchPad" },
         { id: "science", title: "Science Data", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
         { id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" },
         { id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400", type: "software" },
@@ -63,11 +61,7 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
                             key={c.id}
                             variant="elevated"
                             onClick={() => {
-                                if (c.id === "facility_pad") {
-                                    // Special case: Launch Pad isn't a "page", just a facility for upgrades?
-                                    // Or maybe we treat it as just opening the modal.
-                                    setSelectedFacility({ id: c.id, name: c.title, type: c.type as FacilityType });
-                                } else if (c.type) {
+                                if (c.type) {
                                     // It's a navigable page, but maybe show upgrade button on hover or separate?
                                     // Let's navigation be primary, but add right-click or a small icon for upgrade?
                                     // For simplicity: If user clicks the *Card*, they go to the page. 
@@ -140,7 +134,6 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
                                             <Text color="gray.400" fontSize="sm">CURRENT STATUS</Text>
                                             <Heading size="lg" mb={1}>Level {level}</Heading>
                                             {/* Show current capability */}
-                                            {type === "launchPad" && <Text>Max Launch Mass: {(upgrades.getMaxLaunchMass(level) / 1000).toFixed(0)}t</Text>}
                                             {type === "trackingStation" && <Text>Active Flights: {upgrades.getMaxActiveRockets(level)}</Text>}
                                             {type === "vab" && <Text>Templates: Tier {level}</Text>}
                                             {type === "software" && <Text>Storage: {upgrades.getMaxScripts(level) === 999 ? "Unlimited" : upgrades.getMaxScripts(level)} Scripts</Text>}

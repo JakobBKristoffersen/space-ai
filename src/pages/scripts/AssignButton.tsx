@@ -66,21 +66,20 @@ export function AssignButton({
         const r = manager?.getRunner();
         if (r) {
             try {
-                await r.installScriptToSlot(compiledJs, { timeLimitMs: 6 }, 0, name, "typescript");
-                r.setSlotEnabled(0, true);
+                await r.installScript(compiledJs, { timeLimitMs: 6 }, name, "typescript");
+                r.setEnabled(true);
 
                 const scripts = services.scripts as any;
                 if (scripts) {
-                    const assigns = scripts.loadAssignments();
-                    const idx = assigns.findIndex((a: any) => a.slot === 0);
-                    if (idx >= 0) assigns.splice(idx, 1);
+                    const ai = manager?.getActiveRocketIndex() ?? 0;
+                    const assigns = scripts.loadAssignments().filter((a: any) => a.rocketIndex !== ai);
 
                     // Find script ID by name to link it in assignments
                     const list = scripts.list();
                     const found = list.find((s: any) => s.name === name);
                     const sid = found ? found.id : null;
 
-                    assigns.push({ slot: 0, scriptId: sid, enabled: true });
+                    assigns.push({ rocketIndex: ai, scriptId: sid, enabled: true });
                     scripts.saveAssignments(assigns);
                 }
                 onSuccess?.();

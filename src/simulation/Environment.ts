@@ -214,6 +214,49 @@ export class Environment {
         }
       }
     }
+
+    // Prime initial state (calculate gravity/density without moving)
+    this.primeRocketState();
+  }
+
+  /** Calculate static forces and environment properties for proper initial display. */
+  primeRocketState(): void {
+    const primary = this.bodies.find(b => b.id === this.system.primaryId);
+    if (!primary) return;
+
+    for (const r of this.rockets) {
+      // 1. Atmosphere
+      const alt = Math.sqrt(r.state.position.x ** 2 + r.state.position.y ** 2) - primary.radiusMeters;
+      const atm = this.atmosphere.getProperties(alt);
+      console.log(`[Prime] Alt: ${alt.toFixed(2)}, Density: ${atm.density.toFixed(5)}, Pressure: ${atm.pressure.toFixed(1)}`);
+
+      r.setAltitudeForSnapshot(alt);
+      r.setAirDensityForSnapshot(atm.density);
+      r.setAtmospherePropertiesForSnapshot(atm.temperature, atm.pressure);
+      r.setAtmosphereCutoffForSnapshot((this.atmosphere as any).cutoffAlt);
+
+      // 2. Gravity
+      // Simple gravity calc for primary only to prep snapshot
+      const dist = Math.sqrt(r.state.position.x ** 2 + r.state.position.y ** 2);
+      const gMag = primary.mu / (dist * dist);
+      const angle = Math.atan2(r.state.position.y, r.state.position.x);
+      const fx = -Math.cos(angle) * gMag * r.massKg; // massKg is 0 if not updated? 
+      // Need to ensure mass is calculated. Rocket calcs mass on demand usually or we trigger it.
+      const totalMass = r.totalMass();
+
+      const gx = -Math.cos(angle) * gMag * totalMass;
+      const gy = -Math.sin(angle) * gMag * totalMass;
+
+      r.setForcesForSnapshot({
+        thrust: { fx: 0, fy: 0 },
+        drag: { fx: 0, fy: 0 },
+        gravity: {
+          fx: gx,
+          fy: gy,
+          perBody: [{ id: primary.id, name: primary.name, fx: gx, fy: gy }]
+        }
+      });
+    }
   }
 
   /** Advance physics by fixed time step (seconds). */

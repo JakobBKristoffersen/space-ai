@@ -1,8 +1,10 @@
 import { EnvironmentSnapshot } from "../simulation/Environment";
 import { ResearchService } from "../app/services/ResearchService";
-import { ToySystem } from "../app/config/ToySystem";
+import { ToySystem } from "../config/ToySystem";
 
-export type ScienceType = "temp" | "atmo" | "surface";
+export type ScienceType = "temp" | "atmo" | "surface" | "biosample";
+
+
 export type ScienceZone = "lower" | "mid" | "upper" | "space" | "global"; // global for surface
 export type MilestoneLevel = "easy" | "medium" | "hard" | "master";
 
@@ -36,6 +38,7 @@ export class ScienceManager {
         temperature: new Map<number, number>(),
         atmosphere: new Map<number, number>(),
         surface: new Map<number, string>(),
+        interactions: {} as Record<string, number>,
     };
     readonly claimedMs = new Set<string>();
 
@@ -83,6 +86,9 @@ export class ScienceManager {
                 this.data.surface.clear();
                 for (const [k, v] of json.surface) this.data.surface.set(Number(k), String(v));
             }
+            if (json.interactions) {
+                this.data.interactions = json.interactions;
+            }
             if (json.claimedMs) {
                 this.claimedMs.clear();
                 for (const id of json.claimedMs) this.claimedMs.add(String(id));
@@ -98,6 +104,7 @@ export class ScienceManager {
                 temperature: Array.from(this.data.temperature.entries()),
                 atmosphere: Array.from(this.data.atmosphere.entries()),
                 surface: Array.from(this.data.surface.entries()),
+                interactions: this.data.interactions,
                 claimedMs: Array.from(this.claimedMs)
             };
             localStorage.setItem("science_data", JSON.stringify(json));
@@ -114,12 +121,6 @@ export class ScienceManager {
 
         // Helper to gen temp/atmo milestones
         const gen = (type: ScienceType, zone: ScienceZone, baseReward: number) => {
-            // Levels: Points required. 
-            // Scale points based on zone size? 
-            // For a 2000m atmosphere:
-            // Lower ~660m. 20 points = 20m. Reasonable.
-            // 500 points = 500m. Might be almost all of it.
-            // Let's stick to fixed counts for now, assuming 1 point per meter is easy to get if vertical velocity is reasonable.
             const tiers = [
                 { l: "easy", c: 20, r: 1 },
                 { l: "medium", c: 100, r: 2 },
@@ -145,10 +146,6 @@ export class ScienceManager {
         gen("temp", "mid", 40);
         gen("temp", "upper", 80);
 
-        // Space: Special case, only 1 point needed/rewarded?
-        // User said: "Only one point for space is needed"
-        // So we shouldn't have tiers for space. Just one "Space" milestone?
-        // Or "Space I" = 1 point?
         defs.push({
             id: `temp_space_easy`,
             type: 'temp', zone: 'space', level: 'easy',
@@ -166,7 +163,6 @@ export class ScienceManager {
         });
 
         // Surface (360 total degrees roughly)
-        // Easy: 25% (90), Med: 50% (180), Hard: 75% (270), Master: 100% (360)
         const surfTiers = [
             { l: "easy", c: 90, r: 50 },
             { l: "medium", c: 180, r: 100 },
@@ -185,6 +181,26 @@ export class ScienceManager {
                 title: `Planetary Survey ${LEVELS[t.l].label}`
             });
         }
+
+        // Biosample
+        defs.push({
+            id: `bio_recovery_1`,
+            type: "biosample",
+            zone: "global",
+            level: "medium",
+            reqCount: 1,
+            rewardRp: 100,
+            title: "First Biosample Recovery"
+        });
+        defs.push({
+            id: `bio_recovery_3`,
+            type: "biosample",
+            zone: "global",
+            level: "hard",
+            reqCount: 3,
+            rewardRp: 250,
+            title: "Biosample Analysis III"
+        });
 
         return defs;
     }
@@ -219,6 +235,7 @@ export class ScienceManager {
             if (d.type === "temp") count = tempCounts[d.zone as keyof typeof tempCounts] || 0;
             else if (d.type === "atmo") count = atmoCounts[d.zone as keyof typeof atmoCounts] || 0;
             else if (d.type === "surface") count = surfCount;
+            else if (d.type === "biosample") count = this.data.interactions["biosamples"] || 0;
 
             const isCompleted = count >= d.reqCount;
             const isClaimed = this.claimedMs.has(d.id);
@@ -309,5 +326,22 @@ export class ScienceManager {
     list() { return []; }
     getCompletedIds(): readonly string[] {
         return Array.from(this.claimedMs);
+    }
+
+    // --- Biosample Logic ---
+    recoverBiosample() {
+        let count = this.data.interactions["biosamples"] || 0;
+
+        if (count < 3) {
+            this.research?.system.addPoints(50);
+            console.log("Biosample recovered! +50 RP");
+        } else {
+            this.research?.system.addPoints(10); // Diminishing returns
+            console.log("Biosample recovered! +10 RP");
+        }
+
+        this.data.interactions["biosamples"] = count + 1;
+        this.save();
+        this.notify();
     }
 }

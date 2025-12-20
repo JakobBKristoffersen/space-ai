@@ -1,7 +1,3 @@
-/**
- * Application bootstrap (React pages call this once on mount).
- * Owns services and SimulationManager creation and exposes globals for UI.
- */
 import { LayoutService } from "../services/LayoutService";
 import { ScriptLibraryService } from "../services/ScriptLibraryService";
 import { TelemetryService } from "../services/TelemetryService";
@@ -9,10 +5,10 @@ import { UpgradesService } from "../services/UpgradesService";
 import { PendingUpgradesService } from "../services/PendingUpgradesService";
 import { ResearchService } from "../services/ResearchService";
 import { SimulationManager } from "../sim/SimulationManager";
-import { ToySystem } from "../config/ToySystem";
+import { ToySystem } from "../../config/ToySystem";
 import { DEFAULT_EXAMPLE, DEFAULT_EXAMPLE_COMPILED } from "./seedScript";
 import { ScienceManager } from "../../game/ScienceManager";
-import { CommsService } from "../../game/CommsService"; // Import CommsService
+import { CommsService } from "../../game/CommsService";
 import { PartStore, DefaultCatalog } from "../../game/PartStore";
 import { SessionKeys } from "../services/SessionKeys";
 import { DebugService } from "../services/DebugService";
@@ -38,17 +34,17 @@ export function initAppLogic(): void {
   const pending = new PendingUpgradesService();
 
   // 3) Seed example script (moved early so we can assign it to default rocket)
-  // 3) Ensure Start.ts exists (Upsert to guarantee it's there even if library wasn't empty)
+  // 3) Ensure FirstHop.ts exists (Upsert to guarantee it's there even if library wasn't empty)
   let startScriptId: string | undefined;
   try {
     const existing = localStorage.getItem(SessionKeys.SCRIPT);
     const seed = existing ?? (typeof DEFAULT_EXAMPLE === 'string' ? DEFAULT_EXAMPLE : 'export function update(api: any){}');
 
-    // Check if Start.ts already exists in the library (to avoid overwriting user changes)
-    let s = scriptLib.list().find(item => item.name === "Start.ts");
+    // Check if FirstHop.ts already exists in the library (to avoid overwriting user changes)
+    let s = scriptLib.list().find(item => item.name === "FirstHop.ts");
     if (!s) {
       // Only create if missing
-      s = scriptLib.upsertByName("Start.ts", seed, DEFAULT_EXAMPLE_COMPILED);
+      s = scriptLib.upsertByName("FirstHop.ts", seed, DEFAULT_EXAMPLE_COMPILED);
     }
     startScriptId = s.id;
   } catch { }
@@ -88,10 +84,12 @@ export function initAppLogic(): void {
     try {
       const s = scriptLib.getById(layout.scriptId);
       if (s) {
-        manager.getRunner().installScriptToSlot(s.compiledCode || s.code, { timeLimitMs: 6 }, 0, s.name);
+        manager.getRunner().installScript(s.compiledCode || s.code, { timeLimitMs: 6 }, s.name);
 
         // Also persist assignment so UI sees it
-        scriptLib.saveAssignments([{ rocketIndex: 0, slot: 0, scriptId: s.id, enabled: true }]);
+        const assigns = scriptLib.loadAssignments().filter((a: any) => a.rocketIndex !== 0);
+        assigns.push({ rocketIndex: 0, scriptId: s.id, enabled: true });
+        scriptLib.saveAssignments(assigns);
       }
     } catch { }
   }
@@ -108,7 +106,7 @@ export function initAppLogic(): void {
   const store = new PartStore(DefaultCatalog);
 
   // Debug Service
-  const debugSvc = new DebugService(research, scienceMgr, pending, layoutSvc, scriptLib, manager);
+  const debugSvc = new DebugService(research, scienceMgr, pending, upgrades, manager, layoutSvc, scriptLib);
 
   // 7) Expose globals for React pages
   try {

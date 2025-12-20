@@ -4,7 +4,8 @@
  * - Compiles user code respecting the installed CPU part limits.
  * - On each tick, runs the script within budget and drains battery.
  *
- * This module has no rendering or physics; it only orchestrates scripting.
+ * Single Script Architecture:
+ * Each rocket runs exactly one main loop script.
  */
 import { Rocket, SimpleQueue } from "../simulation/Rocket";
 import { RocketAPI } from "./RocketAPI";
@@ -15,8 +16,15 @@ export interface ScriptRunnerOptions {
   timeLimitMs?: number;
 }
 
+export interface RunnerScriptState {
+  compiled: CompiledScript | null;
+  name: string;
+  enabled: boolean;
+  logs: string[];
+}
+
 export class ScriptRunner {
-  private slots: { compiled: CompiledScript | null; name: string; enabled: boolean; logs: string[] }[] = [];
+  private activeScript: RunnerScriptState = { compiled: null, name: "None", enabled: true, logs: [] };
   private readonly queue = new SimpleQueue();
   private readonly api: RocketAPI | undefined;
   private readonly sandbox = new Sandbox();
@@ -26,27 +34,18 @@ export class ScriptRunner {
   constructor(private readonly rocket: Rocket | undefined) {
     if (rocket) {
       this.api = new RocketAPI(rocket, this.queue, {});
-      this.resizeSlots();
     }
   }
 
-  private resizeSlots() {
-    if (!this.rocket) return;
-    const count = this.rocket.cpu?.scriptSlots ?? 1;
-    if (this.slots.length === count) return;
-    const next: typeof this.slots = [];
-    for (let i = 0; i < count; i++) {
-      next[i] = this.slots[i] ?? { compiled: null, name: `Slot ${i + 1}`, enabled: i === 0, logs: [] };
-    }
-    this.slots = next;
-  }
-
-  /** Install script into a specific slot (default 0) */
-  async installScriptToSlot(userCode: string, opts?: ScriptRunnerOptions, slotIndex = 0, name?: string, language: 'typescript' = 'typescript'): Promise<void> {
+  /** Install script (Single Slot) */
+  async installScript(userCode: string, opts?: ScriptRunnerOptions, name?: string, language: 'typescript' = 'typescript'): Promise<void> {
     if (!this.rocket || !this.rocket.cpu) throw new Error("No CPU installed on rocket");
     const cpu = this.rocket.cpu;
-    this.resizeSlots();
-    const idx = Math.max(0, Math.min(slotIndex, this.slots.length - 1));
+
+    // Reset state
+    this.activeScript.compiled = null;
+    this.activeScript.logs = [];
+    if (name) this.activeScript.name = name;
 
     const sbOpts: SandboxOptions = {
       maxChars: cpu.maxScriptChars,
@@ -54,49 +53,39 @@ export class ScriptRunner {
       energyPerTickJ: cpu.energyPerTickJ,
       timeLimitMs: opts?.timeLimitMs ?? 8,
     };
-    const compiled = await this.sandbox.compile(userCode, sbOpts, language);
-    this.slots[idx].compiled = compiled;
-    if (name) this.slots[idx].name = name;
+
+    try {
+      const compiled = await this.sandbox.compile(userCode, sbOpts, language);
+      this.activeScript.compiled = compiled;
+      this.appendLog(`System: Script "${this.activeScript.name}" loaded.`);
+    } catch (e: any) {
+      this.appendLog(`System: Compilation failed: ${e.message}`);
+      throw e;
+    }
   }
 
-  /** Back-compat: install into slot 0 */
-  installScript(userCode: string, opts?: ScriptRunnerOptions): void {
-    // This is synchronous back-compat; assumes JS/TS.
-    // If Pyodide, this won't work well if we simply fire-and-forget, but for existing tests it might be fine.
-    // We'll wrap the async call.
-    this.installScriptToSlot(userCode, opts, 0).catch(e => console.error(e));
+  setEnabled(enabled: boolean): void {
+    this.activeScript.enabled = enabled;
   }
 
-  setSlotEnabled(slotIndex: number, enabled: boolean): void {
-    this.resizeSlots();
-    if (!this.slots[slotIndex]) return;
-    this.slots[slotIndex].enabled = enabled;
+  getScriptInfo(): { name: string; enabled: boolean; hasScript: boolean; logs: readonly string[] } {
+    const s = this.activeScript;
+    return { name: s.name, enabled: s.enabled, hasScript: !!s.compiled, logs: s.logs };
   }
 
-  getSlotInfo(): { name: string; enabled: boolean; hasScript: boolean; logs: readonly string[] }[] {
-    this.resizeSlots();
-    return this.slots.map(s => ({ name: s.name, enabled: s.enabled, hasScript: !!s.compiled, logs: s.logs }));
+  /** Legacy compat: returns array of 1 */
+  getSlotInfo() {
+    return [this.getScriptInfo()];
   }
 
-  appendLog(slotIndex: number, msg: string): void {
-    const slot = this.slots[slotIndex];
-    if (!slot) return;
+  appendLog(msg: string): void {
+    const slot = this.activeScript;
     slot.logs.push(msg);
     if (slot.logs.length > 200) slot.logs.splice(0, slot.logs.length - 200);
   }
 
-  /** Clear logs for a specific slot (UI convenience). */
-  clearSlotLogs(slotIndex: number): void {
-    this.resizeSlots();
-    const slot = this.slots[slotIndex];
-    if (!slot) return;
-    if (slot.logs.length) slot.logs.length = 0;
-  }
-
-  /** Clear logs for all slots. */
-  clearAllLogs(): void {
-    this.resizeSlots();
-    for (const s of this.slots) if (s.logs.length) s.logs.length = 0;
+  clearLogs(): void {
+    this.activeScript.logs.length = 0;
   }
 
   /**
@@ -107,37 +96,29 @@ export class ScriptRunner {
   runTick(dt: number, opts?: ScriptRunnerOptions): SimpleQueue {
     if (!this.rocket || !this.rocket.cpu || !this.api) return this.queue;
     const cpu = this.rocket.cpu;
-    this.resizeSlots();
 
     const interval = cpu.processingIntervalSeconds ?? 0;
     if (interval > 0) {
       this.elapsedSinceRunS += Math.max(0, dt || 0);
       if (this.elapsedSinceRunS + 1e-9 < interval) {
-        // Not time yet: no scripts run this engine tick
-        (this.rocket as any)._cpuSlotCount = this.slots.length;
-        (this.rocket as any)._cpuScriptsRunning = 0;
+        // Not time yet
+        (this.rocket as any)._cpuScriptsRunning = 0; // 0 or 1
         (this.rocket as any)._cpuEnergyUsedLastTick = 0;
-        (this.rocket as any)._cpuCostUsedLastTick = 0;
         (this.rocket as any)._cpuNextRunInSeconds = Math.max(0, interval - this.elapsedSinceRunS);
         return this.queue;
       }
-      // Time to run once; carry over any remainder to preserve cadence
       this.elapsedSinceRunS = Math.max(0, this.elapsedSinceRunS - interval);
     } else {
-      // Run every tick; no wait
       (this.rocket as any)._cpuNextRunInSeconds = 0;
     }
 
     const timeLimit = opts?.timeLimitMs ?? 8;
-
     let scriptsRan = 0;
     let totalEnergy = 0;
-    let totalCost = 0;
 
-    for (let i = 0; i < this.slots.length; i++) {
-      const slot = this.slots[i];
-      if (!slot.enabled || !slot.compiled) continue;
-
+    // Execute Active Script
+    const slot = this.activeScript;
+    if (slot.enabled && slot.compiled) {
       const sbOpts: SandboxOptions = {
         maxChars: cpu.maxScriptChars,
         budgetPerTick: cpu.processingBudgetPerTick,
@@ -146,28 +127,22 @@ export class ScriptRunner {
       };
 
       try {
-        // Provide api logging for this slot via a lightweight hook
-        (this.api as any)._setLogger?.((m: string) => this.appendLog(i, m));
-        const beforeBudget = cpu.processingBudgetPerTick;
+        // Provide api logging hook
+        (this.api as any)._setLogger?.((m: string) => this.appendLog(m));
         const ok = this.sandbox.runTick(slot.compiled, this.rocket, this.api, sbOpts);
         if (ok) {
-          scriptsRan++;
+          scriptsRan = 1;
           totalEnergy += cpu.energyPerTickJ;
-          // We cannot read remaining budget directly here; instead, SimpleTickBudget is internal to Sandbox.
-          // Approximate cost as full budget for now; can be refined by returning remaining from Sandbox.
-          totalCost += beforeBudget;
         }
       } catch (e: any) {
-        this.appendLog(i, `Error: ${e?.message ?? String(e)}`);
+        this.appendLog(`Runtime Error: ${e?.message ?? String(e)}`);
       }
     }
 
-    // Update CPU runtime fields for snapshot (if used by UI)
-    (this.rocket as any)._cpuSlotCount = this.slots.length;
-    (this.rocket as any)._cpuScriptsRunning = scriptsRan;
+    // Update debug fields
+    (this.rocket as any)._cpuScriptsRunning = scriptsRan; // 0 or 1
     (this.rocket as any)._cpuEnergyUsedLastTick = totalEnergy;
-    (this.rocket as any)._cpuCostUsedLastTick = totalCost;
-    // Compute next-run ETA after executing (or immediately for run-every-tick)
+
     const _interval = this.rocket.cpu?.processingIntervalSeconds ?? 0;
     (this.rocket as any)._cpuNextRunInSeconds = _interval > 0 ? Math.max(0, _interval - this.elapsedSinceRunS) : 0;
 

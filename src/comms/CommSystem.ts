@@ -3,7 +3,7 @@
  * Manages the communication network between rockets and base.
  */
 import { Rocket } from "../simulation/Rocket";
-import { BodyState } from "../simulation/Environment";
+import { CelestialBody } from "../simulation/CelestialSystem";
 
 export interface CommNode {
     id: string;
@@ -47,7 +47,7 @@ export class CommSystem {
     /**
      * Main update loop for communications.
      */
-    update(dt: number, rockets: Rocket[], bodies: BodyState[], basePosition: { x: number; y: number } = { x: 0, y: 0 }) {
+    update(dt: number, rockets: Rocket[], bodies: CelestialBody[], basePosition: { x: number; y: number } = { x: 0, y: 0 }) {
         // 1. Build Nodes
         this.nodes.clear();
 
@@ -224,7 +224,7 @@ export class CommSystem {
     }
 
     // Segment vs Circle intersection
-    private checkOcclusion(p1: { x: number, y: number }, p2: { x: number, y: number }, bodies: BodyState[]): boolean {
+    private checkOcclusion(p1: { x: number, y: number }, p2: { x: number, y: number }, bodies: CelestialBody[]): boolean {
         for (const b of bodies) {
             // Circle center C, radius R. Segment P1-P2.
             // Check if distance from C to segment P1P2 < R

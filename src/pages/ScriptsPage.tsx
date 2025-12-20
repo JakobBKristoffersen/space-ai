@@ -165,6 +165,24 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
 
   const editorTheme = useColorModeValue("light", "dark") === "dark" ? "dark" : "light";
 
+  // Reactive Research State
+  const [unlockedTechs, setUnlockedTechs] = useState<string[]>(services.research?.system?.unlockedTechs || []);
+
+  useEffect(() => {
+    const research = services.research;
+    if (!research) return;
+
+    // Sync function
+    const sync = () => setUnlockedTechs([...research.system.unlockedTechs]);
+
+    // Initial sync
+    sync();
+
+    // Subscribe
+    const unsub = research.subscribe(sync);
+    return unsub;
+  }, [services.research]);
+
   return (
     <Flex direction="column" h="calc(100vh - 100px)" p={4} gap={4}>
       {/* HEADER */}
@@ -218,7 +236,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
               }}
               onCompile={save}
               theme={editorTheme}
-              unlockedTechs={services.research?.system?.unlockedTechs}
+              unlockedTechs={unlockedTechs}
             />
           </Card.Body>
         </Card.Root>

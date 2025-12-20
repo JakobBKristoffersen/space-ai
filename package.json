@@ -10,6 +10,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit",
+    "test": "tsx src/simulation/PhysicsMath.test.ts",
     "predeploy": "npm run build",
     "deploy": "gh-pages -d dist"
   },
@@ -31,10 +32,12 @@
     "@emotion/react": "^11.13.3",
     "@emotion/styled": "^11.13.0",
     "@monaco-editor/react": "^4.7.0",
+    "@types/dagre": "^0.7.53",
     "@typescript/vfs": "^1.6.2",
     "@valtown/codemirror-ts": "^2.3.1",
     "codemirror": "^6.0.2",
     "comlink": "^4.4.2",
+    "dagre": "^0.8.5",
     "framer-motion": "^11.11.10",
     "gh-pages": "^6.3.0",
     "monaco-editor": "^0.55.1",
@@ -42,6 +45,7 @@
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-icons": "^5.5.0",
+    "reactflow": "^11.11.4",
     "recharts": "^3.6.0"
   },
   "devDependencies": {

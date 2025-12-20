@@ -1,4 +1,4 @@
-import type { CelestialSystemDef } from "../../simulation/CelestialSystem";
+import type { CelestialSystemDef } from "../simulation/CelestialSystem";
 
 /**
  * Shared toy solar system definition used across bootstrap and main.

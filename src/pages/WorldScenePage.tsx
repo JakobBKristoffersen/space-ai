@@ -23,7 +23,7 @@ import {
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { estimateDeltaV, mag2 } from "../app/utils/rocketPerf";
-import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish, FaFlask, FaMapMarkedAlt, FaCircle } from "react-icons/fa";
+import { FaGlobe, FaTachometerAlt, FaRocket, FaThermometerHalf, FaParachuteBox, FaWind, FaSatelliteDish, FaFlask, FaMapMarkedAlt, FaCircle, FaClock } from "react-icons/fa";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 
 // --- Helpers ---
@@ -35,15 +35,7 @@ function fmt(n: number, digits = 2): string {
     return n.toFixed(digits);
 }
 
-const StatRow = ({ label, value, unit, color = "white" }: any) => (
-    <HStack justify="space-between" w="100%">
-        <Text fontSize="xs" color="gray.500">{label}</Text>
-        <HStack gap={1}>
-            <Text fontSize="sm" fontFamily="mono" color={color}>{value}</Text>
-            {unit && <Text fontSize="xs" color="gray.600">{unit}</Text>}
-        </HStack>
-    </HStack>
-);
+import { StatRow } from "../components/ui/StatRow";
 
 export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string) => void }) {
     const { manager, services } = useAppCore();
@@ -107,16 +99,17 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
     const weightN = mass * 9.81; // Using standard G for ref
     const twr = weightN > 0 ? thrustN / weightN : 0;
 
-    // Delta V Estimate (Quick & Dirty using current ISP if available, or standard)
-    // We assume an average ISP of ~300s for generic liquid fuel engines if not exposed
-    // Ideally use estimateDeltaV from rocketPerf if we had the full parts list, but for now we use a heuristic or the helper if possible.
-    // Let's use the helper if we can get the rocket object, but we only have snapshot.
-    // The snapshot doesn't have full parts.
-    // We can try to calculate based on fuel mass.
-    // Dry Mass = Total - Fuel.
+    // Delta V Estimate
     const dryMass = Math.max(1, mass - fuel);
-    const isp = 300; // Standardize for now
+    const isp = rocketSnap?.avgEngineIsp || 300;
     const dV = 9.81 * isp * Math.log(mass / dryMass);
+
+    if (rocketSnap) {
+        // Throttled logging? No, just once per render is spammy but necessary for "Prime" state which is static
+        // Or check if changed significantly? 
+        // Just log it. The user will reset and copy.
+        // console.log(`[Runtime dV] Mass=${mass.toFixed(1)}, Fuel=${fuel.toFixed(1)}, Dry=${dryMass.toFixed(1)}, ISP=${isp.toFixed(1)}, dV=${dV.toFixed(1)}`);
+    }
 
 
     const energy = rocketSnap?.batteryJoules ?? 0;
@@ -144,7 +137,14 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                 currentView="world_scene"
             >
                 <HStack gap={2} >
-                    {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH</Button> : <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET</Button>}
+                    {!launched ? <Button size="xs" colorPalette="green" onClick={onTakeOff}>LAUNCH</Button> : (
+                        <>
+                            {launched && alt < 20 && speedMag < 1 && (
+                                <Button size="xs" colorPalette="cyan" onClick={() => manager?.recoverActiveRocket?.()}>RECOVER</Button>
+                            )}
+                            <Button size="xs" colorPalette="orange" variant="outline" onClick={onResetRocket}>RESET</Button>
+                        </>
+                    )}
                 </HStack>
             </SpaceCenterHeader>
 
@@ -222,8 +222,12 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
                             <Separator borderColor="gray.800" />
                             <HStack justify="space-between">
-                                <Badge size="xs" colorPalette={rocketSnap?.solarDeployed ? "green" : "gray"}>{rocketSnap?.solarDeployed ? "SOLAR ON" : "SOLAR OFF"}</Badge>
-                                <Badge size="xs" colorPalette={rocketSnap?.parachuteDeployed ? "green" : "gray"}>{rocketSnap?.parachuteDeployed ? "CHUTE ON" : "CHUTE OFF"}</Badge>
+                                {rocketSnap?.hasSolarPanels && (
+                                    <Badge size="xs" colorPalette={rocketSnap?.solarDeployed ? "green" : "gray"}>{rocketSnap?.solarDeployed ? "SOLAR ON" : "SOLAR OFF"}</Badge>
+                                )}
+                                {rocketSnap?.hasParachutes && (
+                                    <Badge size="xs" colorPalette={rocketSnap?.parachuteDeployed ? "green" : "gray"}>{rocketSnap?.parachuteDeployed ? "CHUTE ON" : "CHUTE OFF"}</Badge>
+                                )}
                             </HStack>
                         </Card.Body>
                     </Card.Root>
@@ -257,11 +261,7 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
 
                     {/* Guidance Computer Log (Bottom Console) */}
                     <Box h="250px" borderTopWidth="1px" borderColor="gray.800" bg="gray.950" display="flex" flexDirection="column">
-                        <Box px={3} py={1} bg="gray.900" borderBottomWidth="1px" borderColor="gray.800" display="flex" alignItems="center" gap={2}>
-                            <Icon as={FaCircle} fontSize="8px" color="green.500" />
-                            <Text fontSize="xs" fontWeight="bold" color="gray.300" letterSpacing="wider">GUIDANCE COMPUTER</Text>
-                        </Box>
-                        <ScriptLogsPanel manager={manager} />
+                        <ScriptLogsPanel manager={manager} nextRun={rocketSnap?.cpuNextRunInSeconds} />
                     </Box>
                 </Box>
 
@@ -276,14 +276,17 @@ export default function WorldScenePage({ onNavigate }: { onNavigate?: (v: string
                     <SectionHeader title="FLIGHT DATA" icon={FaMapMarkedAlt} />
                     <Card.Root size="sm" variant="subtle" bg="gray.900" borderWidth="1px" borderColor="gray.800">
                         <Card.Body gap={1}>
-                            <StatRow label="Altitude" value={fmt(alt, 0)} unit="m" />
-                            <StatRow label="Speed" value={fmt(speedMag, 0)} unit="m/s" color="cyan.300" />
-                            <StatRow label="V-Speed" value={fmt(verticalSpeed, 1)} unit="m/s" />
+                            <StatRow label="Altitude" value={rocketSnap?.exposedKeys?.includes('altitude') ? fmt(alt, 0) : "---"} unit="m" />
+                            {rocketSnap?.exposedKeys?.includes('radarAltitude') && (
+                                <StatRow label="Radar Alt" value={fmt(rocketSnap?.exposedKeys?.includes('radarAltitude') ? (alt > 5000 ? Infinity : alt) : 0, 0)} unit="m" color="green.300" />
+                            )}
+                            <StatRow label="Speed" value={rocketSnap?.exposedKeys?.includes('velocity') ? fmt(speedMag, 0) : "---"} unit="m/s" color="cyan.300" />
+                            <StatRow label="V-Speed" value={rocketSnap?.exposedKeys?.includes('verticalSpeed') ? fmt(verticalSpeed, 1) : "---"} unit="m/s" />
                             <Separator borderColor="gray.800" my={1} />
-                            <StatRow label="Heading" value={fmt(heading, 0)} unit="°" />
-                            <StatRow label="Latitude" value={fmt(latDeg, 1)} unit="°" />
-                            {rocketSnap?.apAltitude > 0 && <StatRow label="Apoapsis" value={fmt(rocketSnap?.apAltitude, 0)} unit="m" color="blue.300" />}
-                            {rocketSnap?.peAltitude > 0 && <StatRow label="Periapsis" value={fmt(rocketSnap?.peAltitude, 0)} unit="m" />}
+                            <StatRow label="Heading" value={rocketSnap?.exposedKeys?.includes('orientationRad') ? fmt(heading, 0) : "---"} unit="°" />
+                            <StatRow label="Latitude" value={rocketSnap?.exposedKeys?.includes('position') ? fmt(latDeg, 1) : "---"} unit="°" />
+                            {rocketSnap?.exposedKeys?.includes('apAltitude') && <StatRow label="Apoapsis" value={fmt(rocketSnap?.apAltitude ?? 0, 0)} unit="m" color="blue.300" />}
+                            {rocketSnap?.exposedKeys?.includes('peAltitude') && <StatRow label="Periapsis" value={fmt(rocketSnap?.peAltitude ?? 0, 0)} unit="m" />}
                         </Card.Body>
                     </Card.Root>
 
@@ -337,39 +340,53 @@ const BigStat = ({ label, value, unit, color = "white" }: any) => (
     </Box>
 );
 
-function ScriptLogsPanel({ manager }: any) {
-    const [activeTab, setActiveTab] = useState<string>("0");
+function ScriptLogsPanel({ manager, nextRun }: any) {
     const scrollRef = useRef<HTMLDivElement | null>(null);
 
-    const slotInfo = useMemo(() => {
-        try { return manager?.getRunner().getSlotInfo() ?? []; } catch { return []; }
-    }, [manager, (manager as any)?.getGameSeconds?.()]);
+    const scriptInfo = useMemo(() => {
+        try {
+            // Try new API first, fall back to slot 0
+            const runner = manager?.getRunner();
+            if (runner?.getScriptInfo) return runner.getScriptInfo();
+            return runner?.getSlotInfo()?.[0];
+        } catch { return null; }
+    }, [manager, (manager as any)?.getGameSeconds?.()]); // Poll on tick
 
     // Auto scroll
     useEffect(() => {
         const el = scrollRef.current;
         if (el) el.scrollTop = el.scrollHeight;
-    }, [slotInfo, activeTab]);
+    }, [scriptInfo]);
 
-    const lines = slotInfo[Number(activeTab)]?.logs ?? [];
+    const lines = scriptInfo?.logs ?? [];
+    const name = scriptInfo?.name ?? "No Script";
 
     return (
-        <Box display="flex" flexDirection="row" h="100%" overflow="hidden">
-            {/* Slot Tabs (Vertical or Horizontal? Let's go Left Vertical for Terminal feel) */}
-            <VStack w="60px" bg="gray.900" borderRightWidth="1px" borderColor="gray.800" pt={2} gap={1}>
-                {slotInfo.map((s: any, i: number) => (
-                    <Button
-                        key={i}
-                        size="xs"
-                        variant={activeTab === String(i) ? "solid" : "ghost"}
-                        colorPalette={activeTab === String(i) ? "green" : "gray"}
-                        onClick={() => setActiveTab(String(i))}
-                        w="40px"
-                    >
-                        S{i}
-                    </Button>
-                ))}
-            </VStack>
+        <Box h="100%" display="flex" flexDirection="column">
+            {/* Sub-header inside the panel to show script name */}
+            {/* Note: The parent container already has a header "GUIDANCE COMPUTER", we can overlay or just show it inside. 
+                 The parent header is static "GUIDANCE COMPUTER". We will add specific script info here.
+             */}
+            <Box px={3} py={1} bg="gray.900" borderBottomWidth="1px" borderColor="gray.800" display="flex" alignItems="center" gap={2}>
+                {/* Left side: System Name */}
+                <HStack gap={2} mr={2}>
+                    <Icon as={FaCircle} fontSize="8px" color={scriptInfo?.hasScript ? "green.500" : "gray.600"} />
+                    <Text fontSize="xs" fontWeight="bold" color="gray.300" letterSpacing="wider">GUIDANCE COMPUTER</Text>
+                </HStack>
+
+                {/* Divider */}
+                <Box w="1px" h="12px" bg="gray.700" />
+
+                {/* Script Details */}
+                <Text fontSize="xs" fontWeight="bold" color="gray.400">{name}</Text>
+                {scriptInfo?.hasScript && <Badge size="xs" colorPalette="green" variant="outline">RUNNING</Badge>}
+                {nextRun !== undefined && nextRun > 0 && (
+                    <HStack ml="auto" gap={1}>
+                        <Icon as={FaClock} size="xs" color="gray.500" />
+                        <Text fontSize="xs" fontFamily="mono" color="gray.400">Next: {nextRun.toFixed(1)}s</Text>
+                    </HStack>
+                )}
+            </Box>
 
             {/* Terminal View */}
             <Box flex={1} bg="black" p={2} fontFamily="mono" fontSize="xs" color="green.300" overflowY="auto" ref={scrollRef}>

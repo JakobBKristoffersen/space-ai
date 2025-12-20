@@ -1,14 +1,12 @@
 import { ResearchService } from "./ResearchService";
 import { ScienceManager } from "../../game/ScienceManager";
 import { PendingUpgradesService } from "./PendingUpgradesService";
-import { TechTree } from "../../game/research/TechDefinitions";
-
-
-import { SimulationManager } from "../../sim/SimulationManager";
+import { GameProgression } from "../../game/GameProgression";
+import { SimulationManager } from "../sim/SimulationManager";
 import { LayoutService, StoredLayout } from "./LayoutService";
 import { ORBIT_MAIN, ORBIT_UTIL } from "../bootstrap/seedScript";
 import { ScriptLibraryService } from "./ScriptLibraryService";
-
+import { UpgradesService } from "./UpgradesService";
 
 /**
  * Service to handle debug cheats and reset logic.
@@ -16,24 +14,37 @@ import { ScriptLibraryService } from "./ScriptLibraryService";
 export class DebugService {
     constructor(
         private research: ResearchService,
-        private scienceMgr: ScienceManager,
+        private science: ScienceManager,
         private pending: PendingUpgradesService,
-        private layout: LayoutService, // Injected
-        private scriptLib: ScriptLibraryService, // Injected
-        private manager: SimulationManager, // Injected
+        private upgradeService: UpgradesService,
+        private manager: SimulationManager,
+        private layout: LayoutService,
+        private scriptLib: ScriptLibraryService,
     ) { }
 
-    // ... existing unlockAll ... (keep it)
     unlockAll() {
-        // 1. Give RP
+        console.log("DEBUG: Unlocking all techs...");
         this.research.system.addPoints(99999);
+        let count = 0;
 
-        // 2. Unlock all Techs
-        for (const tech of TechTree) {
-            this.research.system.forceUnlock(tech.id);
+        // Use consolidated GameProgression
+        for (const tech of GameProgression) {
+            // Adapt to API expected by research system (checking for usage)
+            // The research system might expect { id, name, costRP, parts or unlocksParts }
+            // We'll mimic the legacy format to ensure compatibility if ResearchService is strict
+            const techDef = {
+                ...tech,
+                unlocksParts: tech.parts || []
+            };
+
+            if (!this.research.system.isUnlocked(tech.id)) {
+                this.research.system.unlock(techDef);
+                count++;
+            }
         }
-        // Force save research
+
         this.research.save();
+        console.log(`DEBUG: Unlocked ${count} new techs.`);
         alert("Cheats Applied: infinite RP, all research unlocked.");
     }
 

@@ -1,7 +1,7 @@
 import { SessionKeys } from "./SessionKeys";
 
 export type ScriptItem = { id: string; name: string; code: string; compiledCode?: string; updatedAt: number };
-export type SlotAssign = { rocketIndex?: number; slot: number; scriptId: string | null; enabled: boolean };
+export type RocketScriptAssign = { rocketIndex: number; scriptId: string | null; enabled: boolean };
 
 export class ScriptLibraryService {
   newId(): string { return "s_" + Math.random().toString(36).slice(2, 9); }
@@ -32,15 +32,15 @@ export class ScriptLibraryService {
     if (!id) return null; const list = this.list(); return list.find(s => s.id === id) ?? null;
   }
 
-  loadAssignments(): SlotAssign[] {
+  loadAssignments(): RocketScriptAssign[] {
     try { const raw = localStorage.getItem(SessionKeys.CPU_SLOTS); return raw ? JSON.parse(raw) : []; } catch { return []; }
   }
 
-  saveAssignments(all: SlotAssign[]): void {
+  saveAssignments(all: RocketScriptAssign[]): void {
     try { localStorage.setItem(SessionKeys.CPU_SLOTS, JSON.stringify(all)); } catch { }
   }
 
-  seedIfEmpty(defaultCode: string, defaultName = "TakeOff.js"): void {
+  seedIfEmpty(defaultCode: string, defaultName = "FirstHop.ts"): void {
     // Migrate old localStorage key if present and no session script yet
     if (!localStorage.getItem(SessionKeys.SCRIPT)) {
       const legacy = localStorage.getItem("user-script");

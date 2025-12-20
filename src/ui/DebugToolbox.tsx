@@ -28,7 +28,7 @@ export function DebugToolbox() {
     return (
         <Dialog.Root>
             <Dialog.Trigger asChild>
-                <Button size="sm" variant="outline" colorScheme="purple" leftIcon={<Icon as={FaGift} />}>Dev Tools</Button>
+                <Button size="sm" variant="outline" colorScheme="purple"><Icon as={FaGift} mr={2} /> Dev Tools</Button>
             </Dialog.Trigger>
             <Dialog.Backdrop />
             <Dialog.Positioner>
@@ -65,14 +65,14 @@ export function DebugToolbox() {
                             <Box>
                                 <Heading size="sm" mb={2} color="gray.400">Cheats</Heading>
                                 <VStack gap={2}>
-                                    <Button w="full" variant="outline" onClick={handleUnlockAll} leftIcon={<Icon as={FaUnlock} />}>
-                                        Unlock Everything (Infinite Money + Tech)
+                                    <Button w="full" variant="outline" onClick={handleUnlockAll}>
+                                        <Icon as={FaUnlock} mr={2} /> Unlock Everything (Infinite Money + Tech)
                                     </Button>
-                                    <Button w="full" variant="outline" onClick={() => svcs?.debug?.resetToBasicRocket?.()} leftIcon={<Icon as={FaRocket} />}>
-                                        Spawn Basic Rocket (Reset Layout)
+                                    <Button w="full" variant="outline" onClick={() => svcs?.debug?.resetToBasicRocket?.()}>
+                                        <Icon as={FaRocket} mr={2} /> Spawn Basic Rocket (Reset Layout)
                                     </Button>
-                                    <Button w="full" variant="outline" onClick={() => svcs?.debug?.cheatLoadOrbitScript?.()} leftIcon={<Icon as={FaRocket} />}>
-                                        Cheat: Load Orbit Script
+                                    <Button w="full" variant="outline" onClick={() => svcs?.debug?.cheatLoadOrbitScript?.()}>
+                                        <Icon as={FaRocket} mr={2} /> Cheat: Load Orbit Script
                                     </Button>
                                 </VStack>
                             </Box>
@@ -82,8 +82,8 @@ export function DebugToolbox() {
                             {/* Danger Zone */}
                             <Box>
                                 <Heading size="sm" mb={2} color="red.400">Danger Zone</Heading>
-                                <Button w="full" colorScheme="red" variant="solid" onClick={handleReset} leftIcon={<Icon as={FaTrash} />}>
-                                    Hard Reset Application
+                                <Button w="full" colorScheme="red" variant="solid" onClick={handleReset}>
+                                    <Icon as={FaTrash} mr={2} /> Hard Reset Application
                                 </Button>
                                 <Text fontSize="xs" color="gray.500" mt={1}>
                                     Clears all data and reloads the page. Cannot be undone.

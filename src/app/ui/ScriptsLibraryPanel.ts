@@ -10,7 +10,7 @@
  * - #saveScriptBtn, #saveAsScriptBtn (buttons)
  */
 
-import { ScriptLibraryService, type ScriptItem, type SlotAssign } from "../services/ScriptLibraryService";
+import { ScriptLibraryService, type ScriptItem, type RocketScriptAssign } from "../services/ScriptLibraryService";
 import { SessionKeys } from "../services/SessionKeys";
 
 export interface ScriptsLibraryPanelDeps {
@@ -32,7 +32,7 @@ export function initScriptsLibraryPanel(deps: ScriptsLibraryPanelDeps) {
     try {
       const name = sessionStorage.getItem(SessionKeys.CURRENT_SCRIPT_NAME) || "";
       nameInput.value = name;
-    } catch {}
+    } catch { }
   }
 
   function render() {
@@ -64,7 +64,7 @@ export function initScriptsLibraryPanel(deps: ScriptsLibraryPanelDeps) {
       }
     }
     const item = deps.scripts.upsertByName(targetName, code);
-    try { sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, item.name); } catch {}
+    try { sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, item.name); } catch { }
     refreshScriptNameInput();
     render();
     deps.onSlotsRepopulate?.();
@@ -83,9 +83,9 @@ export function initScriptsLibraryPanel(deps: ScriptsLibraryPanelDeps) {
       try {
         sessionStorage.setItem(SessionKeys.SCRIPT, s.code);
         sessionStorage.setItem(SessionKeys.CURRENT_SCRIPT_NAME, s.name);
-      } catch {}
+      } catch { }
       // Notify React editor to reload
-      try { window.dispatchEvent(new CustomEvent("session-state-reset")); } catch {}
+      try { window.dispatchEvent(new CustomEvent("session-state-reset")); } catch { }
       refreshScriptNameInput();
     }
     if (action === "delete") {

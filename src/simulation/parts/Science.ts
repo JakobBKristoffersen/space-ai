@@ -21,7 +21,18 @@ export class AtmosphereScanner implements SciencePart {
 export class SurfaceScanner implements SciencePart {
     readonly id = "science.surface";
     readonly name = "Surface Scanner";
-    readonly massKg = 15;
+    readonly massKg = 30; // Heavy optics
+    readonly powerDrawW = 10;
     readonly scienceValue = 25;
     readonly cost = 500;
 }
+
+export class BiosampleContainer implements SciencePart {
+    readonly id = "science.bio_sample";
+    readonly name = "Biological Sample Container";
+    readonly massKg = 50; // Heavy shielding
+    readonly powerDrawW = 5; // Life support
+    readonly scienceValue = 50;
+    readonly cost = 1000;
+}
+

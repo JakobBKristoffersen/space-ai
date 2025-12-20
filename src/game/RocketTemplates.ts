@@ -23,12 +23,13 @@ export interface RocketTemplate {
     price: number; // Cost to unlock the chassis/template itself? Or free if researched? Let's say free if researched.
 }
 
-export const ROCKET_TEMPLATES: RocketTemplate[] = [
+export const ROCKET_TEMPLATES: (RocketTemplate & { tier: number })[] = [
     {
         id: "template.basic",
         name: "Basic Rocket",
         description: "A simple single-stage sounding rocket.",
         price: 0,
+        tier: 1,
         stages: [
             {
                 id: "stage.upper",
@@ -40,10 +41,13 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
                     { id: "slot.nose.sci", name: "Science Exp 1", allowedCategories: ["science"] },
                     { id: "slot.nose.sci2", name: "Science Exp 2", allowedCategories: ["science"] },
                     { id: "slot.nose.antenna", name: "Antenna", allowedCategories: ["antenna"] },
+                    { id: "slot.nose.rw", name: "Reaction Wheels", allowedCategories: ["reactionWheels"] },
+                    { id: "slot.nose.sensor", name: "Sensor", allowedCategories: ["sensor"] },
                     { id: "slot.nose.chute", name: "Parachute", allowedCategories: ["parachute"] },
                     // Body
                     { id: "slot.body.tank", name: "Fuel Tank", allowedCategories: ["fuel"] },
-                    { id: "slot.body.battery", name: "Battery", allowedCategories: ["battery"] }, // Added battery here (TODO mentioned it in Nose? "1x Battery" in nose list? let's stick to TODO)
+                    { id: "slot.body.battery", name: "Battery", allowedCategories: ["battery"] },
+                    { id: "slot.body.msci", name: "Medium Science", allowedCategories: ["science_large"] },
                     { id: "slot.body.fin", name: "Fins", allowedCategories: ["fin"] },
                     { id: "slot.body.solar", name: "Solar Panel", allowedCategories: ["solar"] },
                     // Tail
@@ -58,6 +62,7 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
         description: "Two-stage orbital capability.",
         price: 1000,
         unlockTech: "tech.rocketry_2",
+        tier: 2,
         stages: [
             {
                 id: "stage.upper",
@@ -65,6 +70,7 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
                 slots: [
                     { id: "slot.u.nose.cone", name: "Nose Cone", allowedCategories: ["cone"] },
                     { id: "slot.u.nose.cpu", name: "Guidance", allowedCategories: ["cpu"] },
+                    { id: "slot.u.nose.sensor", name: "Sensor", allowedCategories: ["sensor"] },
                     { id: "slot.u.nose.batt", name: "Battery", allowedCategories: ["battery"] },
                     { id: "slot.u.nose.sci1", name: "Science 1", allowedCategories: ["science"] },
                     { id: "slot.u.nose.sci2", name: "Science 2", allowedCategories: ["science"] },
@@ -93,6 +99,7 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
         description: "Three-stage heavy lifter.",
         price: 5000,
         unlockTech: "tech.rocketry_3",
+        tier: 3,
         stages: [
             {
                 id: "stage.upper",
@@ -100,6 +107,7 @@ export const ROCKET_TEMPLATES: RocketTemplate[] = [
                 slots: [
                     { id: "slot.u.cone", name: "Nose Cone", allowedCategories: ["cone"] },
                     { id: "slot.u.cpu", name: "Guidance", allowedCategories: ["cpu"] },
+                    { id: "slot.u.sensor", name: "Sensor", allowedCategories: ["sensor"] },
                     { id: "slot.u.batt", name: "Battery", allowedCategories: ["battery"] },
                     { id: "slot.u.sci1", name: "Science 1", allowedCategories: ["science"] },
                     { id: "slot.u.sci2", name: "Science 2", allowedCategories: ["science"] },

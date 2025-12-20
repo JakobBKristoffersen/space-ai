@@ -5,6 +5,10 @@ const KEY = "session:research";
 export class ResearchService {
     public system: ResearchSystem;
 
+    private listeners: (() => void)[] = [];
+
+    // ...
+
     constructor() {
         this.system = new ResearchSystem(this.load());
     }
@@ -21,11 +25,21 @@ export class ResearchService {
     save() {
         try {
             sessionStorage.setItem(KEY, JSON.stringify(this.system.snapshot()));
+            this.notify();
         } catch { }
     }
 
     reset() {
         this.system = new ResearchSystem();
         this.save();
+    }
+
+    subscribe(fn: () => void): () => void {
+        this.listeners.push(fn);
+        return () => { this.listeners = this.listeners.filter(l => l !== fn); };
+    }
+
+    private notify() {
+        this.listeners.forEach(l => l());
     }
 }

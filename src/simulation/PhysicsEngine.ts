@@ -1,5 +1,7 @@
 import { Rocket } from "./Rocket";
 import { CelestialBody } from "./CelestialSystem";
+import { GameConfig } from "../config/GameConfig";
+import { PhysicsMath } from "./PhysicsMath";
 
 export class PhysicsEngine {
 
@@ -47,7 +49,7 @@ export class PhysicsEngine {
         // --- RAILS CHECK ---
         const engines = rocket.engines || [];
         const isThrottleZero = engines.length === 0 || engines.every((e: any) => (e.power ?? 0) <= 0.001);
-        const isEnginesOff = isThrottleZero && (!rocket.currentThrust || rocket.currentThrust(0, 1.225) <= 1e-3);
+        const isEnginesOff = isThrottleZero && (!rocket.currentThrust || rocket.currentThrust(0, GameConfig.Physics.AIR_DENSITY_SEA_LEVEL) <= 1e-3);
 
         if (rocket._railsState && inVacuum && isEnginesOff) {
             const rs = rocket._railsState;
@@ -130,6 +132,7 @@ export class PhysicsEngine {
                 const periapsis = a * (1 - e);
                 if (periapsis > (primary.radiusMeters + soiCutoff + 100)) {
                     canEnterRails = true;
+                    // Logic partially duplicated in PhysicsMath but keep full calc here for now or extraction later
                     let n = Math.sqrt(muSOI / (a * a * a));
                     const h = rxRel * vyRel - ryRel * vxRel;
                     if (h < 0) n = -n;
@@ -186,7 +189,7 @@ export class PhysicsEngine {
                     dragFy = -Fd * (rVel.y / speed);
                 }
 
-                // Heating (Legacy Logic)
+                // Heating
                 // Use active Drag Coeff for heating (includes nose cones, excludes fins/chutes)
                 let activeCd = rocket.dragCoefficient;
                 if (rocket.noseCones) {
@@ -194,16 +197,16 @@ export class PhysicsEngine {
                         if (n.dragModifier) activeCd += n.dragModifier;
                     }
                 }
-                if (activeCd < 0.1) activeCd = 0.1;
+                const minCd = 0.1;
+                if (activeCd < minCd) activeCd = minCd;
 
-                if (speed > 100) {
-                    const K_thermal = 1.0; // Calibrated: fast burn up at >260 m/s
-                    heatingPower = 0.5 * density * Math.pow(speed, 3.0) * activeCd * K_thermal;
+                if (speed > GameConfig.Thermal.CRITICAL_SPEED_HEATING) {
+                    heatingPower = 0.5 * density * Math.pow(speed, 3.0) * activeCd * GameConfig.Thermal.K_THERMAL_HEATING;
                 }
             }
 
             // Thrust
-            const thrustN = rocket.currentThrust ? rocket.currentThrust(altitude, 1.225) : 0;
+            const thrustN = rocket.currentThrust ? rocket.currentThrust(altitude, GameConfig.Physics.AIR_DENSITY_SEA_LEVEL) : 0;
             let fx_thrust = 0, fy_thrust = 0;
             if (thrustN > 0) {
                 fx_thrust = Math.cos(rocket.state.orientationRad) * thrustN;
@@ -220,9 +223,9 @@ export class PhysicsEngine {
             rPos.y += rVel.y * dt;
 
             // Thermal Physics
-            const ambientT = inVacuum ? 4 : 288;
-            const Cp = 50; // Low Heat Capacity (Gameplay-optimized) to allow ~3s thermal response time
-            const DissipationWPerK = 1000; // Constant cooling power (Watts/Kelvin)
+            const ambientT = inVacuum ? GameConfig.Thermal.AMBIENT_TEMP_VACUUM : GameConfig.Thermal.AMBIENT_TEMP_GROUND;
+            const Cp = GameConfig.Thermal.HEAT_CAPACITY_GENERIC;
+            const DissipationWPerK = GameConfig.Thermal.DISSIPATION_W_PER_K;
 
             // Distribute Heat Limits
             const noseLimit = rocket.noseCones.length > 0 ? (rocket.noseCones[0].heatTolerance ?? 2400) : 1200;
@@ -252,21 +255,10 @@ export class PhysicsEngine {
             const tailThermalMass = (rocket.engines.reduce((m, p) => m + p.dryMassKg, 0) + rocket.heatShields.reduce((m, p) => m + p.massKg, 0) + 50) * Cp;
             const skinThermalMass = Math.max(10, rocket.totalMass()) * Cp;
 
-            // Universal Analytical Integration
-            // Model: M*Cp * dT/dt = Flux - Dissipation * (T - Ambient)
-            // Time Constant tau = (M*Cp) / Dissipation
-            // Equilibrium T_eq = Ambient + Flux / Dissipation
-            // T_new = T_eq + (T_old - T_eq) * exp(-dt / tau)
-
-            const updateTemp = (currentT: number, flux: number, thermalMass: number) => {
-                const tau = thermalMass / DissipationWPerK;
-                const T_eq = ambientT + (flux / DissipationWPerK);
-                return T_eq + (currentT - T_eq) * Math.exp(-dt / tau);
-            };
-
-            rocket.state.noseTemperature = updateTemp(rocket.state.noseTemperature, noseFlux, noseThermalMass);
-            rocket.state.tailTemperature = updateTemp(rocket.state.tailTemperature, tailFlux, tailThermalMass);
-            rocket.state.temperature = updateTemp(rocket.state.temperature, skinFlux, skinThermalMass);
+            // Update Temps using extracted math
+            rocket.state.noseTemperature = PhysicsMath.updateTemperature(rocket.state.noseTemperature, noseFlux, noseThermalMass, DissipationWPerK, ambientT, dt);
+            rocket.state.tailTemperature = PhysicsMath.updateTemperature(rocket.state.tailTemperature, tailFlux, tailThermalMass, DissipationWPerK, ambientT, dt);
+            rocket.state.temperature = PhysicsMath.updateTemperature(rocket.state.temperature, skinFlux, skinThermalMass, DissipationWPerK, ambientT, dt);
 
             // Clamp min
             if (rocket.state.noseTemperature < ambientT) rocket.state.noseTemperature = ambientT;
@@ -281,7 +273,7 @@ export class PhysicsEngine {
             PhysicsEngine.tickRotation(dt, rocket, density);
 
             // Calculate Orbital Elements for API & Snapshot
-            const elements = PhysicsEngine.calculateOrbitalElements(rocket.state.position, rocket.state.velocity, primary);
+            const elements = PhysicsMath.calculateOrbitalElements(rocket.state.position, rocket.state.velocity, primary);
             rocket._orbitalElements = elements;
 
             // Ap/Pe snapshot
@@ -301,10 +293,10 @@ export class PhysicsEngine {
                 const ox = Math.cos(rocket.state.orientationRad);
                 const oy = Math.sin(rocket.state.orientationRad);
                 const align = (vx * ox + vy * oy) / speed;
-                const isRetrograde = align < -0.8;
+                const isRetrograde = align < GameConfig.Gameplay.LANDING_ALIGNMENT_THRESHOLD;
 
-                if (speed > 10) onCrash();
-                else if (speed > 5 && !isRetrograde) onCrash();
+                if (speed > GameConfig.Gameplay.CRASH_SPEED_THRESHOLD_HARD) onCrash();
+                else if (speed > GameConfig.Gameplay.CRASH_SPEED_THRESHOLD_SOFT && !isRetrograde) onCrash();
                 else {
                     // Land
                     const nx = dx / dist; const ny = dy / dist;
@@ -329,6 +321,25 @@ export class PhysicsEngine {
     }
 
     static tickRotation(dt: number, rocket: Rocket, airDensity: number) {
+        // ... (Implementation unchanged, but we can verify later)
+        // Keeping existing logic for now, just replacing it if we want to use PhysicsMath?
+        // Let's assume the previous logic is fine for now, we just targeted updateRocket.
+        // But wait, the Replace instruction says "Refactor updateRocket...". 
+        // I need to include the rest of the file or ensure the replace block covers it all.
+        // Since the "StartLine" is 1 and "EndLine" is 451 (full file), I must provide the FULL FILE content in ReplacementContent. 
+        // I will paste the full file content including the tickRotation and calculateOrbitalElements proxy.
+
+        // Optimization: I'll use the shorter tickRotation logic implementation here to match the provided view, ensuring no regressions.
+        // Actually I will keep tickRotation inside as per the view result, but I can call PhysicsMath helpers if applicable.
+        // PhysicsMath only has 3 methods.
+
+        // I'll proceed with writing the full file content to ensure consistency.
+        // RE-READING: PhysicsMath has `getOrbitVelocityAtTrueAnomaly` which is used in `PhysicsEngine`? 
+        // NO, `PhysicsEngine` had a `calculatedOrbitalElements` and `getOrbitVelocityAtTrueAnomaly`. 
+        // I should replace `calculateOrbitalElements` and `getOrbitVelocityAtTrueAnomaly` in `PhysicsEngine` to just call `PhysicsMath` or remove them if they are static helpers used externally.
+        // `RocketAPI` likely calls `PhysicsEngine.calculateOrbitalElements`. I should check that.
+        // Ideally `PhysicsEngine` should re-export or just proxy these static methods to avoid breaking API consumers.
+
         const desired = rocket.desiredAngularVelocityRadPerS || 0;
 
         // 1. Calculate Max Omega & Energy Cost from Reaction Wheels
@@ -393,58 +404,13 @@ export class PhysicsEngine {
 
     /**
      * compute orbital elements from state vectors.
+     * PROXY to PhysicsMath
      */
     static calculateOrbitalElements(rPos: { x: number, y: number }, rVel: { x: number, y: number }, primary: CelestialBody): any | undefined {
-        const muSOI = primary.mu;
-        const rxRel = rPos.x - primary.position.x;
-        const ryRel = rPos.y - primary.position.y;
-        const vxRel = rVel.x - primary.velocity.x;
-        const vyRel = rVel.y - primary.velocity.y;
-
-        const rRelMag = Math.hypot(rxRel, ryRel);
-        const v2 = vxRel * vxRel + vyRel * vyRel;
-
-        // Energy & Eccentricity
-        const eps = 0.5 * v2 - muSOI / rRelMag;
-        const rvDot = rxRel * vxRel + ryRel * vyRel;
-        const ex = ((v2 - muSOI / rRelMag) * rxRel - rvDot * vxRel) / muSOI;
-        const ey = ((v2 - muSOI / rRelMag) * ryRel - rvDot * vyRel) / muSOI;
-        const e = Math.hypot(ex, ey);
-
-        if (Math.abs(eps) < 1e-10) return undefined; // Parabolic/Invalid?
-        const a = -muSOI / (2 * eps);
-
-        // Argument of Periapsis (w)
-        const w = Math.atan2(ey, ex);
-
-        // Mean Motion
-        let n = Math.sqrt(muSOI / Math.abs(a * a * a));
-        const h = rxRel * vyRel - ryRel * vxRel;
-        if (h < 0) n = -n;
-
-        return { a, e, w, n, mu: muSOI, soiId: primary.id, i: 0 };
+        return PhysicsMath.calculateOrbitalElements(rPos, rVel, primary);
     }
 
     static getOrbitVelocityAtTrueAnomaly(state: any, nu: number): { x: number, y: number } {
-        const { a, e, w, n, mu } = state;
-
-        // Velocity in Perifocal Frame
-        if (a <= 0) return { x: 0, y: 0 };
-
-        const p = a * (1 - e * e);
-        const v_scale = Math.sqrt(mu / p);
-
-        const vx_p = -v_scale * Math.sin(nu);
-        const vy_p = v_scale * (e + Math.cos(nu));
-
-        // Rotate by w
-        const cw = Math.cos(w);
-        const sw = Math.sin(w);
-
-        const vx = vx_p * cw - vy_p * sw;
-        const vy = vx_p * sw + vy_p * cw;
-
-        const finalScale = (n < 0) ? -1 : 1;
-        return { x: vx * finalScale, y: vy * finalScale };
+        return PhysicsMath.getOrbitVelocityAtTrueAnomaly(state, nu);
     }
 }

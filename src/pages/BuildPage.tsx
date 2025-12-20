@@ -18,33 +18,34 @@ import {
   Flex,
   Dialog,
   createListCollection,
+  Container,
+  SimpleGrid,
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { DefaultCatalog, PartCategory } from "../game/PartStore";
 import { ROCKET_TEMPLATES, RocketTemplate, RocketSlot } from "../game/RocketTemplates";
-import { StoredLayout } from "../app/services/LayoutService";
-import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
-import { FaTrash, FaInfoCircle, FaBolt, FaWeightHanging, FaDollarSign, FaFire, FaTools, FaChevronLeft, FaFlask, FaPlus } from "react-icons/fa";
 
-// ... (helpers) ...
+import { StoredLayout } from "../app/services/LayoutService";
+import { GameProgression } from "../game/GameProgression";
+import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
+import { FaTrash, FaInfoCircle, FaBolt, FaWeightHanging, FaDollarSign, FaFire, FaTools, FaChevronLeft, FaFlask, FaRocket, FaLock, FaCheckCircle, FaExclamationTriangle, FaPlus, FaBan } from "react-icons/fa";
 
 export default function BuildPage({ onNavigate }: { onNavigate: (view: string) => void }) {
   const { manager, services } = useAppCore();
+
   // --- State ---
+  const [currentVabLevel, setCurrentVabLevel] = useState<number>(1);
   const [templateId, setTemplateId] = useState<string>("template.basic");
   const [assignments, setAssignments] = useState<Record<string, string>>({});
+  const [disabledStages, setDisabledStages] = useState<Record<string, boolean>>({});
   const [activeSlot, setActiveSlot] = useState<RocketSlot | null>(null);
   const [scriptId, setScriptId] = useState<string>("");
   const [rocketName, setRocketName] = useState<string>("My Rocket");
   const [availableScripts, setAvailableScripts] = useState<{ label: string, value: string }[]>([]);
 
   // Collections
-  const templatesCollection = useMemo(() => createListCollection({
-    items: ROCKET_TEMPLATES.map(t => ({ label: t.name, value: t.id, description: t.description }))
-  }), []);
-
   const scriptsCollection = useMemo(() => createListCollection({
-    items: availableScripts
+    items: [{ label: "None", value: "" }, ...availableScripts]
   }), [availableScripts]);
 
   useEffect(() => {
@@ -54,49 +55,125 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     }
   }, [services.scripts]);
 
-  // Resources & Limits
-  const [padLevel, setPadLevel] = useState<number>(1);
-  const [maxMassKg, setMaxMassKg] = useState<number>(30_000);
+  // Resources
   const [maxActiveRockets, setMaxActiveRockets] = useState<number>(1);
+  const [isLoaded, setIsLoaded] = useState(false);
 
   // Sync with Global State
-  useEffect(() => {
-    const sync = () => {
-      try {
-        const upg = services.upgrades;
-        if (upg) {
-          const lvl = upg.getLevel("launchPad");
-          setPadLevel(lvl);
-          setMaxMassKg(upg.getMaxLaunchMass(lvl));
+  const [unlockedTechs, setUnlockedTechs] = useState<string[]>(services.research?.system?.unlockedTechs || []);
+  const [researchPoints, setResearchPoints] = useState<number>(services.research?.system?.points || 0);
 
-          const tsLvl = upg.getLevel("trackingStation");
-          setMaxActiveRockets(upg.getMaxActiveRockets(tsLvl));
-        }
-      } catch { }
-    };
+  // Sync Logic
+  const sync = () => {
+    try {
+      const upg = services.upgrades;
+      if (upg) {
+        // VAB Level -> Template
+        const lvl = upg.getLevel("vab");
+        setCurrentVabLevel(lvl);
+
+        const tsLvl = upg.getLevel("trackingStation");
+        setMaxActiveRockets(upg.getMaxActiveRockets(tsLvl));
+      }
+
+      const res = services.research;
+      if (res) {
+        setResearchPoints(res.system.points);
+        setUnlockedTechs([...res.system.unlockedTechs]);
+      }
+
+    } catch { }
+  };
+
+  useEffect(() => {
     sync();
+    // Use interval as fallback for upgrades service which doesn't have subscription yet
     const id = setInterval(sync, 1000);
-    return () => clearInterval(id);
+
+    // Research Subscription
+    let unsubResearch: (() => void) | undefined;
+    const research = services.research;
+    if (research) {
+      // Subscribe
+      unsubResearch = research.subscribe(() => {
+        sync();
+      });
+    }
+
+    return () => {
+      clearInterval(id);
+      unsubResearch?.();
+    };
   }, [services]);
 
-  const [isLoaded, setIsLoaded] = useState(false);
+  // Auto-Select Template based on VAB Level
+  useEffect(() => {
+    // Find highest tier template allowed by currentVabLevel
+    // Logic: template.tier <= currentVabLevel
+    // We default to the highest available tier.
+    const bestTemplate = ROCKET_TEMPLATES
+      .filter(t => t.tier <= currentVabLevel)
+      .sort((a, b) => b.tier - a.tier)[0];
+
+    if (bestTemplate && bestTemplate.id !== templateId) {
+      // If we switch templates, we might lose assignments if slot IDs mismatch, 
+      // but since we are "upgrading", usually slots are additive or compatible.
+      // For now, we keep assignments. Users can clear if they want.
+      setTemplateId(bestTemplate.id);
+    }
+  }, [currentVabLevel, templateId]);
+
 
   // Load Layout
   useEffect(() => {
-    try {
-      const saved = services.layout?.loadLayout();
-      if (saved) {
-        if (saved.templateId) setTemplateId(saved.templateId);
-        if (saved.slots) setAssignments(saved.slots);
-        if (saved.scriptId) setScriptId(saved.scriptId);
-        if (saved.name) setRocketName(saved.name);
-      }
-    } catch { }
-    setIsLoaded(true);
-  }, [services]);
+    if (!isLoaded && services.layout) {
+      try {
+        const saved = services.layout.loadLayout();
+        if (saved) {
+          // If saved template requires higher tier than we have, we might have an issue.
+          // But usually we just load it. 
+          // Ideally we should respect VAB level. 
+          // Let's assume saved layout is valid.
+          if (saved.templateId) {
+            // Check if we can actually use this template
+            const t = ROCKET_TEMPLATES.find(x => x.id === saved.templateId);
+            if (t && t.tier <= currentVabLevel) {
+              setTemplateId(saved.templateId);
+            }
+          }
+          if (saved.slots) setAssignments(saved.slots);
+          if (saved.scriptId) setScriptId(saved.scriptId);
+          if (saved.name) setRocketName(saved.name);
 
-  // Derived
+          // Restore disabled stages? 
+          // Not currently saved in StoredLayout. 
+          // We can infer: if a stage has NO assignments, maybe it's disabled? 
+          // Or just default to all enabled.
+        }
+      } catch { }
+      setIsLoaded(true);
+    }
+  }, [services, isLoaded, currentVabLevel]);
+
+  // Auto-Save
+  useEffect(() => {
+    if (isLoaded && services.layout) {
+      // Filter out disabled stages from assignments before saving?
+      // Actually, saving extra assignments is harmless.
+      // But we should filter assignments when BUILDING the rocket.
+      services.layout.saveLayout({ templateId, slots: assignments, scriptId, name: rocketName });
+    }
+  }, [templateId, assignments, scriptId, rocketName, isLoaded, services]);
+
+
+  // Derived Data
   const template = useMemo(() => ROCKET_TEMPLATES.find(t => t.id === templateId) || ROCKET_TEMPLATES[0], [templateId]);
+
+  // Helper: Get Tech Requirement Name
+  const getUnlockReq = (partId: string): string | null => {
+    const tech = GameProgression.find(t => t.parts.includes(partId));
+    return tech ? tech.name : "Unknown Tech";
+  };
 
   const getPartsByCategory = (cat: PartCategory) => {
     switch (cat) {
@@ -114,6 +191,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
       case "parachute": return DefaultCatalog.parachutes;
       case "heatShield": return DefaultCatalog.heatShields;
       case "science": return DefaultCatalog.science;
+      case "science_large": return DefaultCatalog.science; // Shared catalog list
+      case "structure": return DefaultCatalog.structures;
       default: return [];
     }
   };
@@ -124,163 +203,220 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     if (!p) return null;
 
     const instance = p.make();
-
-    // Build generic stats array
     const stats: { label: string, value: string, icon?: any }[] = [];
 
-    // Mass: Standard parts use massKg, Engines/Tanks use dryMassKg
     const mass = (instance as any).massKg ?? (instance as any).dryMassKg;
     if (mass !== undefined) stats.push({ label: "Mass", value: `${mass}kg`, icon: FaWeightHanging });
 
-    // --- Specific Part Stats ---
     const i = instance as any;
-
-    // Engine
     if (i.maxThrustN) stats.push({ label: "Thrust", value: `${i.maxThrustN}N`, icon: FaFire });
-    if (i.vacuumBonusAtVacuum) stats.push({ label: "Vac Bonus", value: `+${(i.vacuumBonusAtVacuum * 100).toFixed(0)}%`, icon: FaFire });
-
-    // Fuel Tank
+    if (i.vacuumBonusAtVacuum) stats.push({ label: "Vac Eff", value: `+${(i.vacuumBonusAtVacuum * 100).toFixed(0)}%`, icon: FaFire });
     if (i.capacityKg) stats.push({ label: "Fuel", value: `${i.capacityKg}kg`, icon: FaFire });
-
-    // Battery
     const capJ = i.capacityJoules ?? i.capacity;
     if (capJ) stats.push({ label: "Cap", value: `${capJ}J`, icon: FaBolt });
-
-    // CPU
     if (i.maxScriptChars) stats.push({ label: "Mem", value: `${(i.maxScriptChars / 1024).toFixed(1)}kb`, icon: FaTools });
     if (i.processingBudgetPerTick) stats.push({ label: "CPU", value: `${i.processingBudgetPerTick}ops`, icon: FaTools });
-
-    // Antenna
     const range = i.rangeMeters ?? i.antennaPower;
     if (range) stats.push({ label: "Range", value: `${(range / 1000).toFixed(0)}km`, icon: FaBolt });
-
-    // Aero (NoseCone, Fin)
     if (i.dragCoefficient) stats.push({ label: "Drag", value: `${i.dragCoefficient}`, icon: FaWeightHanging });
-    // Parachute
-    if (i.deployedDrag) stats.push({ label: "Chute Drag", value: `${i.deployedDrag}`, icon: FaWeightHanging });
-    // HeatShield
+    if (i.deployedDrag) stats.push({ label: "Chute", value: `${i.deployedDrag}`, icon: FaWeightHanging });
     if (i.maxTemp) stats.push({ label: "MaxTemp", value: `${i.maxTemp}K`, icon: FaFire });
-
-    // Science
-    // If scienceValue exists on instance, show it (dynamic cast)
     if (i.scienceValue) stats.push({ label: "Sci", value: `${i.scienceValue}pts`, icon: FaFlask });
-
-    // Solar Panel
     if (i.generationWatts) stats.push({ label: "Gen", value: `${i.generationWatts}W`, icon: FaBolt });
 
-    return { name: p.name, stats };
+    return { name: p.name, stats, instance };
   };
 
   const summary = useMemo(() => {
-    let totalMass = 0;
+    let wetMass = 0;
+    let dryMass = 0;
 
-    // Sum assignments
-    Object.values(assignments).forEach((partId) => {
-      // Find definition
-      const def = Object.values(DefaultCatalog).flat().find((x: any) => x.id === partId) as any;
-      if (def) {
-        // Instantiate to get physical stats which might not be on the catalog item
-        const instance = def.make();
-        totalMass += ((instance as any).massKg ?? (instance as any).dryMassKg ?? 0);
-      }
+    // Only count assignments for ENABLED stages
+    const enabledAssignments: Record<string, string> = {};
+
+    template.stages.forEach(stage => {
+      if (disabledStages[stage.id]) return;
+      stage.slots.forEach(slot => {
+        if (assignments[slot.id]) enabledAssignments[slot.id] = assignments[slot.id];
+      });
     });
 
-    return { totalMass };
-  }, [assignments]);
+    Object.values(enabledAssignments).forEach((partId) => {
+      const def = Object.values(DefaultCatalog).flat().find((x: any) => x.id === partId) as any;
+      if (def) {
+        const instance = def.make();
+        const dry = (instance as any).dryMassKg ?? (instance as any).massKg ?? 0;
+        const fuel = (instance as any).fuelKg ?? 0;
+        wetMass += dry + fuel;
+        dryMass += dry;
+      }
+    });
+    return { wetMass, dryMass, enabledAssignments }; // Return enabled assignments for build
+  }, [assignments, disabledStages, template]);
 
-  // Logic
-  const handleTemplateChange = (d: any) => {
-    const val = Array.isArray(d?.value) ? d.value[0] : d?.value;
-    if (val && val !== templateId) {
-      // Confirm reset?
-      if (Object.keys(assignments).length > 0 && !confirm("Switching templates will clear current assignments. Continue?")) return;
-      setTemplateId(val);
-      setAssignments({});
-    }
-  };
+  // Handlers
+  const stageStats = useMemo(() => {
+    const stats: any[] = [];
+    let payloadMass = 0; // Mass of everything ABOVE the current stage
 
+    // Iterate Top-Down (Stage 0 is Upper Stage)
+    template.stages.forEach((stage) => {
+      if (disabledStages[stage.id]) {
+        stats.push(null);
+        return;
+      }
+
+      let stageDry = 0;
+      let stageWet = 0;
+
+      let thrustVac = 0;
+      let thrustSL = 0;
+      let flowRate = 0;
+
+      stage.slots.forEach(slot => {
+        const partId = assignments[slot.id];
+        if (!partId) return;
+        const def = Object.values(DefaultCatalog).flat().find((x: any) => x.id === partId) as any;
+        if (!def) return;
+
+        const instance = def.make();
+        const dry = (instance as any).dryMassKg ?? (instance as any).massKg ?? 0;
+        const fuel = (instance as any).fuelKg ?? 0;
+
+        stageDry += dry;
+        stageWet += dry + fuel;
+
+        if ((instance as any).maxThrustN) {
+          // Calculate Thrust at Vac and SL
+          // Assuming instance.currentThrust(rho, rho0) exists or we estimate it
+          // Since we can't easily call methods on fresh instance without context, we replicate logic or use static props if available.
+          // Just instantiating 'new SmallEngine()' gives us the object.
+          // We can call `instance.currentThrust(...)` if the class implements it independently of state (it usually does for max thrust).
+          // However, power is 0 by default. Set power to 1.
+          if ('power' in instance) (instance as any).power = 1;
+
+          // Vac: rho=0
+          thrustVac += (instance as any).currentThrust ? (instance as any).currentThrust(0, 1.225) : (instance as any).maxThrustN;
+          // SL: rho=1.225
+          thrustSL += (instance as any).currentThrust ? (instance as any).currentThrust(1.225, 1.225) : (instance as any).maxThrustN;
+
+          if ((instance as any).fuelBurnRateKgPerS) {
+            flowRate += (instance as any).fuelBurnRateKgPerS;
+          }
+        }
+      });
+
+      // Stats for this stage
+      const totalMass = stageWet + payloadMass;
+      const finalMass = stageDry + payloadMass;
+
+      const twrVac = totalMass > 0 ? thrustVac / (totalMass * 9.81) : 0;
+      const twrSL = totalMass > 0 ? thrustSL / (totalMass * 9.81) : 0;
+
+      const ispVac = flowRate > 0 ? thrustVac / (flowRate * 9.81) : 0;
+      const ispSL = flowRate > 0 ? thrustSL / (flowRate * 9.81) : 0;
+
+      const dV_Vac = ispVac * 9.81 * Math.log(totalMass / finalMass);
+      const dV_SL = ispSL * 9.81 * Math.log(totalMass / finalMass);
+
+      if (stageWet > 0) {
+        console.log(`[VAB Stage ${template.stages.indexOf(stage)}] Mass: ${totalMass.toFixed(1)}/${finalMass.toFixed(1)}, ThrustSL: ${thrustSL.toFixed(1)}, ISP_SL: ${ispSL.toFixed(1)}, dV_SL: ${dV_SL.toFixed(1)}`);
+      }
+
+      stats.push({
+        massDry: stageDry,
+        massWet: stageWet,
+        thrustVac,
+        thrustSL,
+        twrVac,
+        twrSL,
+        dV_Vac,
+        dV_SL,
+        payload: payloadMass
+      });
+
+      // Accumulate payload
+      payloadMass += stageWet;
+    });
+
+    return stats;
+  }, [assignments, disabledStages, template]);
+
+
+  // Handlers
   const handlePartSelect = (partId: string) => {
     if (!activeSlot) return;
     setAssignments(prev => {
       const next = { ...prev };
       if (!partId) delete next[activeSlot.id];
       else next[activeSlot.id] = partId;
-      // Auto-save removed; handled by effect
       return next;
     });
     setActiveSlot(null);
   };
 
-  const handleNewRocket = () => {
-    if (Object.keys(assignments).length > 0 && !confirm("Start new rocket? Unsaved changes to current configuration will be lost.")) return;
-    setTemplateId("template.basic");
-    setAssignments({});
-    setScriptId("");
-    setRocketName("New Rocket");
+  const toggleStage = (stageId: string) => {
+    setDisabledStages(prev => ({
+      ...prev,
+      [stageId]: !prev[stageId]
+    }));
   };
 
-  useEffect(() => {
-    if (isLoaded && services.layout) {
-      services.layout.saveLayout({ templateId, slots: assignments, scriptId, name: rocketName });
+  const handleUpgradeVab = () => {
+    if (!services.upgrades || !services.research) return;
+    const nextLevel = currentVabLevel + 1;
+    const cost = services.upgrades.getUpgradeCost("vab", currentVabLevel);
+
+    if (cost !== null && researchPoints >= cost) {
+      if (confirm(`Upgrade Vehicle Assembly Building for ${cost} RP?`)) {
+        // Deduct RP
+        services.research.system.addPoints(-cost);
+        services.research.save();
+
+        services.upgrades.upgrade("vab");
+        sync(); // Force refresh
+      }
     }
-  }, [templateId, assignments, scriptId, rocketName, isLoaded, services]);
+  };
 
   const handleBuildLaunch = () => {
-    // 1. Check constraints
-    if (summary.totalMass > maxMassKg) { alert("Weight exceeds launch pad capacity!"); return; }
-
-
-    // 2. Check Active Rocket Limit / Name Collision
+    // Check Limits & Overwrites
     const activeCount = manager?.getRockets().length ?? 0;
     const names = manager?.getRocketNames() ?? [];
-    const targetIdx = names.indexOf(rocketName); // -1 if new name
+    const targetIdx = names.indexOf(rocketName);
     const currentIdx = manager?.getActiveRocketIndex() ?? 0;
 
     if (targetIdx !== -1) {
-      // Name matches an existing rocket
       if (targetIdx !== currentIdx) {
         if (!confirm(`Overwrite existing rocket "${names[targetIdx]}"?`)) return;
         manager?.setActiveRocketIndex(targetIdx);
       }
-      // If matches current, we just proceed to overwrite it.
     } else {
-      // New Name
       if (activeCount >= maxActiveRockets) {
-        // Limit Reached. Ask to overwrite current.
         const currentName = names[currentIdx] || "Current Rocket";
-        if (!confirm(`Tracking Station Limit Reached (${activeCount}/${maxActiveRockets}).\n\nOverwrite currently active rocket "${currentName}" with new name "${rocketName}"?`)) {
-          return;
-        }
-        // User confirmed overwrite. We proceed. 
-        // Note: The launch logic below calls `recreateFromLayout` on the active index,
-        // which will effectively rename it since we update the name in the Rocket object.
+        if (!confirm(`Tracking Station Limit Reached (${activeCount}/${maxActiveRockets}).\n\nOverwrite currently active rocket "${currentName}" with new name "${rocketName}"?`)) return;
       }
     }
 
-
-    // 4. Build Rocket Object
-    const layout: StoredLayout = { templateId, slots: assignments, scriptId, name: rocketName };
+    // Build only with enabled assignments
+    const layout: StoredLayout = { templateId, slots: summary.enabledAssignments, scriptId, name: rocketName };
     const rocket = services.layout?.buildRocketFromLayout(layout);
 
     if (rocket) {
-      manager?.recreateFromLayout(layout); // Replaces active rocket
+      manager?.recreateFromLayout(layout);
       manager?.setRocketName(manager.getActiveRocketIndex(), rocketName);
-
-      // Install Flight Software
       if (scriptId && services.scripts) {
         const s = services.scripts.getById(scriptId);
         if (s) {
           const codeToRun = (s as any).compiledCode || s.code;
-          manager?.getRunner()?.installScriptToSlot(codeToRun, { timeLimitMs: 6 }, 0, s.name);
-
-          // Persist assignment so it survives reset/reloads
+          manager?.getRunner()?.installScript(codeToRun, { timeLimitMs: 6 }, s.name);
+          // Persist
           const ai = manager?.getActiveRocketIndex() ?? 0;
-          const assigns = services.scripts.loadAssignments().filter((a: any) => !(a.rocketIndex === ai && a.slot === 0));
-          assigns.push({ rocketIndex: ai, slot: 0, scriptId: s.id, enabled: true });
-          services.scripts.saveAssignments(assigns);
+          const assigns = services.scripts.loadAssignments().filter((a: any) => a.rocketIndex !== ai);
+          assigns.push({ rocketIndex: ai, scriptId: s.id, enabled: true });
+          services.scripts.saveAssignments(assigns as any);
         }
       }
-
       onNavigate("world_scene");
     }
   };
@@ -290,235 +426,383 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
       <SpaceCenterHeader
         title="Vehicle Assembly Building"
         icon={FaTools}
-        description="Design and build your rockets."
+        description="Design and build your rockets"
         onNavigate={onNavigate}
         currentView="build"
       >
+        <HStack gap={4} w="full" justify="space-between">
+          {/* LEFT: Rocket Name */}
+          <HStack flex={1} maxW="400px">
+            <Icon as={FaRocket} color="cyan.400" />
+            <Input
+              value={rocketName}
+              onChange={(e) => setRocketName(e.target.value)}
+              placeholder="Rocket Name"
+              size="sm"
+              variant="subtle"
+              color="white"
+              fontWeight="bold"
+              fontSize="lg"
+              bg="transparent"
+              borderColor="transparent"
+              _hover={{ borderColor: "gray.700" }}
+              _focus={{ borderColor: "cyan.400", bg: "gray.900" }}
+            />
+          </HStack>
+
+          {/* RIGHT: Controls */}
+          <HStack gap={4}>
+            {/* Mass Info */}
+            <HStack gap={2} mr={2}>
+              <Icon as={FaWeightHanging} color="gray.400" />
+              <VStack gap={0} align="start" lineHeight={1}>
+                <Text fontSize="xs" color="gray.400">DRY: <Text as="span" color="white" fontWeight="bold">{summary.dryMass.toLocaleString()}</Text> kg</Text>
+                <Text fontSize="xs" color="gray.400">WET: <Text as="span" color="white" fontWeight="bold">{summary.wetMass.toLocaleString()}</Text> kg</Text>
+              </VStack>
+            </HStack>
+
+            {/* Script Selector */}
+            <Box w="200px">
+              <Select.Root collection={scriptsCollection} value={[scriptId]} onValueChange={(d) => setScriptId(Array.isArray(d.value) ? d.value[0] : d.value)} size="sm">
+                <Select.HiddenSelect />
+                <Select.Control>
+                  <Select.Trigger bg="gray.900" borderColor="gray.700">
+                    <Select.ValueText placeholder="Select Flight Software..." />
+                  </Select.Trigger>
+                </Select.Control>
+                <Portal>
+                  <Select.Positioner>
+                    <Select.Content bg="gray.800" borderColor="gray.700">
+                      {scriptsCollection.items.map(s => (
+                        <Select.Item key={s.value} item={s} _hover={{ bg: "gray.700" }}>{s.label}</Select.Item>
+                      ))}
+                    </Select.Content>
+                  </Select.Positioner>
+                </Portal>
+              </Select.Root>
+            </Box>
+
+            {/* Deploy Button */}
+            <Button
+              size="sm"
+              colorPalette="green"
+              variant="solid"
+              onClick={handleBuildLaunch}
+              disabled={summary.wetMass === 0}
+            >
+              <Icon as={FaRocket} mr={2} />
+              DEPLOY TO PAD
+            </Button>
+          </HStack>
+        </HStack>
       </SpaceCenterHeader>
 
-      <Grid templateColumns="300px 1fr" gap={6} flex={1} minH={0} overflow="hidden">
+      <Grid templateColumns="1fr" gap={6} flex={1} minH={0} overflow="hidden">
 
-        {/* SIDEBAR: Controls & Summary */}
-        <GridItem h="100%" overflowY="auto">
-          <VStack align="stretch" gap={4} h="100%">
-            {/* Removed internal back button */}
-            <Card.Root variant="elevated" bg="gray.800" borderColor="gray.700">
-              <Card.Header pb={2}>
-                <HStack justify="space-between">
-                  <Heading size="sm" color="gray.300">Design Overview</Heading>
-                  <Button size="xs" variant="ghost" colorScheme="cyan" title="Import from Active Rocket" onClick={() => {
-                    const rocket = manager?.getEnvironment().getActiveRocket();
-                    if (rocket && services.layout) {
-                      const l = services.layout.getLayoutFromRocket(rocket);
-                      if (l) {
-                        if (l.templateId) setTemplateId(l.templateId);
-                        if (l.slots) setAssignments(l.slots);
-                        // alert("Imported configuration from active rocket."); 
-                        // Silent is better or toast? Alert is fine for now.
-                      }
-                    }
-                  }}>
-                    <Icon as={FaTools} /> Import Active
-                  </Button>
-                </HStack>
-              </Card.Header>
-              <Card.Body>
-                <VStack align="stretch" gap={4}>
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" mb={1}>ROCKET NAME</Text>
-                    <Input size="sm" value={rocketName} onChange={(e) => setRocketName(e.target.value)} borderColor="gray.600" />
+        {/* === MAIN ASSEMBLY BAY === */}
+        <GridItem h="100%" overflowY="auto" bg="gray.900" borderRadius="lg" borderWidth="1px" borderColor="gray.800" position="relative" display="flex" justifyContent="center">
+          {/* Blueprint Grid Background Pattern */}
+          <Box position="absolute" inset="0" zIndex="0"
+            backgroundImage="radial-gradient(circle, #2D3748 1px, transparent 1px)"
+            backgroundSize="30px 30px"
+            opacity="0.1"
+            pointerEvents="none"
+          />
+
+          {/* ROCKET FUSELAGE CONTAINER */}
+          <VStack py={8} w="380px" gap={0} position="relative" zIndex="1" pb="100px">
+            <Heading size="md" color="gray.500" letterSpacing="widest" fontWeight="light" mb={4}>ASSEMBLY BAY (Tier {currentVabLevel})</Heading>
+
+            {/* Render Stages Top-Down */}
+            {template.stages.map((stage, i) => {
+              const isDisabled = !!disabledStages[stage.id];
+              // First stage (Upper) cannot be disabled
+              const canDisable = i > 0;
+              const stats = stageStats[i];
+
+              if (isDisabled) {
+                return (
+                  <Box key={stage.id} w="full" position="relative" my={2}>
+                    <Box position="absolute" left="-120px" top="10px" textAlign="right" w="100px">
+                      <Text color="gray.600" fontSize="xs" fontWeight="bold">STAGE {template.stages.length - i} (OFF)</Text>
+                    </Box>
+                    <Button size="sm" variant="outline" colorPalette="gray" w="full" onClick={() => toggleStage(stage.id)}>
+                      <Icon as={FaPlus} mr={2} /> Enable {stage.name}
+                    </Button>
+                  </Box>
+                )
+              }
+
+              // GROUPING LOGIC
+              const groups: { [key: string]: RocketSlot[] } = { nose: [], body: [], engine: [] };
+
+              stage.slots.forEach(slot => {
+                const id = slot.id.toLowerCase();
+                if (id.includes("nose") || id.includes("cone") || id.includes("guidance") || id.includes("sensor") || id.includes("chute") || id.includes("scie")) {
+                  groups.nose.push(slot);
+                } else if (id.includes("engine") || id.includes("nozzle") || slot.allowedCategories.includes("engine")) {
+                  groups.engine.push(slot);
+                } else {
+                  groups.body.push(slot);
+                }
+              });
+
+              const renderSlotGroup = (groupName: string, slots: RocketSlot[]) => {
+                if (slots.length === 0) return null;
+                return (
+                  <Box w="full">
+                    {slots.length > 0 && <Text fontSize="2xs" color="gray.600" textTransform="uppercase" letterSpacing="wider" ml={2} mb={1} mt={2}>{groupName}</Text>}
+                    <VStack gap="1px" bg="whiteAlpha.100" p="2px" borderRadius="sm" borderXWidth="2px" borderColor="gray.700">
+                      {slots.map((slot) => {
+                        const assignedId = assignments[slot.id];
+                        let partInfo = null;
+                        if (assignedId) {
+                          for (const cat of slot.allowedCategories) {
+                            const info = getPartStats(assignedId, cat);
+                            if (info) { partInfo = info; break; }
+                          }
+                        }
+
+                        const isEmpty = !assignedId;
+
+                        // Calculate unlocked and total parts for the first allowed category
+                        const category = slot.allowedCategories[0];
+                        const allPartsInCat = getPartsByCategory(category);
+                        const totalCount = allPartsInCat.length;
+                        const unlockedCount = allPartsInCat.filter(p => {
+                          // Find tech for this part
+                          const tech = GameProgression.find(t => t.parts.includes(p.id));
+                          // If no tech found, assume unlocked (or locked? Basic parts usually in 'start' tech)
+                          if (!tech) return true;
+                          // Check if tech is unlocked via ResearchService -> System
+                          return services.research?.system.isUnlocked(tech.id);
+                        }).length;
+
+                        return (
+                          <Flex
+                            key={slot.id}
+                            w="full"
+                            h="48px"
+                            align="center"
+                            bg={isEmpty ? "transparent" : "gray.800"}
+                            borderWidth="1px"
+                            borderColor={isEmpty ? "gray.700" : "gray.600"}
+                            borderStyle={isEmpty ? "dashed" : "solid"}
+                            _hover={{ borderColor: "cyan.400", bg: "whiteAlpha.50" }}
+                            cursor="pointer"
+                            onClick={() => setActiveSlot(slot)}
+                            px={3}
+                            transition="all 0.1s"
+                          >
+                            {/* Icon / Empty State */}
+                            <Box w="30px" display="flex" justifyContent="center">
+                              {partInfo ? (
+                                <Icon as={FaCheckCircle} color="cyan.500" />
+                              ) : (
+                                <Icon as={FaPlus} color="gray.600" size="sm" />
+                              )}
+                            </Box>
+
+                            {/* Name & Type */}
+                            <VStack align="start" gap={1} flex={1} ml={1} py={1} overflow="hidden">
+                              {partInfo ? (
+                                <>
+                                  <Text fontWeight="bold" color="cyan.100" fontSize="sm" lineHeight="1" truncate w="full">{partInfo.name}</Text>
+                                  <HStack gap={1} wrap="wrap">
+                                    {partInfo.stats.map((s: any) => (
+                                      <Badge key={s.label} colorPalette="gray" size="xs" variant="surface" px={1} py={0} fontSize="0.6rem">
+                                        {s.icon && <Icon as={s.icon} mr={1} boxSize={2} />}
+                                        {s.label}: {s.value}
+                                      </Badge>
+                                    ))}
+                                  </HStack>
+                                </>
+                              ) : (
+                                <>
+                                  <Text color="gray.500" fontSize="sm" fontStyle="italic">{slot.name}</Text>
+                                  <HStack gap={1} align="center">
+                                    <Text fontSize="2xs" color="gray.600">{slot.allowedCategories[0].toUpperCase()}</Text>
+                                    <Text fontSize="2xs" color="cyan.600" fontWeight="bold">({unlockedCount}/{totalCount})</Text>
+                                  </HStack>
+                                </>
+                              )}
+                            </VStack>
+
+                            {/* Chevron */}
+                            <Icon as={FaChevronLeft} color="gray.700" boxSize={3} />
+                          </Flex>
+                        );
+                      })}
+                    </VStack>
+                  </Box>
+                );
+              };
+
+              return (
+                <Box key={stage.id} w="full" position="relative">
+
+                  {/* STAGE LABEL (Left) */}
+                  <Box position="absolute" left="-120px" top="10px" textAlign="right" w="100px">
+                    <Text color="gray.500" fontSize="xs" fontWeight="bold">STAGE {template.stages.length - i}</Text>
+                    <Text color="cyan.700" fontSize="xs">{stage.name}</Text>
+
+                    {canDisable && (
+                      <Button size="xs" variant="ghost" colorPalette="red" mt={1} h="20px" onClick={() => toggleStage(stage.id)}>
+                        <Icon as={FaBan} /> Disable
+                      </Button>
+                    )}
                   </Box>
 
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" mb={1}>CHASSIS TEMPLATE</Text>
-                    <Select.Root collection={templatesCollection} value={[templateId]} onValueChange={handleTemplateChange} size="sm">
-                      <Select.HiddenSelect />
-                      <Select.Control>
-                        <Select.Trigger>
-                          <Select.ValueText placeholder="Select template" />
-                        </Select.Trigger>
-                        <Select.IndicatorGroup><Select.Indicator /></Select.IndicatorGroup>
-                      </Select.Control>
-                      <Portal>
-                        <Select.Positioner>
-                          <Select.Content>
-                            {templatesCollection.items.map(t => (
-                              <Select.Item key={t.value} item={t}>{t.label}</Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select.Positioner>
-                      </Portal>
-                    </Select.Root>
-                    <Text fontSize="xs" color="gray.500" mt={1}>{template.description}</Text>
-                  </Box>
-
-                  <Box>
-                    <Text fontSize="xs" color="gray.500" mb={1}>FLIGHT SOFTWARE</Text>
-                    <Select.Root collection={scriptsCollection} value={[scriptId]} onValueChange={(d) => setScriptId(Array.isArray(d.value) ? d.value[0] : d.value)} size="sm">
-                      <Select.HiddenSelect />
-                      <Select.Control>
-                        <Select.Trigger>
-                          <Select.ValueText placeholder="No script assigned" />
-                        </Select.Trigger>
-                        <Select.IndicatorGroup><Select.Indicator /></Select.IndicatorGroup>
-                      </Select.Control>
-                      <Portal>
-                        <Select.Positioner>
-                          <Select.Content>
-                            <Select.Item item={{ label: "None", value: "" }} key="none">None</Select.Item>
-                            {scriptsCollection.items.map(s => (
-                              <Select.Item key={s.value} item={s}>{s.label}</Select.Item>
-                            ))}
-                          </Select.Content>
-                        </Select.Positioner>
-                      </Portal>
-                    </Select.Root>
-                  </Box>
-
-                  <Separator borderColor="gray.600" />
-
-                  <VStack align="stretch" gap={2}>
-                    <HStack justify="space-between">
-                      <Text color="gray.400">Total Mass</Text>
-                      {/* Display Mass Check */}
-                      <VStack align="end" gap={0}>
-                        <Text fontWeight="mono" color={summary.totalMass > maxMassKg ? "red.400" : "white"}>{summary.totalMass} kg</Text>
-                        <Text fontSize="xs" color="gray.500">Max: {maxMassKg} kg</Text>
-                      </VStack>
-                    </HStack>
-
-                  </VStack>
-
-                  <Button size="lg" colorScheme="blue" width="full" mt={4} onClick={handleBuildLaunch}
-                    disabled={summary.totalMass > maxMassKg}>
-                    Deploy to Pad
-                  </Button>
-                  {summary.totalMass > maxMassKg && <Text fontSize="xs" color="red.400" textAlign="center">Exceeds Pad Limit (Lvl {padLevel})</Text>}
-                </VStack>
-              </Card.Body>
-            </Card.Root>
-          </VStack>
-        </GridItem>
-
-        {/* MAIN: Stages & Slots */}
-        <GridItem overflowY="auto" pr={2}>
-          <VStack align="stretch" gap={3}>
-            {template.stages.map((stage, i) => (
-              <Box key={stage.id} position="relative">
-                <HStack mb={1} ml={1}>
-                  <Badge colorPalette="purple" variant="solid">STAGE {template.stages.length - i}</Badge>
-                  <Text fontWeight="bold" color="gray.300">{stage.name}</Text>
-                </HStack>
-
-                <VStack align="stretch" gap={0} bg="gray.800" borderRadius="md" overflow="hidden" borderWidth="1px" borderColor="gray.700">
-                  {stage.slots.map((slot, idx) => {
-                    const assignedId = assignments[slot.id];
-                    let partInfo = null;
-                    if (assignedId) {
-                      // Find info
-                      for (const cat of slot.allowedCategories) {
-                        const info = getPartStats(assignedId, cat);
-                        if (info) { partInfo = info; break; }
-                      }
-                    }
-
-                    return (
-                      <Flex key={slot.id}
-                        p={3}
-                        align="center"
-                        justify="space-between"
-                        borderTopWidth={idx > 0 ? "1px" : "0"}
-                        borderColor="whiteAlpha.100"
-                        _hover={{ bg: "whiteAlpha.50", cursor: "pointer" }}
-                        onClick={() => setActiveSlot(slot)}
-                      >
-                        {/* Left: Slot Name & Requirements */}
-                        <VStack align="start" gap={0} w="150px">
-                          <Text fontWeight="medium" fontSize="sm" color="gray.200">{slot.name}</Text>
-                          <Text fontSize="xs" color="gray.500">{slot.allowedCategories.join("/")}</Text>
+                  {/* STAGE STATS (Right) */}
+                  {stats && (
+                    <Box position="absolute" right="-160px" top="0" textAlign="left" w="140px">
+                      <VStack align="start" gap={2} p={2} bg="blackAlpha.600" borderRadius="md" borderWidth="1px" borderColor="gray.800">
+                        <VStack align="start" gap={0} w="full">
+                          <Text fontSize="2xs" color="gray.400" fontWeight="bold">MASS</Text>
+                          <Text fontSize="xs" color="white" fontFamily="mono">{stats.massDry.toLocaleString()} / {stats.massWet.toLocaleString()} kg</Text>
                         </VStack>
 
-                        {/* Center: Assigned Part Info */}
-                        <Box flex={1}>
-                          {partInfo ? (
-                            <HStack gap={4}>
-                              <Text fontWeight="bold" color="cyan.300">{partInfo.name}</Text>
-                              {partInfo.stats.map(s => (
-                                <Badge key={s.label} variant="subtle" colorPalette="gray" fontSize="xs">
-                                  {s.icon && <Icon as={s.icon} mr={1} boxSize={3} />}
-                                  {s.label}: {s.value}
-                                </Badge>
-                              ))}
-                            </HStack>
-                          ) : (
-                            <Text color="gray.600" fontStyle="italic">Empty Slot</Text>
-                          )}
-                        </Box>
-
-                        {/* Right: Actions/Price */}
-                        <HStack>
-                          <Icon as={FaInfoCircle} color="gray.600" />
-                        </HStack>
-                      </Flex>
-                    );
-                  })}
-                </VStack>
-              </Box>
-            ))}
-          </VStack>
-        </GridItem>
-
-      </Grid>
-
-      {/* PART PICKER MODAL */}
-      <Dialog.Root open={!!activeSlot} onOpenChange={() => setActiveSlot(null)} size="lg">
-        <Dialog.Backdrop />
-        <Dialog.Positioner>
-          <Dialog.Content bg="gray.900" borderColor="gray.700">
-            <Dialog.Header borderBottomWidth="1px" borderColor="gray.700" pb={2}>
-              <Dialog.Title>Select Part for {activeSlot?.name}</Dialog.Title>
-            </Dialog.Header>
-            <Dialog.Body pt={4} maxH="60vh" overflowY="auto">
-              <VStack align="stretch" gap={2}>
-                <Button variant="ghost" colorPalette="red" justifyContent="start" onClick={() => handlePartSelect("")}>
-                  <Icon as={FaTrash} mr={2} /> Unequip Current Part
-                </Button>
-
-                {(() => {
-                  const cat = activeSlot?.allowedCategories?.[0] || 'misc';
-                  return getPartsByCategory(cat as any).map(part => {
-                    const info = getPartStats(part.id, cat as any);
-                    return (
-                      <Button key={part.id}
-                        variant={assignments[activeSlot!.id] === part.id ? "solid" : "outline"}
-                        colorScheme={assignments[activeSlot!.id] === part.id ? "cyan" : "gray"}
-                        borderColor="gray.700"
-                        justifyContent="space-between"
-                        height="auto"
-                        py={3}
-                        disabled={false}
-                        onClick={() => handlePartSelect(part.id)}
-                      >
-                        <VStack align="start" gap={1}>
-                          <Text fontWeight="bold">{part.name}</Text>
-                          <HStack gap={2} wrap="wrap">
-                            {info?.stats.map(s => (
-                              <Text key={s.label} fontSize="xs" color="gray.400">{s.label}: {s.value}</Text>
-                            ))}
+                        <VStack align="start" gap={0} w="full">
+                          <Text fontSize="2xs" color="gray.400" fontWeight="bold">DELTA-V (Vac/Atm)</Text>
+                          <HStack gap={1}>
+                            <Text fontSize="xs" color="cyan.300" fontFamily="mono">{stats.dV_Vac.toFixed(0)}</Text>
+                            <Text fontSize="xs" color="gray.600">/</Text>
+                            <Text fontSize="xs" color="blue.300" fontFamily="mono">{stats.dV_SL.toFixed(0)} m/s</Text>
                           </HStack>
                         </VStack>
-                        <VStack align="end" gap={0}>
+
+                        <VStack align="start" gap={0} w="full">
+                          <Text fontSize="2xs" color="gray.400" fontWeight="bold">TWR (Vac/Atm)</Text>
+                          <HStack gap={1}>
+                            <Text fontSize="xs" color={stats.twrVac > 1 ? "green.300" : "yellow.500"} fontFamily="mono">{stats.twrVac.toFixed(2)}</Text>
+                            <Text fontSize="xs" color="gray.600">/</Text>
+                            <Text fontSize="xs" color={stats.twrSL > 1 ? "green.300" : "yellow.500"} fontFamily="mono">{stats.twrSL.toFixed(2)}</Text>
+                          </HStack>
                         </VStack>
-                      </Button>
+                      </VStack>
+                    </Box>
+                  )}
+
+                  <VStack gap={0} w="full">
+                    {renderSlotGroup("AVIONICS & PAYLOAD", groups.nose)}
+                    {renderSlotGroup("FUSELAGE", groups.body)}
+                    {renderSlotGroup("PROPULSION", groups.engine)}
+                  </VStack>
+
+                  {/* DECOUPLER VISUAL (between stages) */}
+                  {i < template.stages.length - 1 && (
+                    <Flex justify="center" h="12px" align="center" w="full" my="2px">
+                      <Box w="full" h="2px" bg="yellow.600" />
+                      <Icon as={FaLock} color="yellow.500" position="absolute" bg="gray.900" px={1} boxSize={3} />
+                    </Flex>
+                  )}
+
+                </Box>
+              );
+            })}
+
+            {/* UPGRADE BUTTON */}
+            {services.upgrades && services.upgrades.getUpgradeCost("vab", currentVabLevel) !== null && (
+              <Box mt={8} w="full">
+                <Button
+                  size="md"
+                  variant="surface"
+                  colorPalette="cyan"
+                  w="full"
+                  borderStyle="dashed"
+                  onClick={handleUpgradeVab}
+                  disabled={researchPoints < (services.upgrades.getUpgradeCost("vab", currentVabLevel) || 99999)}
+                >
+                  <Icon as={FaPlus} mr={2} />
+                  Unlock Next Chassis Layout ({services.upgrades.getUpgradeCost("vab", currentVabLevel)} RP)
+                </Button>
+              </Box>
+            )}
+
+
+            {/* ENGINE NOZZLE VISUAL (Bottom) */}
+            <Box w="60%" h="20px" bgGradient="to-b" gradientFrom="gray.700" gradientTo="transparent" clipPath="polygon(0 0, 100% 0, 80% 100%, 20% 100%)" mt="2px" opacity={0.5} />
+
+          </VStack>
+        </GridItem>
+      </Grid>
+
+      {/* === PART PICKER DIALOG === */}
+      <Dialog.Root open={!!activeSlot} onOpenChange={() => setActiveSlot(null)} size="lg" scrollBehavior="inside">
+        <Dialog.Backdrop backdropFilter="blur(5px)" bg="blackAlpha.600" />
+        <Dialog.Positioner>
+          <Dialog.Content bg="gray.900" borderColor="cyan.700" borderWidth="1px" boxShadow="0 0 20px rgba(0,0,0,0.5)">
+            <Dialog.Header borderBottomWidth="1px" borderColor="gray.800" bg="gray.900">
+              <HStack>
+                <Icon as={FaTools} color="cyan.500" />
+                <Dialog.Title color="white">Installation: {activeSlot?.name}</Dialog.Title>
+              </HStack>
+            </Dialog.Header>
+            <Dialog.Body p={4} bg="gray.900">
+              <VStack align="stretch" gap={3}>
+                {activeSlot && assignments[activeSlot.id] && (
+                  <Button variant="outline" borderColor="red.800" color="red.400" justifyContent="start" onClick={() => handlePartSelect("")} _hover={{ bg: "red.900" }}>
+                    <Icon as={FaTrash} mr={2} /> Unequip Module
+                  </Button>
+                )}
+
+                <Separator borderColor="gray.800" />
+
+                {activeSlot && (() => {
+                  const cat = activeSlot.allowedCategories[0] || 'misc';
+                  const unlockedTechs = services.research?.system.unlockedTechs || [];
+                  const genericParts = getPartsByCategory(cat as any).filter(p => p.category === cat);
+
+                  return genericParts.map(part => {
+                    const info = getPartStats(part.id, cat as any);
+                    const isUnlocked = part.isUnlocked([], unlockedTechs);
+                    const req = !isUnlocked ? getUnlockReq(part.id) : null;
+                    const isSelected = assignments[activeSlot!.id] === part.id;
+
+                    return (
+                      <Card.Root
+                        key={part.id}
+                        variant="outline"
+                        bg={isSelected ? "cyan.900" : "gray.800"}
+                        borderColor={isSelected ? "cyan.500" : (isUnlocked ? "gray.700" : "red.900")}
+                        opacity={isUnlocked ? 1 : 0.7}
+                        cursor={isUnlocked ? "pointer" : "not-allowed"}
+                        onClick={() => isUnlocked && handlePartSelect(part.id)}
+                        transition="all 0.1s"
+                        _hover={isUnlocked ? { transform: "translateX(4px)", borderColor: "cyan.500" } : {}}
+                      >
+                        <Card.Body p={3}>
+                          <Grid templateColumns="1fr auto" alignItems="start">
+                            <VStack align="start" gap={1}>
+                              <HStack>
+                                <Text fontWeight="bold" color={isUnlocked ? "gray.100" : "gray.500"}>{part.name}</Text>
+                                {!isUnlocked && <Badge colorPalette="red" variant="solid"><Icon as={FaLock} mr={1} /> {req}</Badge>}
+                                {isSelected && <Badge colorPalette="cyan" variant="solid"><Icon as={FaCheckCircle} mr={1} /> INSTALLED</Badge>}
+                              </HStack>
+                              {info && (
+                                <HStack gap={2} wrap="wrap">
+                                  {info.stats.map(s => (
+                                    <Badge key={s.label} variant="subtle" colorPalette="gray" size="xs">
+                                      {s.icon && <Icon as={s.icon} mr={1} />} {s.label}: {s.value}
+                                    </Badge>
+                                  ))}
+                                </HStack>
+                              )}
+                            </VStack>
+                          </Grid>
+                        </Card.Body>
+                      </Card.Root>
                     );
                   });
                 })()}
+
               </VStack>
             </Dialog.Body>
             <Dialog.CloseTrigger />
           </Dialog.Content>
         </Dialog.Positioner>
       </Dialog.Root>
+
     </Flex>
   );
 }

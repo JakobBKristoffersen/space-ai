@@ -47,6 +47,7 @@ export class LayoutService {
       slots: {
         "slot.nose.cpu": "cpu.basic",
         "slot.nose.antenna": "antenna.small",
+        "slot.nose.rw": "rw.small",
         "slot.body.tank": "fueltank.small",
         "slot.body.battery": "battery.small",
         "slot.tail.engine": "engine.small"
@@ -80,6 +81,8 @@ export class LayoutService {
         parachute: [...r.parachutes],
         heatShield: [...r.heatShields],
         science: [...r.science],
+        science_large: [], // Re-engineering larger science is complex as they are just in 'science', simple workaround for type
+        structure: [...r.structures],
       };
 
       const slots: Record<string, string> = {};
@@ -164,7 +167,8 @@ export class LayoutService {
     const r = new Rocket();
 
     // 2. Iterate Template Slots and fill
-    for (const stage of template.stages) {
+    for (let i = 0; i < template.stages.length; i++) {
+      const stage = template.stages[i];
       for (const slot of stage.slots) {
         const assignedId = (layout.slots || {})[slot.id];
         if (!assignedId) continue; // Empty slot
@@ -173,7 +177,7 @@ export class LayoutService {
         for (const cat of slot.allowedCategories) {
           const partDef = this.findMake(assignedId, this.getCategoryParts(cat));
           if (partDef) {
-            this.installPart(r, partDef, cat);
+            this.installPart(r, partDef, cat, i);
             break; // Found matching part in this category
           }
         }
@@ -192,21 +196,35 @@ export class LayoutService {
       if (layout.cpu) this.installPart(r, this.findMake(layout.cpu, DefaultCatalog.cpus), "cpu");
     }
 
-    // Default fallbacks
-    if (r.reactionWheels.length === 0) r.reactionWheels.push(new SmallReactionWheels());
+    // Default fallbacks - REMOVED to ensure VAB vs Runtime parity
+    // if (r.reactionWheels.length === 0) r.reactionWheels.push(new SmallReactionWheels());
     if (r.sensors.length === 0) r.sensors.push(new BasicNavigationSensor());
     if (!r.cpu) r.cpu = new BasicProcessingUnit();
 
     // Hotfix: Ensure Basic Rocket always has an antenna (fixes legacy layouts missing it)
-    if (templateId === "template.basic" && r.antennas.length === 0) {
-      r.antennas.push(new SmallAntenna());
-    }
+    // if (templateId === "template.basic" && r.antennas.length === 0) {
+    //   r.antennas.push(new SmallAntenna());
+    // }
+
+    // Initialize active stage to the bottom-most stage (highest index)
+    r.activeStageIndex = Math.max(0, template.stages.length - 1);
+
+    const totalMass = r.totalMass();
+    console.log(`[LayoutService] Built Rocket. Template=${templateId}. Total Mass=${totalMass.toFixed(1)}kg. Parts:`);
+    r.engines.forEach(p => console.log(` - Engine: ${p.name} (${p.massKg || p.dryMassKg}kg)`));
+    r.fuelTanks.forEach(p => console.log(` - Tank: ${p.name} (${p.dryMassKg}dry + ${p.fuelKg}fuel)`));
+    r.batteries.forEach(p => console.log(` - Battery: ${p.name} (${p.massKg}kg)`));
+    r.reactionWheels.forEach(p => console.log(` - RW: ${p.name} (${p.massKg}kg)`));
+    r.antennas.forEach(p => console.log(` - Antenna: ${p.name} (${p.massKg}kg)`));
+    r.sensors.forEach(p => console.log(` - Sensor: ${p.name} (${p.massKg}kg)`));
+    if (r.cpu) console.log(` - CPU: ${r.cpu.name} (${r.cpu.massKg}kg)`);
 
     return r;
   }
 
-  private installPart(r: Rocket, part: any, category: PartCategory) {
+  private installPart(r: Rocket, part: any, category: PartCategory, stageIndex?: number) {
     if (!part) return;
+    if (stageIndex !== undefined) part.stageIndex = stageIndex;
     switch (category) {
       case "engine": r.engines.push(part); break;
       case "fuel": r.fuelTanks.push(part); break;

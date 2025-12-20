@@ -14,8 +14,6 @@ export class BasicNavigationSensor implements SensorPart {
     "batteryJoules",
     "massKg",
     "temperature",
-    "velocity",
-    "position",
     "orientationRad",
     // Basic stuff
   ];
@@ -36,5 +34,15 @@ export class AdvancedNavigationSensor implements SensorPart {
     "airDensity",
     "rwOmegaRadPerS",
     "rwDesiredOmegaRadPerS", // useful for debugging autopilot
+  ];
+}
+
+export class LidarSensor implements SensorPart {
+  readonly id = "sensor.lidar";
+  readonly name = "Laser Altimeter (LIDAR)";
+  readonly massKg = 10;
+  readonly exposes = [
+    "radarAltitude",
+    "verticalSpeed" // Precision doppler
   ];
 }

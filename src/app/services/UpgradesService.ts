@@ -1,9 +1,8 @@
 import { SessionKeys } from "./SessionKeys";
 
-export type FacilityType = "launchPad" | "vab" | "trackingStation" | "missionControl" | "researchCenter" | "software" | "comms";
+export type FacilityType = "vab" | "trackingStation" | "missionControl" | "researchCenter" | "software" | "comms";
 
 export interface FacilityLevels {
-  launchPad: number;      // Determines Max Mass
   vab: number;            // Determines Max Template Tier
   trackingStation: number;// Determines Max Active Rockets
   missionControl: number;
@@ -27,7 +26,6 @@ export class UpgradesService {
 
   private defaultLevels(): FacilityLevels {
     return {
-      launchPad: 1,
       vab: 1,
       trackingStation: 1,
       missionControl: 1, // Unused for now
@@ -42,31 +40,31 @@ export class UpgradesService {
   }
 
   getLevel(type: FacilityType): number {
-    return this.load()[type];
+    return this.load()[type] || 1;
   }
 
   upgrade(type: FacilityType): void {
     const s = this.load();
-    s[type] = (s[type] || 1) + 1;
+    const current = s[type] || 1;
+    // Safety clamp
+    const maxLevels: Record<string, number> = { vab: 3, trackingStation: 3, software: 4, comms: 4 };
+    if (current >= (maxLevels[type] || 99)) return;
+
+    s[type] = current + 1;
     this.save(s);
   }
 
   // --- Game Logic / Stats ---
 
   getUpgradeCost(type: FacilityType, currentLevel: number): number | null {
-    const maxLevels: Record<string, number> = { launchPad: 4, vab: 3, trackingStation: 3, software: 4, comms: 4 };
+    const maxLevels: Record<string, number> = { vab: 3, trackingStation: 3, software: 4, comms: 4 };
     if (currentLevel >= (maxLevels[type] || 1)) return null;
 
     // RP Costs
     switch (type) {
       case "vab":
-        if (currentLevel === 1) return 100; // to lvl 2
-        if (currentLevel === 2) return 300; // to lvl 3
-        break;
-      case "launchPad":
-        if (currentLevel === 1) return 50;
-        if (currentLevel === 2) return 150;
-        if (currentLevel === 3) return 300;
+        if (currentLevel === 1) return 200; // to lvl 2
+        if (currentLevel === 2) return 500; // to lvl 3
         break;
       case "trackingStation":
         if (currentLevel === 1) return 100;
@@ -88,8 +86,7 @@ export class UpgradesService {
 
   getUpgradeDescription(type: FacilityType, nextLevel: number): string {
     switch (type) {
-      case "launchPad": return `Increases Max Launch Mass to ${(this.getMaxLaunchMass(nextLevel) / 1000).toFixed(0)}t`;
-      case "vab": return `Unlocks Tier ${nextLevel} Rocket Templates`;
+      case "vab": return `Unlocks Tier ${nextLevel} Chassis Layout (More Stages)`;
       case "trackingStation": return nextLevel === 2 ? "Support up to 3 active missions" : "Support Unlimited missions";
       case "software": return `Increases Script Storage to ${this.getMaxScripts(nextLevel) === 999 ? "Unlimited" : this.getMaxScripts(nextLevel)}`;
       case "comms": return `Increases Data Storage to ${this.getMaxKVKeys(nextLevel) === 999 ? "Unlimited" : this.getMaxKVKeys(nextLevel)} Keys`;
@@ -97,17 +94,6 @@ export class UpgradesService {
     return "";
   }
 
-  // Capability lookups
-  getMaxLaunchMass(level: number): number {
-    // kg
-    switch (level) {
-      case 1: return 20_000;
-      case 2: return 100_000;
-      case 3: return 500_000;
-      case 4: return 2_000_000;
-      default: return 20_000 + (level * 500_000);
-    }
-  }
 
   getMaxActiveRockets(level: number): number {
     switch (level) {

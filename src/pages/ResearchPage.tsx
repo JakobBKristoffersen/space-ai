@@ -9,8 +9,8 @@ import {
 } from "@chakra-ui/react";
 
 import { useAppCore } from "../app/AppContext";
-import { ResearchTree } from "../components/ResearchTree";
-import { TechTreeDefinition } from "../game/Unlocks";
+import { ResearchGraph } from "../components/tech/ResearchGraph";
+import { GameProgression } from "../game/GameProgression";
 
 interface Props {
     onNavigate: (view: string) => void;
@@ -23,8 +23,6 @@ export default function ResearchPage({ onNavigate }: Props) {
     const [unlocked, setUnlocked] = useState<string[]>([]);
 
     useEffect(() => {
-        // Debug logging
-        // console.log("ResearchPage mounted. Research service:", !!research);
         if (!research) return;
         const sync = () => {
             setPoints(research.system.points);
@@ -38,13 +36,13 @@ export default function ResearchPage({ onNavigate }: Props) {
     const handleUnlock = (techId: string, cost: number) => {
         if (!research) return;
 
-        const techNode = TechTreeDefinition.find((t) => t.id === techId);
+        const techNode = GameProgression.find((t) => t.id === techId);
 
         if (techNode) {
             // Adapt to legacy TechDefinition type which requires unlocksParts to be string[] (not undefined)
             const techDef = {
                 ...techNode,
-                unlocksParts: techNode.unlocksParts || []
+                unlocksParts: techNode.parts || []
             };
 
             if (research.system.unlock(techDef)) {
@@ -70,7 +68,7 @@ export default function ResearchPage({ onNavigate }: Props) {
             </SpaceCenterHeader>
 
             <Box flex={1} w="100%" h="100%" overflow="hidden" position="relative">
-                <ResearchTree
+                <ResearchGraph
                     unlockedTechs={unlocked}
                     researchPoints={points}
                     onUnlock={handleUnlock}

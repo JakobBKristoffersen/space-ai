@@ -21,7 +21,7 @@ import { Scatter, ScatterChart, XAxis, YAxis, Tooltip, CartesianGrid, Responsive
 // Types matching ScienceManager
 interface MilestoneStatus {
   id: string;
-  type: "temp" | "atmo" | "surface";
+  type: "temp" | "atmo" | "surface" | "biosample";
   zone: string;
   level: string;
   reqCount: number;
@@ -34,8 +34,8 @@ interface MilestoneStatus {
 }
 
 export default function MissionsPage({ onNavigate }: { onNavigate: (view: string) => void }) {
-  const [data, setData] = useState<{ temp: Map<number, number>, atm: Map<number, number>, surface: Map<number, string> }>({
-    temp: new Map(), atm: new Map(), surface: new Map()
+  const [data, setData] = useState<{ temp: Map<number, number>, atm: Map<number, number>, surface: Map<number, string>, interactions: Record<string, number> }>({
+    temp: new Map(), atm: new Map(), surface: new Map(), interactions: {}
   });
   const [milestones, setMilestones] = useState<MilestoneStatus[]>([]);
   const [hideClaimed, setHideClaimed] = useState(false);
@@ -56,6 +56,7 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
             temp: new Map(d.temperature),
             atm: new Map(d.atmosphere),
             surface: new Map(d.surface),
+            interactions: d.interactions || {}
           });
         }
         const ms = svc.getMilestones?.();
@@ -133,6 +134,16 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
             hideClaimed={hideClaimed}
           >
             <SurfaceChart data={data.surface} />
+          </ScienceSection>
+
+          <ScienceSection
+            title="Biosample Recovery"
+            description="Physical samples recovered from the surface."
+            milestones={milestones.filter(m => m.type === "biosample")}
+            onClaim={handleClaim}
+            hideClaimed={hideClaimed}
+          >
+            <BiosampleDisplay count={data.interactions["biosamples"] || 0} />
           </ScienceSection>
 
         </VStack>
@@ -458,6 +469,25 @@ function NoData() {
   return (
     <Center h="100%">
       <Text color="gray.600" fontStyle="italic">No Data Collected Yet</Text>
+    </Center>
+  );
+}
+
+function BiosampleDisplay({ count }: { count: number }) {
+  return (
+    <Center w="100%" h="100%">
+      <VStack gap={4}>
+        <Icon as={FaFlask} boxSize={12} color="green.400" />
+        <VStack gap={0}>
+          <Text fontSize="4xl" fontWeight="bold" color="white" fontFamily="mono">
+            {count}
+          </Text>
+          <Text color="gray.400" fontSize="sm">SAMPLES RECOVERED</Text>
+        </VStack>
+        <Text color="gray.500" fontSize="xs" maxW="200px" textAlign="center">
+          Recover biosample containers from successful missions to earn Research Points.
+        </Text>
+      </VStack>
     </Center>
   );
 }

@@ -3,7 +3,7 @@ import { Rocket } from "../../simulation/Rocket";
 export class TelemetryService {
   currentKeys(rocket: Rocket): string[] {
     const allowed = new Set<string>();
-    for (const s of rocket.sensors) for (const k of s.exposes) allowed.add(k);
+    for (const s of rocket.sensors) if (s.exposes) for (const k of s.exposes) allowed.add(k);
     for (const e of rocket.engines) if ((e as any).exposes) for (const k of (e as any).exposes) allowed.add(k);
     for (const t of rocket.fuelTanks) if ((t as any).exposes) for (const k of (t as any).exposes) allowed.add(k);
     for (const b of rocket.batteries) if ((b as any).exposes) for (const k of (b as any).exposes) allowed.add(k);
@@ -17,6 +17,6 @@ export class TelemetryService {
     try {
       const detail = { keys } as any;
       window.dispatchEvent(new CustomEvent("telemetry-keys", { detail }));
-    } catch {}
+    } catch { }
   }
 }

@@ -342,6 +342,9 @@ export class SimulationManager {
 
     // Persist new state immediately so we don't restore old flight on reload
     this.saveState();
+
+    // Prime the initial environment state (gravity, density) for correct UI display before first tick
+    (this.env as any).primeRocketState?.();
   }
 
   /** Build from stored layout and recreate. */
@@ -374,13 +377,21 @@ export class SimulationManager {
     try { this.launchedByIndex[ai] = false; } catch { }
 
     if (merged) {
+      console.log("[SimManager] Resetting with MERGED layout from pending changes.");
       this.recreateFromLayout(merged);
     } else {
       // If no layout, do we create default?
       // LayoutSvc checks if (!layout) return this.buildDefaultRocket();
       // So recreateFromLayout(null) -> default rocket.
       // We probably want this for "Reset".
+      console.log("[SimManager] Resetting with EFFECTIVE layout (Stored/Current).");
       this.recreateFromLayout(effective as any);
+    }
+
+    // Verify Fuel
+    if (this.rocket) {
+      const totalFuel = this.rocket.fuelTanks.reduce((s, t) => s + t.fuelKg, 0);
+      console.log(`[SimManager] Reset Complete. Rocket Fuel: ${totalFuel.toFixed(1)}kg`);
     }
 
     // Persist the newly applied layout for this specific rocket index
@@ -403,20 +414,19 @@ export class SimulationManager {
 
     let installedAny = false;
     for (const a of assigns) {
-      const rx = (a as any).rocketIndex ?? 0;
-      if (rx !== ai) continue; // only install scripts for the active rocket
-      if (a.slot < 0 || a.slot >= (this.rocket.cpu.scriptSlots || 1)) continue;
+      if (a.rocketIndex !== ai) continue; // only install scripts for the active rocket
+      // a.slot no longer exists; assumed 1 script per rocket
       const s = this.opts.scriptLib.getById(a.scriptId || undefined as any);
       if (s) {
         try {
           const code = (s as any).compiledCode || s.code;
-          this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, a.slot, s.name);
+          this.runner.installScript(code, this.opts.defaultScriptRunnerOpts, s.name);
           installedAny = true;
         } catch (e: any) {
-          this.runner.appendLog(a.slot, `System: Failed to load script "${s.name}". ${e.message}`);
+          this.runner.appendLog(`System: Failed to load script "${s.name}". ${e.message}`);
         }
       }
-      try { this.runner.setSlotEnabled?.(a.slot, !!a.enabled); } catch { }
+      try { this.runner.setEnabled?.(!!a.enabled); } catch { }
     }
 
     // Fallback: If no explicit assignment found, use layout script ID
@@ -425,9 +435,9 @@ export class SimulationManager {
       if (s) {
         try {
           const code = (s as any).compiledCode || s.code;
-          this.runner.installScriptToSlot(code, this.opts.defaultScriptRunnerOpts, 0, s.name);
+          this.runner.installScript(code, this.opts.defaultScriptRunnerOpts, s.name);
         } catch (e: any) {
-          this.runner.appendLog(0, `System: Failed to load fallback script. ${e.message}`);
+          this.runner.appendLog(`System: Failed to load fallback script. ${e.message}`);
         }
       }
     }
@@ -438,6 +448,25 @@ export class SimulationManager {
     if (!this.rocket) return;
     const keys = this.opts.telemetry.currentKeys(this.rocket);
     this.opts.telemetry.publish(keys);
+  }
+
+  /**
+   * Recovers the active rocket, processing any recover-able science data (biosamples),
+   * then resets the simulation (effectively "landing" and recovering).
+   */
+  recoverActiveRocket(): void {
+    if (!this.rocket) return;
+
+    // Check for recover-only science data
+    console.log("Attempting recovery for:", this.rocket.name);
+    for (const part of this.rocket.science) {
+      if (part.id === 'science.bio_sample' && part.hasData) {
+        this.opts.layoutSvc.getScienceManager().recoverBiosample();
+      }
+    }
+
+    // Reset simulation (end mission)
+    this.resetSimulationOnly();
   }
 
   // --- Persistence ---

@@ -54,6 +54,8 @@ export class RocketAPI {
   readonly nav: RocketNavigationAPI;
   readonly comms: RocketCommsAPI;
   readonly science: RocketScienceAPI;
+  readonly payload: RocketPayloadAPI;
+  readonly staging: RocketStagingAPI;
 
   constructor(
     public readonly rocket: Rocket,
@@ -68,6 +70,8 @@ export class RocketAPI {
     this.nav = new RocketNavigationAPI(this);
     this.comms = new RocketCommsAPI(this);
     this.science = new RocketScienceAPI(this);
+    this.payload = new RocketPayloadAPI(this);
+    this.staging = new RocketStagingAPI(this);
   }
 
   /** Called by the ScriptRunner/Sandbox at the start of a script tick. */
@@ -247,7 +251,7 @@ class RocketTelemetryAPI {
 
   get velocity(): { x: number; y: number } {
     this.api.charge(1);
-    this._checkTier(CPUTier.BASIC, 'velocity');
+    this._checkTier(CPUTier.TELEMETRY, 'velocity');
     this._checkSensor('velocity', 'velocity');
     const s = this.api.rocket.snapshot();
     return { x: s.velocity.x, y: s.velocity.y };
@@ -255,7 +259,7 @@ class RocketTelemetryAPI {
 
   get position(): { x: number; y: number } {
     this.api.charge(1);
-    this._checkTier(CPUTier.BASIC, 'position');
+    this._checkTier(CPUTier.TELEMETRY, 'position');
     this._checkSensor('position', 'position');
     const s = this.api.rocket.snapshot();
     return { x: s.position.x, y: s.position.y };
@@ -268,17 +272,41 @@ class RocketTelemetryAPI {
 
   get apoapsis(): number {
     this.api.charge(5);
-    this._checkTier(CPUTier.ORBITAL, 'apoapsis');
-    // Using checkSensor for 'apAltitude' matching existing logic
-    this._checkSensor('apAltitude', 'apoapsis');
+    this._checkTier(CPUTier.ORBITAL, 'apoapsis'); // Requires Math
+    // Requires physical data to calculate
+    this._checkSensor('position', 'apoapsis');
+    this._checkSensor('velocity', 'apoapsis');
     return this.api.rocket.snapshot().apAltitude ?? Number.NaN;
   }
 
   get periapsis(): number {
     this.api.charge(5);
     this._checkTier(CPUTier.ORBITAL, 'periapsis');
-    this._checkSensor('peAltitude', 'periapsis');
+    this._checkSensor('position', 'periapsis');
+    this._checkSensor('velocity', 'periapsis');
     return this.api.rocket.snapshot().peAltitude ?? Number.NaN;
+  }
+
+  get radarAltitude(): number {
+    this.api.charge(2);
+    this._checkSensor('radarAltitude', 'radarAltitude');
+    const alt = this.api.rocket.snapshot().altitude;
+    return alt > 5000 ? Infinity : alt;
+  }
+
+  get verticalSpeed(): number {
+    this.api.charge(2);
+    this._checkSensor('verticalSpeed', 'verticalSpeed');
+
+    // Calculate vertical speed (radial velocity)
+    const s = this.api.rocket.snapshot();
+    const pos = s.position;
+    const vel = s.velocity;
+    const r = Math.sqrt(pos.x * pos.x + pos.y * pos.y);
+    if (r === 0) return 0;
+
+    // v_radial = (v . p) / |p|
+    return (vel.x * pos.x + vel.y * pos.y) / r;
   }
 }
 
@@ -318,6 +346,9 @@ class RocketNavigationAPI {
    * Uses a simple P-controller to command a turn rate.
    */
   alignTo(targetRad: number): void {
+    // Requires Advanced Guidance (Tier 1) for auto-alignment
+    this._checkTier(CPUTier.TELEMETRY, 'alignTo');
+
     const current = this.heading; // charges cost
     const diff = this.angleDiff(targetRad, current); // charges cost
     // Simple P-controller
@@ -637,4 +668,69 @@ class RocketScienceAPI {
       this._buffers.surf.clear();
     }
   };
+
+  readonly biosample = {
+    collect: (): void => {
+      const part = this.api.rocket.science.find(p => p.id === "science.bio_sample");
+      if (!part) {
+        throw new Error("Science.biosample: Biosample Container not installed");
+      }
+      if (part.hasData) {
+        throw new Error("Science.biosample: Container already full");
+      }
+
+      this.api.charge(10); // Mechanical actuation
+      const alt = this.api.telemetry.altitude;
+
+      // Req: > 500m
+      if (alt < 500) {
+        this.api.log("[Science] Failed to collect sample: Altitude too low (< 500m)");
+        return;
+      }
+
+      part.hasData = true;
+      part.data = { altitude: alt }; // Metadata
+      this.api.log(`[Science] Biosample collected at ${Math.round(alt)}m! Return to earth to claim value.`);
+    }
+  };
+}
+
+class RocketPayloadAPI {
+  constructor(private api: RocketAPI) { }
+
+  get count(): number {
+    this.api.charge(1);
+    return this.api.rocket.payloads.length;
+  }
+
+  deploy(): string | null {
+    if (this.api.rocket.payloads.length === 0) throw new Error("Payload.deploy: No payloads installed");
+    this.api.charge(50);
+    const p = this.api.rocket.payloads[0];
+    const id = this.api.rocket.deployPayload(p.id);
+    if (id) {
+      this.api.log(`[Payload] Deployed ${p.name}`);
+    } else {
+      this.api.log(`[Payload] Failed to deploy ${p.name}`);
+    }
+    return id;
+  }
+}
+
+class RocketStagingAPI {
+  constructor(private api: RocketAPI) { }
+
+  get stage(): number {
+    this.api.charge(1);
+    return this.api.rocket.activeStageIndex;
+  }
+
+  separate(): void {
+    if (this.api.rocket.activeStageIndex <= 0) {
+      throw new Error("Staging.separate: No more stages to separate");
+    }
+    this.api.charge(20);
+    this.api.cmdQueue.enqueue({ type: "separateStage" });
+    this.api.log("[Staging] Separation sequence initiated");
+  }
 }

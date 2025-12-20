@@ -1,18 +1,17 @@
+import { isApiFeatureUnlocked } from "../../game/GameProgression";
+import { ApiFeatures } from "../../game/GameIds";
+
 export function generateRocketApiDts(unlockedTechs: string[] = []): string {
-    const has = (id: string) => unlockedTechs.includes(id);
+    // Dynamic permissions from Central Config
+    const showTemp = true; // Still a placeholder as per design/implicit
+    const showAtmos = isApiFeatureUnlocked(ApiFeatures.SCIENCE_ATMOSPHERE, unlockedTechs);
+    const showSurface = isApiFeatureUnlocked(ApiFeatures.SCIENCE_SURFACE, unlockedTechs);
+    const showOrbital = isApiFeatureUnlocked(ApiFeatures.TELEMETRY_ORBITAL, unlockedTechs);
 
-    // Mapping from game_design.md
-    // science.temperature -> tech.batteries_med
-    // science.atmosphere -> tech.guidance_adv
-    // science.surface    -> tech.satellite
-    // orbital telem      -> tech.orbital_comp
-    // nav.alignTo        -> tech.guidance_adv
+    // Check for ANY nav unlock (prograde/retrograde OR alignTo)
+    const showNavPrograde = isApiFeatureUnlocked(ApiFeatures.NAV_PROGRADE, unlockedTechs);
+    const showNavAlign = isApiFeatureUnlocked(ApiFeatures.NAV_ALIGN_TO, unlockedTechs);
 
-    const showTemp = has("tech.batteries_med"); // Placeholder as designed
-    const showAtmos = has("tech.guidance_adv");
-    const showSurface = has("tech.satellite");
-    const showOrbital = has("tech.orbital_comp");
-    const showNavHelper = has("tech.guidance_adv");
 
     // Core API always present
     let dts = `
@@ -76,6 +75,12 @@ declare interface RocketAPI {
         readonly apoapsis: number;
         /** Predicted Periapsis (m). Requires Orbital Computer. */
         readonly periapsis: number;
+        /** True Anomaly (radians). Requires Orbital Computer. */
+        readonly trueAnomaly: number;
+        /** Eccentricity. Requires Orbital Computer. */
+        readonly eccentricity: number;
+        /** Inclination (radians). Requires Orbital Computer. */
+        readonly inclination: number;
 `;
     }
 
@@ -88,16 +93,29 @@ declare interface RocketAPI {
     readonly nav: {
         /** Current heading (radians). */
         readonly heading: number;
-        /** Angle of prograde vector (radians). */
-        readonly prograde: number;
-        /** Angle of retrograde vector (radians). */
-        readonly retrograde: number;
         /** Calculate diff between angles [-PI, PI]. */
         angleDiff(a: number, b: number): number;
 `;
 
-    if (showNavHelper) {
-        dts += `        /** Steer rocket to target angle (radians). Requires Reaction Wheels/Fins. */
+    if (showOrbital) {
+        dts += `
+        /** Calculate prograde angle at specific orbital node. */
+        getOrbitalPrograde(location: "apoapsis" | "periapsis"): number;
+`;
+    }
+
+    if (showNavPrograde) {
+        dts += `
+        /** Angle of prograde vector (radians). */
+        readonly prograde: number;
+        /** Angle of retrograde vector (radians). */
+        readonly retrograde: number;
+`;
+    }
+
+    if (showNavAlign) {
+        dts += `
+        /** Steer rocket to target angle (radians). Requires Reaction Wheels/Fins. */
         alignTo(targetRad: number): void;
 `;
     }

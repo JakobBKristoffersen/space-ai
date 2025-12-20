@@ -56,6 +56,8 @@ export interface RocketSnapshot {
   fuelKg: number;
   /** instantaneous fuel consumption rate in kg/s based on last tick */
   fuelConsumptionKgPerS: number;
+  /** Average ISP (Specific Impulse) of active engines (s) */
+  avgEngineIsp?: number;
   maxTurnRateRadPerS?: number;
   angularVelocityRadPerS?: number;
   /** Total stored battery energy across all batteries (J). */
@@ -136,7 +138,8 @@ export type RocketCommand =
   | { type: "turnRight"; value: number }
   | { type: "deployParachute" }
   | { type: "deploySolar" }
-  | { type: "retractSolar" };
+  | { type: "retractSolar" }
+  | { type: "separateStage" };
 
 /**
  * Cached orbital state for "Rails" physics.
@@ -180,6 +183,7 @@ export interface EnginePart {
   readonly fuelBurnRateKgPerS: number;
   readonly vacuumBonusAtVacuum?: number;
   readonly exposes?: string[];
+  stageIndex?: number;
   currentThrust(rho: number, rho0: number): number;
 }
 
@@ -190,6 +194,7 @@ export interface FuelTankPart {
   fuelKg: number;
   readonly capacityKg?: number;
   readonly exposes?: string[];
+  stageIndex?: number;
   drawFuel(amount: number): number;
 }
 
@@ -200,6 +205,7 @@ export interface BatteryPart {
   energyJoules: number;
   readonly capacityJoules: number;
   readonly exposes?: string[];
+  stageIndex?: number;
   drawEnergy(amountJ: number): number;
 }
 
@@ -213,6 +219,7 @@ export interface ProcessingUnitPart { // Alias for CPUPart
   readonly maxScriptChars: number;
   readonly processingIntervalSeconds?: number;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 export type CPUPart = ProcessingUnitPart;
 
@@ -221,6 +228,7 @@ export interface SensorPart {
   readonly name: string;
   readonly massKg: number;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 
 export interface ReactionWheelPart { // Alias ReactionWheelsPart
@@ -229,6 +237,7 @@ export interface ReactionWheelPart { // Alias ReactionWheelsPart
   readonly maxOmegaRadPerS: number;
   readonly energyPerRadPerS: number;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 export type ReactionWheelsPart = ReactionWheelPart;
 
@@ -240,6 +249,7 @@ export interface AntennaPart {
   readonly bandwidth?: number;
   readonly power?: number;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 
 export interface SolarPanelPart {
@@ -250,6 +260,7 @@ export interface SolarPanelPart {
   deployed: boolean;
   readonly retractable: boolean;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 
 export interface ParachutePart {
@@ -259,6 +270,7 @@ export interface ParachutePart {
   deployed: boolean;
   readonly deployedDrag: number;
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 
 export interface PayloadPart {
@@ -274,13 +286,23 @@ export interface PayloadPart {
     };
   };
   readonly exposes?: string[];
+  stageIndex?: number;
 }
 
 // Simple parts
-export interface NoseConePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; readonly heatTolerance?: number; /* Base Drag Modifier: e.g. -0.2 to reduce drag */ readonly dragModifier?: number; }
-export interface FinPart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; }
-export interface HeatShieldPart { readonly id: string; readonly name: string; readonly massKg: number; readonly maxTemp: number; readonly heatTolerance?: number; /* Re-entry protection factor? */ }
-export interface SciencePart { readonly id: string; readonly name: string; readonly massKg: number; readonly scienceValue?: number; }
+export interface NoseConePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; readonly heatTolerance?: number; /* Base Drag Modifier: e.g. -0.2 to reduce drag */ readonly dragModifier?: number; stageIndex?: number; }
+export interface FinPart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; stageIndex?: number; }
+export interface HeatShieldPart { readonly id: string; readonly name: string; readonly massKg: number; readonly maxTemp: number; readonly heatTolerance?: number; /* Re-entry protection factor? */ stageIndex?: number; }
+export interface StructurePart { readonly id: string; readonly name: string; readonly massKg: number; readonly dragCoefficient?: number; readonly exposedDragCoefficient?: number; readonly consumesPowerW?: number; readonly exposes?: string[]; stageIndex?: number; }
+export interface SciencePart {
+  readonly id: string;
+  readonly name: string;
+  readonly massKg: number;
+  readonly scienceValue?: number;
+  hasData?: boolean;
+  data?: any;
+  stageIndex?: number;
+}
 
 
 // --- ROCKET CLASS ---
@@ -298,6 +320,7 @@ export class Rocket {
   };
 
   currentTerrain: string | undefined;
+  activeStageIndex = 0;
 
   // Config/Physics
   dragCoefficient = 0.5;
@@ -318,6 +341,7 @@ export class Rocket {
   fins: FinPart[] = [];
   heatShields: HeatShieldPart[] = [];
   science: SciencePart[] = [];
+  structures: StructurePart[] = [];
 
   // Runtime
   spawnQueue: Rocket[] = [];
@@ -425,7 +449,38 @@ export class Rocket {
           break;
         case "retractSolar":
           for (const s of this.solarPanels) if (s.retractable) s.deployed = false;
+          for (const s of this.solarPanels) if (s.retractable) s.deployed = false;
           break;
+        case "separateStage": {
+          if (this.activeStageIndex <= 0) break;
+          const idx = this.activeStageIndex;
+
+          // Helper to clean arrays
+          const clean = <T extends { stageIndex?: number }>(arr: T[]) => {
+            for (let i = arr.length - 1; i >= 0; i--) {
+              if (arr[i].stageIndex === idx) arr.splice(i, 1);
+            }
+          }
+
+          clean(this.engines);
+          clean(this.fuelTanks);
+          clean(this.batteries);
+          if (this.cpu?.stageIndex === idx) this.cpu = null;
+          clean(this.sensors);
+          clean(this.reactionWheels);
+          clean(this.antennas);
+          clean(this.parachutes);
+          clean(this.solarPanels);
+          clean(this.payloads);
+          clean(this.noseCones);
+          clean(this.fins);
+          clean(this.heatShields);
+          clean(this.science);
+          clean(this.structures);
+
+          this.activeStageIndex--;
+          break;
+        }
       }
     }
   }
@@ -454,6 +509,10 @@ export class Rocket {
     // Burn fuel proportional to engine power and dt.
     let requiredFuel = 0;
     for (const e of this.engines) {
+      // Staging lock: only active stage engines can fire
+      if (e.stageIndex !== undefined && e.stageIndex !== this.activeStageIndex) {
+        e.power = 0;
+      }
       if (e.power > 0) requiredFuel += e.fuelBurnRateKgPerS * dt * e.power;
     }
     // Draw fuel from tanks in order.
@@ -515,7 +574,8 @@ export class Rocket {
     const chutes = this.parachutes.reduce((m, p) => m + p.massKg, 0);
     const shields = this.heatShields.reduce((m, p) => m + p.massKg, 0);
     const sci = this.science.reduce((m, p) => m + p.massKg, 0);
-    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas + payloads + cones + fins + chutes + shields + sci;
+    const struc = this.structures.reduce((m, p) => m + p.massKg, 0);
+    return enginesMass + tanksDry + fuel + bat + cpu + sensors + antennas + payloads + cones + fins + chutes + shields + sci + struc;
   }
 
   currentThrust(rho: number, rho0: number): number {
@@ -590,7 +650,7 @@ export class Rocket {
     const energy = this.availableEnergyJ();
     const capacity = this.batteries.reduce((e, b) => e + b.capacityJoules, 0);
     const pct = capacity > 0 ? Math.max(0, Math.min(100, (energy / capacity) * 100)) : 0;
-    const cpuSlotCount = (this as any)._cpuSlotCount ?? this.cpu?.scriptSlots;
+    const cpuSlotCount = this.cpu ? 1 : 0;
     const cpuScriptsRunning = (this as any)._cpuScriptsRunning ?? 0;
     const cpuCostUsedLastTick = (this as any)._cpuCostUsedLastTick ?? 0;
     const cpuEnergyUsedLastTick = (this as any)._cpuEnergyUsedLastTick ?? 0;
@@ -699,13 +759,91 @@ export class Rocket {
       ])),
       // New fields
       avgEngineThrustPct: throttleAvg,
+      avgEngineIsp: (() => {
+        // Calculate real-time ISP if running, or theoretical if idle
+        let totalThrust = 0;
+        let totalFlow = 0;
+        let theoreticalThrust = 0;
+        let theoreticalFlow = 0;
+
+        for (const e of this.engines) {
+          // Skip staged engines that are gone? (they are removed from array usually)
+          // But check stage index compatibility just in case
+          if (e.stageIndex !== undefined && e.stageIndex !== this.activeStageIndex) continue;
+
+          // Real values
+          const th = e.currentThrust(this._airDensityForSnapshot ?? 0, 1.225);
+          // Note: currentThrust depends on power. If power is 0, thrust is 0.
+          totalThrust += th;
+          totalFlow += e.fuelBurnRateKgPerS * e.power;
+
+          // Theoretical values (at current altitude/density, assuming full power)
+          // Theoretical values (at current altitude/density, assuming full power)
+          const currentPower = e.power;
+          e.power = 1;
+          const maxTh = e.currentThrust(this._airDensityForSnapshot ?? 0, 1.225);
+          e.power = currentPower;
+          // ACTUALLY: 'e.power' mutation is dangerous if multiple snapshots happen or loop is running.
+          // However, calculating theoretical max is cleaner:
+          // We know maxThrustN. We know vacuumBonus.
+          // Let's just use part spec logic:
+          const rho = Math.max(0, this._airDensityForSnapshot ?? 0);
+          const rho0 = 1.225;
+          const rel = Math.max(0, Math.min(1, rho / rho0));
+          const bonus = Math.max(0, e.vacuumBonusAtVacuum ?? 0);
+          const scale = 1 + bonus * (1 - rel);
+          const tMax = e.maxThrustN * scale;
+
+          theoreticalThrust += tMax;
+          theoreticalFlow += e.fuelBurnRateKgPerS;
+        }
+
+        // Use actual if firing, else theoretical
+        if (totalFlow > 0.0001) {
+          return (totalThrust / (totalFlow * 9.81));
+        } else {
+          const val = (theoreticalThrust / (theoreticalFlow * 9.81));
+          const totalMass = this.totalMass();
+          const fuelMass = this.fuelTanks.reduce((s, t) => s + t.fuelKg, 0);
+          console.log(`[Snapshot] Thrust=${theoreticalThrust.toFixed(1)}, Flow=${theoreticalFlow.toFixed(3)}, ISP=${val.toFixed(1)}, Mass=${totalMass.toFixed(1)}, Fuel=${fuelMass.toFixed(1)}`);
+          return val;
+        }
+      })(),
       parachuteDeployed,
       hasParachutes: this.parachutes.length > 0,
       solarDeployed: this.solarPanels.some(s => s.deployed),
       hasSolarPanels: this.solarPanels.length > 0,
       totalDragCoefficient: cd,
       currentTerrain: this.currentTerrain,
-      science: this.science.map(s => ({ id: s.id, name: s.name, hasData: false })), // TODO: link to data buffer
+      science: this.science.map(s => ({ id: s.id, name: s.name, hasData: !!s.hasData })),
     };
+  }
+
+  /**
+   * Remove a part from the rocket.
+   * Useful for staging or destruction.
+   */
+  removePart(part: any): void {
+    if (!part) return;
+    const remove = <T>(arr: T[], p: any) => {
+      const idx = arr.indexOf(p);
+      if (idx !== -1) arr.splice(idx, 1);
+    };
+
+    remove(this.engines, part);
+    remove(this.fuelTanks, part);
+    remove(this.batteries, part);
+    if (this.cpu === part) this.cpu = null;
+    remove(this.sensors, part);
+    remove(this.reactionWheels, part);
+    remove(this.antennas, part);
+    remove(this.parachutes, part);
+    remove(this.solarPanels, part);
+    remove(this.payloads, part);
+    remove(this.noseCones, part);
+    remove(this.fins, part);
+    remove(this.heatShields, part);
+    remove(this.science, part);
+    remove(this.structures, part);
   }
 }
