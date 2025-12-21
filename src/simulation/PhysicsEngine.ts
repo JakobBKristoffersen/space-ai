@@ -46,6 +46,28 @@ export class PhysicsEngine {
         try { (rocket as any).setInAtmosphereForSnapshot?.(!inVacuum); } catch { }
         try { (rocket as any).setSoIForSnapshot?.(primary.id); } catch { }
 
+        // Check for specific flags (destroyed) to skip physics
+        // Check for specific flags (destroyed) to skip physics
+        if (rocket.destroyed) {
+            // Still run internal logic (comms, battery, etc)
+            rocket.tickInternal(dt);
+
+            // Drift with local gravity source to avoid clipping if the body moves (orbits)
+            rocket.state.position.x += primary.velocity.x * dt;
+            rocket.state.position.y += primary.velocity.y * dt;
+
+            // Ensure snapshot is up to date with environment (for UI, comms range)
+            rocket.setAltitudeForSnapshot(altitude);
+            rocket.setAirDensityForSnapshot(density);
+            rocket.setAtmosphereCutoffForSnapshot(atmCutoff);
+
+            // Also update velocity for API correctness (approximate)
+            rocket.state.velocity.x = primary.velocity.x;
+            rocket.state.velocity.y = primary.velocity.y;
+
+            return;
+        }
+
         // --- RAILS CHECK ---
         const engines = rocket.engines || [];
         const isThrottleZero = engines.length === 0 || engines.every((e: any) => (e.power ?? 0) <= 0.001);
@@ -303,6 +325,9 @@ export class PhysicsEngine {
                     rPos.x = primary.position.x + nx * primary.radiusMeters;
                     rPos.y = primary.position.y + ny * primary.radiusMeters;
                     rVel.x = 0; rVel.y = 0;
+
+                    // Mark as landed
+                    rocket.landed = true;
                 }
             }
             // Report Forces
@@ -321,25 +346,6 @@ export class PhysicsEngine {
     }
 
     static tickRotation(dt: number, rocket: Rocket, airDensity: number) {
-        // ... (Implementation unchanged, but we can verify later)
-        // Keeping existing logic for now, just replacing it if we want to use PhysicsMath?
-        // Let's assume the previous logic is fine for now, we just targeted updateRocket.
-        // But wait, the Replace instruction says "Refactor updateRocket...". 
-        // I need to include the rest of the file or ensure the replace block covers it all.
-        // Since the "StartLine" is 1 and "EndLine" is 451 (full file), I must provide the FULL FILE content in ReplacementContent. 
-        // I will paste the full file content including the tickRotation and calculateOrbitalElements proxy.
-
-        // Optimization: I'll use the shorter tickRotation logic implementation here to match the provided view, ensuring no regressions.
-        // Actually I will keep tickRotation inside as per the view result, but I can call PhysicsMath helpers if applicable.
-        // PhysicsMath only has 3 methods.
-
-        // I'll proceed with writing the full file content to ensure consistency.
-        // RE-READING: PhysicsMath has `getOrbitVelocityAtTrueAnomaly` which is used in `PhysicsEngine`? 
-        // NO, `PhysicsEngine` had a `calculatedOrbitalElements` and `getOrbitVelocityAtTrueAnomaly`. 
-        // I should replace `calculateOrbitalElements` and `getOrbitVelocityAtTrueAnomaly` in `PhysicsEngine` to just call `PhysicsMath` or remove them if they are static helpers used externally.
-        // `RocketAPI` likely calls `PhysicsEngine.calculateOrbitalElements`. I should check that.
-        // Ideally `PhysicsEngine` should re-export or just proxy these static methods to avoid breaking API consumers.
-
         const desired = rocket.desiredAngularVelocityRadPerS || 0;
 
         // 1. Calculate Max Omega & Energy Cost from Reaction Wheels

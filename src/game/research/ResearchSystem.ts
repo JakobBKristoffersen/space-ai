@@ -23,9 +23,13 @@ export class ResearchSystem {
     };
 
     constructor(initialState?: Partial<ResearchState>) {
-        if (initialState) {
-            this.state = { ...this.state, ...initialState };
-        }
+        // Ensure "tech.start" is always unlocked by merging with default
+        this.state = {
+            points: initialState?.points ?? 0,
+            unlockedTechs: initialState?.unlockedTechs ?
+                [...new Set([...initialState.unlockedTechs, "tech.start"])] :
+                ["tech.start"]
+        };
     }
 
     get points() {

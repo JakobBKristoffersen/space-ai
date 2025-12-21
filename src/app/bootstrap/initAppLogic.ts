@@ -84,7 +84,9 @@ export function initAppLogic(): void {
     try {
       const s = scriptLib.getById(layout.scriptId);
       if (s) {
-        manager.getRunner().installScript(s.compiledCode || s.code, { timeLimitMs: 6 }, s.name);
+        if (manager.getRocket()?.cpu) {
+          manager.getRunner().installScript(s.compiledCode || s.code, { timeLimitMs: 6 }, s.name);
+        }
 
         // Also persist assignment so UI sees it
         const assigns = scriptLib.loadAssignments().filter((a: any) => a.rocketIndex !== 0);

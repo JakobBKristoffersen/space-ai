@@ -1,4 +1,5 @@
 import { PartCategory } from "./PartStore";
+import { SlotIds } from "./GameIds";
 
 export interface RocketSlot {
     id: string;
@@ -36,22 +37,22 @@ export const ROCKET_TEMPLATES: (RocketTemplate & { tier: number })[] = [
                 name: "Upper Stage",
                 slots: [
                     // Nose
-                    { id: "slot.nose.cone", name: "Nose Cone", allowedCategories: ["cone"] },
-                    { id: "slot.nose.cpu", name: "Guidance System", allowedCategories: ["cpu"] },
-                    { id: "slot.nose.sci", name: "Science Exp 1", allowedCategories: ["science"] },
-                    { id: "slot.nose.sci2", name: "Science Exp 2", allowedCategories: ["science"] },
-                    { id: "slot.nose.antenna", name: "Antenna", allowedCategories: ["antenna"] },
-                    { id: "slot.nose.rw", name: "Reaction Wheels", allowedCategories: ["reactionWheels"] },
-                    { id: "slot.nose.sensor", name: "Sensor", allowedCategories: ["sensor"] },
-                    { id: "slot.nose.chute", name: "Parachute", allowedCategories: ["parachute"] },
+                    { id: SlotIds.BASIC.NOSE.CONE, name: "Nose Cone", allowedCategories: ["cone"] },
+                    { id: SlotIds.BASIC.NOSE.CPU, name: "Guidance System", allowedCategories: ["cpu"] },
+                    { id: SlotIds.BASIC.NOSE.SCI_1, name: "Science Exp 1", allowedCategories: ["science"] },
+                    { id: SlotIds.BASIC.NOSE.SCI_2, name: "Science Exp 2", allowedCategories: ["science"] },
+                    { id: SlotIds.BASIC.NOSE.ANTENNA, name: "Antenna", allowedCategories: ["antenna"] },
+                    { id: SlotIds.BASIC.NOSE.RW, name: "Reaction Wheels", allowedCategories: ["reactionWheels"] },
+                    { id: SlotIds.BASIC.NOSE.SENSOR, name: "Sensor", allowedCategories: ["sensor"] },
+                    { id: SlotIds.BASIC.NOSE.CHUTE, name: "Parachute", allowedCategories: ["parachute"] },
                     // Body
-                    { id: "slot.body.tank", name: "Fuel Tank", allowedCategories: ["fuel"] },
-                    { id: "slot.body.battery", name: "Battery", allowedCategories: ["battery"] },
-                    { id: "slot.body.msci", name: "Medium Science", allowedCategories: ["science_large"] },
-                    { id: "slot.body.fin", name: "Fins", allowedCategories: ["fin"] },
-                    { id: "slot.body.solar", name: "Solar Panel", allowedCategories: ["solar"] },
+                    { id: SlotIds.BASIC.BODY.TANK, name: "Fuel Tank", allowedCategories: ["fuel"] },
+                    { id: SlotIds.BASIC.BODY.BATTERY, name: "Battery", allowedCategories: ["battery"] },
+                    { id: SlotIds.BASIC.BODY.MED_SCI, name: "Medium Science", allowedCategories: ["science_large"] },
+                    { id: SlotIds.BASIC.BODY.FIN, name: "Fins", allowedCategories: ["fin"] },
+                    { id: SlotIds.BASIC.BODY.SOLAR, name: "Solar Panel", allowedCategories: ["solar"] },
                     // Tail
-                    { id: "slot.tail.engine", name: "Engine", allowedCategories: ["engine"] },
+                    { id: SlotIds.BASIC.TAIL.ENGINE, name: "Engine", allowedCategories: ["engine"] },
                 ]
             }
         ]

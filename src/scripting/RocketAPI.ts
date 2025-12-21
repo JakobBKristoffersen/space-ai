@@ -11,6 +11,7 @@ import { DefaultCostModel, CostModel } from "./CostModel";
 import { Rocket, RocketCommand, RocketCommandQueue, RocketSnapshot, ParachutePart, SolarPanelPart } from "../simulation/Rocket";
 import { PhysicsEngine } from "../simulation/PhysicsEngine";
 import { CPUTier, getCPUTier } from "../simulation/CPUTier";
+import { PartIds, TelemetryIds } from "../game/GameIds";
 
 export interface RocketAPICreationOptions {
   costModel?: CostModel;
@@ -245,14 +246,14 @@ class RocketTelemetryAPI {
     this.api.charge(1);
     this._checkTier(CPUTier.BASIC, 'altitude'); // User requested basic access
     // Actually, 'altitude' is a sensor key.
-    this._checkSensor('altitude', 'altitude');
+    this._checkSensor(TelemetryIds.ALTITUDE, 'altitude');
     return this.api.rocket.snapshot().altitude;
   }
 
   get velocity(): { x: number; y: number } {
     this.api.charge(1);
     this._checkTier(CPUTier.TELEMETRY, 'velocity');
-    this._checkSensor('velocity', 'velocity');
+    this._checkSensor(TelemetryIds.VELOCITY, 'velocity');
     const s = this.api.rocket.snapshot();
     return { x: s.velocity.x, y: s.velocity.y };
   }
@@ -260,7 +261,7 @@ class RocketTelemetryAPI {
   get position(): { x: number; y: number } {
     this.api.charge(1);
     this._checkTier(CPUTier.TELEMETRY, 'position');
-    this._checkSensor('position', 'position');
+    this._checkSensor(TelemetryIds.POSITION, 'position');
     const s = this.api.rocket.snapshot();
     return { x: s.position.x, y: s.position.y };
   }
@@ -274,29 +275,29 @@ class RocketTelemetryAPI {
     this.api.charge(5);
     this._checkTier(CPUTier.ORBITAL, 'apoapsis'); // Requires Math
     // Requires physical data to calculate
-    this._checkSensor('position', 'apoapsis');
-    this._checkSensor('velocity', 'apoapsis');
+    this._checkSensor(TelemetryIds.POSITION, 'apoapsis');
+    this._checkSensor(TelemetryIds.VELOCITY, 'apoapsis');
     return this.api.rocket.snapshot().apAltitude ?? Number.NaN;
   }
 
   get periapsis(): number {
     this.api.charge(5);
     this._checkTier(CPUTier.ORBITAL, 'periapsis');
-    this._checkSensor('position', 'periapsis');
-    this._checkSensor('velocity', 'periapsis');
+    this._checkSensor(TelemetryIds.POSITION, 'periapsis');
+    this._checkSensor(TelemetryIds.VELOCITY, 'periapsis');
     return this.api.rocket.snapshot().peAltitude ?? Number.NaN;
   }
 
   get radarAltitude(): number {
     this.api.charge(2);
-    this._checkSensor('radarAltitude', 'radarAltitude');
+    this._checkSensor(TelemetryIds.RADAR_ALT, 'radarAltitude');
     const alt = this.api.rocket.snapshot().altitude;
     return alt > 5000 ? Infinity : alt;
   }
 
   get verticalSpeed(): number {
     this.api.charge(2);
-    this._checkSensor('verticalSpeed', 'verticalSpeed');
+    this._checkSensor(TelemetryIds.VERTICAL_SPEED, 'verticalSpeed');
 
     // Calculate vertical speed (radial velocity)
     const s = this.api.rocket.snapshot();
@@ -328,7 +329,7 @@ class RocketNavigationAPI {
   get heading(): number {
     this.api.charge(1);
     this._checkTier(CPUTier.BASIC, 'heading');
-    this._checkSensor('orientationRad', 'heading');
+    this._checkSensor(TelemetryIds.ORIENTATION, 'heading');
     return this.api.rocket.snapshot().orientationRad;
   }
 
@@ -492,7 +493,7 @@ class RocketScienceAPI {
 
   readonly temperature = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === "science.temp") === -1) {
+      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_TEMP) === -1) {
         throw new Error("Science.temperature: Thermometer not installed");
       }
       this.api.charge(1);
@@ -556,7 +557,7 @@ class RocketScienceAPI {
 
   readonly atmosphere = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === "science.atmos") === -1) {
+      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_ATMOS) === -1) {
         throw new Error("Science.atmosphere: Barometer not installed");
       }
       this.api.charge(1);
@@ -615,7 +616,7 @@ class RocketScienceAPI {
 
   readonly surface = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === "science.surface") === -1) {
+      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_SURFACE) === -1) {
         throw new Error("Science.surface: Surface Scanner not installed");
       }
       this.api.charge(2);
@@ -671,7 +672,7 @@ class RocketScienceAPI {
 
   readonly biosample = {
     collect: (): void => {
-      const part = this.api.rocket.science.find(p => p.id === "science.bio_sample");
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_BIO);
       if (!part) {
         throw new Error("Science.biosample: Biosample Container not installed");
       }

@@ -1,14 +1,15 @@
 import { Rocket } from "../../simulation/Rocket";
-import { SmallEngine } from "../../simulation/parts/Engine";
-import { SmallFuelTank } from "../../simulation/parts/FuelTank";
-import { SmallBattery } from "../../simulation/parts/Battery";
-import { BasicProcessingUnit } from "../../simulation/parts/ProcessingUnit";
-import { BasicNavigationSensor } from "../../simulation/parts/Sensor";
-import { SmallReactionWheels } from "../../simulation/parts/ReactionWheels";
-import { SmallAntenna } from "../../simulation/parts/Antenna";
+import { SmallEngine } from "../../simulation/parts/Engines";
+import { SmallFuelTank } from "../../simulation/parts/FuelTanks";
+import { SmallBattery } from "../../simulation/parts/Power";
+import { BasicCPU } from "../../simulation/parts/Avionics";
+import { BasicNavigationSensor } from "../../simulation/parts/Avionics";
+import { SmallReactionWheels } from "../../simulation/parts/Avionics";
+import { SmallAntenna } from "../../simulation/parts/Avionics";
 import { DefaultCatalog, PartCategory } from "../../game/PartStore";
 import { SessionKeys } from "./SessionKeys";
 import { ROCKET_TEMPLATES, RocketTemplate } from "../../game/RocketTemplates";
+import { DefaultRocketLayout } from "../../config/DefaultRocket";
 
 export type StoredLayout = {
   templateId?: string;
@@ -42,17 +43,7 @@ export class LayoutService {
     // Default to Basic template with basic parts
     const r = new Rocket();
     // Use the new template logic to build default if possible, or manual fallback
-    const layout: StoredLayout = {
-      templateId: "template.basic",
-      slots: {
-        "slot.nose.cpu": "cpu.basic",
-        "slot.nose.antenna": "antenna.small",
-        "slot.nose.rw": "rw.small",
-        "slot.body.tank": "fueltank.small",
-        "slot.body.battery": "battery.small",
-        "slot.tail.engine": "engine.small"
-      }
-    };
+    const layout: StoredLayout = { ...DefaultRocketLayout };
     this.saveLayout(layout);
     return this.buildRocketFromLayout(layout);
   }
@@ -198,8 +189,8 @@ export class LayoutService {
 
     // Default fallbacks - REMOVED to ensure VAB vs Runtime parity
     // if (r.reactionWheels.length === 0) r.reactionWheels.push(new SmallReactionWheels());
-    if (r.sensors.length === 0) r.sensors.push(new BasicNavigationSensor());
-    if (!r.cpu) r.cpu = new BasicProcessingUnit();
+    // if (r.sensors.length === 0) r.sensors.push(new BasicNavigationSensor());
+    // if (!r.cpu) r.cpu = new BasicCPU();
 
     // Hotfix: Ensure Basic Rocket always has an antenna (fixes legacy layouts missing it)
     // if (templateId === "template.basic" && r.antennas.length === 0) {

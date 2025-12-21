@@ -3,6 +3,7 @@ import { SimpleGrid, Card, Heading, Text, VStack, Icon, Flex, Box, Dialog, Butto
 import { FaRocket, FaSatelliteDish, FaFlag, FaFlask, FaCode, FaBuilding, FaArrowUp, FaCoins, FaGlobe } from "react-icons/fa";
 import { useAppCore } from "../app/AppContext";
 import { FacilityType } from "../app/services/UpgradesService";
+import { TechIds } from "../game/GameIds";
 
 interface Props {
     onNavigate: (view: string) => void;
@@ -16,6 +17,53 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
 
     const upgrades = services.upgrades;
 
+
+
+
+
+
+
+
+    // Check if any milestones claimed (RP earned)
+
+    // Actually user said "earning first RP", usually via milestone.
+    // Let's check via ScienceManager if available in services?
+    // SpaceCenterPage uses `useAppCore` -> `services`.
+    // Services interface has `getScienceManager`?
+    // Looking at AppContext, `services` is `AppServices`.
+    // Let's use `(window as any).__services?.getMilestones?.()` or similar if simpler, 
+    // or rely on `services.research.system.points > 0`.
+    // But points might be spent.
+    // Use `services.research.system.lifetimePoints` if it exists?
+    // Or just `(window as any).__services.getScienceManager().getCompletedIds().length > 0`.
+    // Or simply check if `services.research.system.points > 0` (if initial is 0).
+    // Let's stick to `hasEarnedRp` via science check if possible without messy casts.
+
+    // Quickest robust way:
+    const [hasUnlocks, setHasUnlocks] = useState({ scripts: false, rnd: false, comms: false });
+
+    useEffect(() => {
+        const update = () => {
+            const svc = (window as any).__services;
+            if (!svc) return;
+            // ResearchService wraps ResearchSystem as .system
+            const system = svc.research?.system;
+            const sm = svc.getScienceManager ? svc.getScienceManager() : null;
+
+            // Use optional chaining carefully
+            const scripts = system?.isUnlocked ? system.isUnlocked(TechIds.BASIC_COMPUTING) : false;
+            // R&D visible if ANY milestone claimed (first RP source usually)
+            const rnd = (sm?.getCompletedIds?.().length ?? 0) > 0;
+
+            const comms = system?.isUnlocked ? system.isUnlocked(TechIds.COMMS_BASIC) : false;
+
+            setHasUnlocks({ scripts, rnd, comms });
+        }
+        update();
+        const interval = setInterval(update, 2000);
+        return () => clearInterval(interval);
+    }, []);
+
     if (!upgrades) {
         return (
             <Flex h="full" align="center" justify="center" bg="gray.900" color="white">
@@ -23,8 +71,6 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
             </Flex>
         );
     }
-
-
 
     const getFacilityInfo = (type: FacilityType) => {
         const level = upgrades.getLevel(type);
@@ -39,12 +85,13 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
 
     const cards = [
         { id: "world_scene", title: "Launch Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
-        { id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500", type: "comms" },
+        ...(hasUnlocks.comms ? [{ id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500", type: "comms" }] : []),
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400" },
         { id: "science", title: "Science Data", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
-        { id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" },
-        { id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400", type: "software" },
+        ...(hasUnlocks.rnd ? [{ id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" }] : []),
+        ...(hasUnlocks.scripts ? [{ id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400", type: "software" }] : []),
     ];
+
 
     return (
         <Flex direction="column" h="full" p={8} align="center" justify="center" bg="gray.900">

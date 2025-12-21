@@ -228,7 +228,7 @@ export function MinimapPanel({ envSnap, width = "100%", height = "100%" }: Minim
     }, [envSnap]); // re-run when snapshot updates
 
     return (
-        <Center bg="black" p={2} width={width} height={height}>
+        <Center bg="black" p={0} width={width} height={height}>
             <canvas ref={miniRef} style={{ width: '100%', height: '100%' }} />
         </Center>
     );

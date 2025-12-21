@@ -10,6 +10,8 @@ import {
   Card,
   SimpleGrid,
   Input,
+  Dialog,
+  VStack,
 } from "@chakra-ui/react";
 import { useAppCore } from "../app/AppContext";
 import { useColorModeValue } from "@/components/ui/color-mode";
@@ -23,6 +25,10 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
   const { manager, services } = useAppCore();
   const scriptLib = services.scripts as any;
   const activeRocket = manager?.getRocket();
+
+  // Tutorial
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_scripts_seen"));
+
 
   // Ref for editor
   const monacoEditorRef = useRef<MonacoScriptEditorRef>(null);
@@ -191,6 +197,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
         icon={FaCode}
         description="Develop and manage flight software."
         onNavigate={onNavigate}
+        onInfoClick={() => setShowTutorial(true)}
         currentView="scripts"
       />
 
@@ -241,6 +248,42 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
           </Card.Body>
         </Card.Root>
       </SimpleGrid>
+
+      {/* TUTORIAL DIALOG */}
+      <Dialog.Root open={showTutorial} onOpenChange={(e) => setShowTutorial(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content bg="gray.900" borderColor="green.500" borderWidth="1px">
+            <Dialog.Header>
+              <HStack>
+                <FaCode color="#48BB78" />
+                <Dialog.Title>Welcome to Software Engineering</Dialog.Title>
+              </HStack>
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="start" gap={3}>
+                <Text>
+                  This is where you write the core logic for your rockets. Use <Text as="span" color="green.400" fontFamily="mono">TypeScript</Text> to program guidance, navigation, and control systems.
+                </Text>
+                <Text>
+                  Start by creating a new script using a <b>Template</b>, then assign it to your rocket in the VAB or on the Launchpad.
+                </Text>
+                <Text color="gray.400" fontSize="sm">
+                  Tip: Use the <code>api</code> object to control engines and read sensors.
+                </Text>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button onClick={() => {
+                setShowTutorial(false);
+                localStorage.setItem("tutorial_scripts_seen", "true");
+              }} colorPalette="green">Start Coding</Button>
+            </Dialog.Footer>
+            <Dialog.CloseTrigger />
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
+
     </Flex >
   );
 }

@@ -16,14 +16,12 @@ import dagre from 'dagre';
 import { GameProgression } from '../../game/GameProgression';
 import TechNode, { TechNodeData } from './TechNode';
 
-// --- Layout Helper ---
-const dagreGraph = new dagre.graphlib.Graph();
-dagreGraph.setDefaultEdgeLabel(() => ({}));
-
 const nodeWidth = 320;
 const nodeHeight = 250; // Increased to fit full item lists
 
 const getLayoutedElements = (nodes: Node[], edges: Edge[]) => {
+    const dagreGraph = new dagre.graphlib.Graph();
+    dagreGraph.setDefaultEdgeLabel(() => ({}));
     dagreGraph.setGraph({ rankdir: 'LR' }); // Left to Right layout
 
     nodes.forEach((node) => {
@@ -68,6 +66,10 @@ export function ResearchGraph({ unlockedTechs, researchPoints, onUnlock }: { unl
         const edges: Edge[] = [];
 
         GameProgression.forEach(def => {
+            if (!def.id) {
+                console.warn("Skipping invalid tech node (no ID):", def);
+                return;
+            }
             const isUnlocked = unlockedTechs.includes(def.id);
             const parentIds = def.parentIds || [];
             // Node is unlockable if it's not unlocked AND all parents are unlocked

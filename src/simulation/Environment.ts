@@ -280,7 +280,7 @@ export class Environment {
     }
 
     // Update Rocket Physics (Active)
-    if (!this.destroyed && this.rocket) {
+    if (this.rocket) {
       if (activeRocketLaunched) {
         PhysicsEngine.updateRocket(
           dt,
@@ -288,7 +288,10 @@ export class Environment {
           this.bodies,
           this.timeSeconds,
           this.system.primaryId,
-          () => { this.destroyed = true; }
+          () => {
+            this.destroyed = true;
+            if (this.rocket) this.rocket.destroyed = true;
+          }
         );
       } else {
         // Force clamp to launch position (top of primary) to prevent any micro-drift

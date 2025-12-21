@@ -8,6 +8,7 @@
 export const PartIds = {
     // Engine
     ENGINE_SMALL: "engine.small",
+    ENGINE_SMALL_V2: "engine.small_v2",
     ENGINE_PRECISION: "engine.precision",
     ENGINE_VACUUM: "engine.vacuum",
     ENGINE_ION: "engine.ion",
@@ -58,11 +59,14 @@ export const PartIds = {
 
 export const TechIds = {
     START: "tech.start",
+    BASIC_NAV: "tech.basic_nav",
     BASIC_ROCKETRY: "tech.basic_rocketry",
     ELECTRICS: "tech.electrics",
+    BASIC_COMPUTING: "tech.basic_computing",
     SCIENCE_BASIC: "tech.science_basic",
     GUIDANCE_ADV: "tech.guidance_adv",
     COMMS_BASIC: "tech.comms_basic",
+    COMMS_ADV: "tech.comms_adv",
     AERODYNAMICS: "tech.aerodynamics",
     LANDING_SYSTEMS: "tech.landing_systems",
     STAGING: "tech.staging",
@@ -89,4 +93,66 @@ export const ApiFeatures = {
     SCIENCE_ATMOSPHERE: "science.atmosphere",
     SCIENCE_SURFACE: "science.surface",
     COMMS_DEEP_SPACE: "comms.deep_space",
+} as const;
+
+export const TelemetryIds = {
+    // Flight Dynamics
+    ALTITUDE: "altitude",
+    VELOCITY: "velocity", // {x, y}
+    POSITION: "position", // {x, y}
+    VERTICAL_SPEED: "verticalSpeed",
+    RADAR_ALT: "radarAltitude",
+    ORIENTATION: "orientationRad", // Radians
+    FORCES: "forces", // {x, y}
+
+    // Orbital
+    APOAPSIS: "apAltitude",
+    PERIAPSIS: "peAltitude",
+    SOI_BODY: "soiBodyId",
+
+    // Physics / Environment
+    MASS: "massKg",
+    AIR_DENSITY: "airDensity",
+    TEMPERATURE: "temperature",
+
+    // Resources
+    FUEL: "fuelKg",
+    BATTERY: "batteryJoules",
+    BATTERY_CAPACITY: "batteryCapacityJoules",
+    BATTERY_PERCENT: "batteryPercent",
+    SOLAR_INPUT: "solarInputWatts",
+
+    // Systems
+    RW_OMEGA: "rwOmegaRadPerS",
+    RW_MAX_OMEGA: "rwMaxOmegaRadPerS",
+    RW_DESIRED_OMEGA: "rwDesiredOmegaRadPerS", // Debug/Internal
+
+    // Comms
+    COMMS_RANGE: "commsRocketRangeMeters",
+} as const;
+
+export const SlotIds = {
+    // Basic Rocket Template
+    BASIC: {
+        NOSE: {
+            CONE: "slot.nose.cone",
+            CPU: "slot.nose.cpu",
+            SCI_1: "slot.nose.sci",
+            SCI_2: "slot.nose.sci2",
+            ANTENNA: "slot.nose.antenna",
+            RW: "slot.nose.rw",
+            SENSOR: "slot.nose.sensor",
+            CHUTE: "slot.nose.chute",
+        },
+        BODY: {
+            TANK: "slot.body.tank",
+            BATTERY: "slot.body.battery",
+            MED_SCI: "slot.body.msci",
+            FIN: "slot.body.fin",
+            SOLAR: "slot.body.solar",
+        },
+        TAIL: {
+            ENGINE: "slot.tail.engine",
+        }
+    }
 } as const;

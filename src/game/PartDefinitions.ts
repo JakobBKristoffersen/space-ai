@@ -1,27 +1,18 @@
 import { PartIds } from "./GameIds";
 import { PartCategory } from "./PartStore";
-import { SmallEngine } from "../simulation/parts/Engine";
-import { PrecisionEngine } from "../simulation/parts/PrecisionEngine";
-import { VacuumEngine } from "../simulation/parts/VacuumEngine";
-import { IonEngine } from "../simulation/parts/IonEngine";
-import { SmallFuelTank, MediumFuelTank, LargeFuelTank } from "../simulation/parts/FuelTank";
-import { SmallBattery, MediumBattery } from "../simulation/parts/Battery";
-import { BasicCPU, AdvancedCPU, OrbitalProcessingUnit } from "../simulation/parts/ProcessingUnit";
-import { BasicNavigationSensor, AdvancedNavigationSensor, LidarSensor } from "../simulation/parts/Sensor";
-import { SmallReactionWheels } from "../simulation/parts/ReactionWheels";
-import { SmallAntenna, MediumAntenna, RelayAntenna, DeepSpaceAntenna } from "../simulation/parts/Antenna";
-import { BasicSatellitePayload } from "../simulation/parts/Payloads";
-import { BasicSolarPanel } from "../simulation/parts/SolarPanels";
-import { NoseCone, Fin, Parachute, HeatShield } from "../simulation/parts/Aerodynamics";
+import { SmallEngine, PrecisionEngine, VacuumEngine, IonEngine } from "../simulation/parts/Engines";
+import { SmallFuelTank, MediumFuelTank, LargeFuelTank } from "../simulation/parts/FuelTanks";
+import { SmallBattery, MediumBattery, BasicSolarPanel } from "../simulation/parts/Power";
+import { BasicCPU, AdvancedCPU, OrbitalProcessingUnit, BasicNavigationSensor, AdvancedNavigationSensor, LidarSensor, SmallReactionWheels, SmallAntenna, MediumAntenna, RelayAntenna, DeepSpaceAntenna } from "../simulation/parts/Avionics";
+import { NoseCone, Fin, Parachute, HeatShield, LandingLegs, BasicSatellitePayload } from "../simulation/parts/Structure";
 import { TemperatureScanner, AtmosphereScanner, SurfaceScanner, BiosampleContainer } from "../simulation/parts/Science";
-import { LandingLegs } from "../simulation/parts/Structure";
 
 export interface PartDefinition {
     id: string;
     name: string;
     category: PartCategory;
     description?: string;
-    cost: number; // For future economy
+    // cost: number; // Removed as per RP-only economy
     factory: () => any; // Returns a new instance (Part)
 }
 
@@ -31,28 +22,24 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.ENGINE_SMALL,
         name: "Small Engine",
         category: "engine",
-        cost: 100,
         factory: () => new SmallEngine()
     },
     [PartIds.ENGINE_PRECISION]: {
         id: PartIds.ENGINE_PRECISION,
         name: "Precision Engine",
         category: "engine",
-        cost: 250,
         factory: () => new PrecisionEngine()
     },
     [PartIds.ENGINE_VACUUM]: {
         id: PartIds.ENGINE_VACUUM,
         name: "Vacuum Engine",
         category: "engine",
-        cost: 500,
         factory: () => new VacuumEngine()
     },
     [PartIds.ENGINE_ION]: {
         id: PartIds.ENGINE_ION,
         name: "Ion Thruster",
         category: "engine",
-        cost: 1500,
         factory: () => new IonEngine()
     },
 
@@ -61,21 +48,18 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.FUEL_SMALL,
         name: "Small Fuel Tank",
         category: "fuel",
-        cost: 50,
         factory: () => new SmallFuelTank()
     },
     [PartIds.FUEL_MEDIUM]: {
         id: PartIds.FUEL_MEDIUM,
         name: "Medium Fuel Tank",
         category: "fuel",
-        cost: 150,
         factory: () => new MediumFuelTank()
     },
     [PartIds.FUEL_LARGE]: {
         id: PartIds.FUEL_LARGE,
         name: "Large Fuel Tank",
         category: "fuel",
-        cost: 400,
         factory: () => new LargeFuelTank()
     },
 
@@ -84,14 +68,12 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.BATTERY_SMALL,
         name: "Small Battery",
         category: "battery",
-        cost: 50,
         factory: () => new SmallBattery()
     },
     [PartIds.BATTERY_MEDIUM]: {
         id: PartIds.BATTERY_MEDIUM,
         name: "Medium Battery",
         category: "battery",
-        cost: 150,
         factory: () => new MediumBattery()
     },
 
@@ -100,21 +82,18 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.CPU_BASIC,
         name: "Basic Guidance System",
         category: "cpu",
-        cost: 100,
         factory: () => new BasicCPU()
     },
     [PartIds.CPU_ADVANCED]: {
         id: PartIds.CPU_ADVANCED,
         name: "Advanced Guidance System",
         category: "cpu",
-        cost: 500,
         factory: () => new AdvancedCPU()
     },
     [PartIds.CPU_ORBITAL]: {
         id: PartIds.CPU_ORBITAL,
         name: "Orbital Computer",
         category: "cpu",
-        cost: 2000,
         factory: () => new OrbitalProcessingUnit()
     },
 
@@ -123,21 +102,18 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.SENSOR_NAV_BASIC,
         name: "Basic Navigation Sensor",
         category: "sensor",
-        cost: 50,
         factory: () => new BasicNavigationSensor()
     },
     [PartIds.SENSOR_NAV_ADV]: {
         id: PartIds.SENSOR_NAV_ADV,
         name: "Advanced Navigation Sensor",
         category: "sensor",
-        cost: 200,
         factory: () => new AdvancedNavigationSensor()
     },
     [PartIds.SENSOR_LIDAR]: {
         id: PartIds.SENSOR_LIDAR,
         name: "Lidar Altimeter",
         category: "sensor",
-        cost: 300,
         factory: () => new LidarSensor()
     },
 
@@ -146,7 +122,6 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.RW_SMALL,
         name: "Small Reaction Wheels",
         category: "reactionWheels",
-        cost: 150,
         factory: () => new SmallReactionWheels()
     },
 
@@ -155,28 +130,24 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.ANTENNA_SMALL,
         name: "Small Antenna",
         category: "antenna",
-        cost: 50,
         factory: () => new SmallAntenna()
     },
     [PartIds.ANTENNA_MEDIUM]: {
         id: PartIds.ANTENNA_MEDIUM,
         name: "Medium Antenna",
         category: "antenna",
-        cost: 150,
         factory: () => new MediumAntenna()
     },
     [PartIds.ANTENNA_RELAY]: {
         id: PartIds.ANTENNA_RELAY,
         name: "Relay Dish",
         category: "antenna",
-        cost: 500,
         factory: () => new RelayAntenna()
     },
     [PartIds.ANTENNA_DEEP]: {
         id: PartIds.ANTENNA_DEEP,
         name: "Deep Space Dish",
         category: "antenna",
-        cost: 1000,
         factory: () => new DeepSpaceAntenna()
     },
 
@@ -185,7 +156,6 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.PAYLOAD_SAT_BASIC,
         name: "CubeSat Deployer",
         category: "payload",
-        cost: 200,
         factory: () => new BasicSatellitePayload()
     },
 
@@ -194,7 +164,6 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.SOLAR_BASIC,
         name: "Basic Solar Panel",
         category: "solar",
-        cost: 100,
         factory: () => new BasicSolarPanel()
     },
 
@@ -203,28 +172,24 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.CONE_BASIC,
         name: "Nose Cone",
         category: "cone",
-        cost: 50,
         factory: () => ({ ...new NoseCone(), dragModifier: -0.2, heatTolerance: 2400 })
     },
     [PartIds.FIN_BASIC]: {
         id: PartIds.FIN_BASIC,
         name: "Aerodynamic Fin",
         category: "fin",
-        cost: 50,
         factory: () => new Fin()
     },
     [PartIds.PARACHUTE_BASIC]: {
         id: PartIds.PARACHUTE_BASIC,
         name: "Parachute",
         category: "parachute",
-        cost: 100,
         factory: () => new Parachute()
     },
     [PartIds.HEATSHIELD_BASIC]: {
         id: PartIds.HEATSHIELD_BASIC,
         name: "Heat Shield",
         category: "heatShield",
-        cost: 100,
         factory: () => ({ ...new HeatShield(), heatTolerance: 3400 })
     },
 
@@ -233,28 +198,24 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.SCIENCE_TEMP,
         name: "Temperature Scanner",
         category: "science",
-        cost: 100,
         factory: () => new TemperatureScanner()
     },
     [PartIds.SCIENCE_ATMOS]: {
         id: PartIds.SCIENCE_ATMOS,
         name: "Atmosphere Scanner",
         category: "science",
-        cost: 150,
         factory: () => new AtmosphereScanner()
     },
     [PartIds.SCIENCE_SURFACE]: {
         id: PartIds.SCIENCE_SURFACE,
         name: "Surface Scanner",
         category: "science",
-        cost: 200,
         factory: () => new SurfaceScanner()
     },
     [PartIds.SCIENCE_BIO]: {
         id: PartIds.SCIENCE_BIO,
         name: "Biosample Container",
         category: "science_large",
-        cost: 400,
         factory: () => new BiosampleContainer()
     },
 
@@ -263,7 +224,6 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         id: PartIds.LEG_LANDING_FIXED,
         name: "Landing Legs",
         category: "structure",
-        cost: 100,
         factory: () => new LandingLegs()
     }
 };

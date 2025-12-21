@@ -2,7 +2,7 @@ import { EnvironmentSnapshot } from "../simulation/Environment";
 import { ResearchService } from "../app/services/ResearchService";
 import { ToySystem } from "../config/ToySystem";
 
-export type ScienceType = "temp" | "atmo" | "surface" | "biosample";
+export type ScienceType = "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude";
 
 
 export type ScienceZone = "lower" | "mid" | "upper" | "space" | "global"; // global for surface
@@ -202,6 +202,49 @@ export class ScienceManager {
             title: "Biosample Analysis III"
         });
 
+        // Passive - Velocity
+        const velTiers = [
+            { l: "easy", c: 1, r: 10, title: "Liftoff (1 m/s)" },
+            { l: "medium", c: 100, r: 10, title: "Subsonic Dash (100 m/s)" },
+            { l: "hard", c: 340, r: 50, title: "Sound Barrier (340 m/s)" },
+            { l: "master", c: 800, r: 100, title: "Orbital Velocity (800 m/s)" },
+            { l: "grandmaster", c: 1500, r: 250, title: "Hypersonic Escape (1500 m/s)" }
+        ] as const;
+
+        for (const t of velTiers) {
+            // Use reqCount as suffix to ensure uniqueness if levels repeat
+            defs.push({
+                id: `vel_${t.c}`,
+                type: "velocity",
+                zone: "global",
+                level: (t.l === "grandmaster" ? "master" : t.l) as MilestoneLevel,
+                reqCount: t.c,
+                rewardRp: t.r,
+                title: t.title
+            });
+        }
+
+        // Passive - Altitude
+        const altTiers = [
+            { l: "easy", c: 100, r: 10, title: "Flying with birds" },
+            { l: "medium", c: 1000, r: 10, title: "High Altitude (1km)" },
+            { l: "hard", c: 5000, r: 50, title: "Edge of Space (5km)" },
+            { l: "master", c: 25000, r: 100, title: "Moon Orbit (25km)" },
+            { l: "grandmaster", c: 50000, r: 250, title: "Deep Space (50km)" }
+        ] as const;
+
+        for (const t of altTiers) {
+            defs.push({
+                id: `alt_${t.c}`,
+                type: "altitude",
+                zone: "global",
+                level: (t.l === "grandmaster" ? "master" : t.l) as MilestoneLevel,
+                reqCount: t.c,
+                rewardRp: t.r,
+                title: t.title
+            });
+        }
+
         return defs;
     }
 
@@ -236,6 +279,8 @@ export class ScienceManager {
             else if (d.type === "atmo") count = atmoCounts[d.zone as keyof typeof atmoCounts] || 0;
             else if (d.type === "surface") count = surfCount;
             else if (d.type === "biosample") count = this.data.interactions["biosamples"] || 0;
+            else if (d.type === "velocity") count = this.data.interactions["max_velocity"] || 0;
+            else if (d.type === "altitude") count = this.data.interactions["max_altitude"] || 0;
 
             const isCompleted = count >= d.reqCount;
             const isClaimed = this.claimedMs.has(d.id);
@@ -343,5 +388,39 @@ export class ScienceManager {
         this.data.interactions["biosamples"] = count + 1;
         this.save();
         this.notify();
+    }
+
+    // --- Passive Milestones Logic ---
+
+    // Throttle save
+    private lastSaveTime = 0;
+
+    checkPassiveMilestones(rocket: { state: { position: { x: number, y: number }, velocity: { x: number, y: number } }, _altitudeForSnapshot?: number }) {
+        let changed = false;
+
+        // 1. Velocity
+        const v = Math.hypot(rocket.state.velocity.x, rocket.state.velocity.y);
+        const currentMaxV = this.data.interactions["max_velocity"] || 0;
+        if (v > currentMaxV) {
+            this.data.interactions["max_velocity"] = v;
+            changed = true;
+        }
+
+        // 2. Altitude
+        const alt = rocket._altitudeForSnapshot ?? 0;
+        const currentMaxAlt = this.data.interactions["max_altitude"] || 0;
+        if (alt > currentMaxAlt) {
+            this.data.interactions["max_altitude"] = alt;
+            changed = true;
+        }
+
+        if (changed) {
+            const now = Date.now();
+            if (now - this.lastSaveTime > 2000) {
+                this.save();
+                this.lastSaveTime = now;
+                this.notify();
+            }
+        }
     }
 }

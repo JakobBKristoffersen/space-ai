@@ -156,6 +156,14 @@ export class SimulationManager {
 
       // Advance game clock (1 sim sec = 60 game secs by default)
       this.simGameSeconds += dt * this.gameTimeScale;
+
+      // Check Passive Science Milestones (Velocity, Altitude)
+      if (this.env.getActiveRocket()) {
+        try {
+          this.opts.layoutSvc.getScienceManager().checkPassiveMilestones(this.env.getActiveRocket() as any);
+        } catch { }
+      }
+
       // Notify UI subscribers after the environment advances
       this.postTickListeners.forEach((fn) => {
         try { fn(this.env, i); } catch { }
@@ -345,6 +353,9 @@ export class SimulationManager {
 
     // Prime the initial environment state (gravity, density) for correct UI display before first tick
     (this.env as any).primeRocketState?.();
+
+    // Force a render/notify cycle so UI picks up the new rocket immediately (even if paused)
+    this.staticRenderOnce();
   }
 
   /** Build from stored layout and recreate. */

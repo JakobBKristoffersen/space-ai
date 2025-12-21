@@ -39,7 +39,11 @@ export class ScriptRunner {
 
   /** Install script (Single Slot) */
   async installScript(userCode: string, opts?: ScriptRunnerOptions, name?: string, language: 'typescript' = 'typescript'): Promise<void> {
-    if (!this.rocket || !this.rocket.cpu) throw new Error("No CPU installed on rocket");
+    if (!this.rocket) return; // Silent return if no rocket
+    if (!this.rocket.cpu) {
+      console.warn("ScriptRunner: No CPU installed on rocket, skipping script installation.");
+      return;
+    }
     const cpu = this.rocket.cpu;
 
     // Reset state

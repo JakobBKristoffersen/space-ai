@@ -11,9 +11,11 @@ import {
   Card,
   SimpleGrid,
   Badge,
+  Dialog,
   Progress,
   Center,
-  Container
+  Container,
+  Tabs
 } from "@chakra-ui/react";
 import React, { useState, useEffect, useMemo } from "react";
 import { Scatter, ScatterChart, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
@@ -21,7 +23,7 @@ import { Scatter, ScatterChart, XAxis, YAxis, Tooltip, CartesianGrid, Responsive
 // Types matching ScienceManager
 interface MilestoneStatus {
   id: string;
-  type: "temp" | "atmo" | "surface" | "biosample";
+  type: "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude";
   zone: string;
   level: string;
   reqCount: number;
@@ -39,14 +41,28 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
   });
   const [milestones, setMilestones] = useState<MilestoneStatus[]>([]);
   const [hideClaimed, setHideClaimed] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_science_seen"));
 
   const nextUpdateRef = React.useRef(0);
+
+  // Explicit render trigger
+  const triggerUpdate = () => {
+    // Bypass throttle for manual actions
+    nextUpdateRef.current = 0;
+    // We need to call the effect's update... but it's inside useEffect.
+    // Better to just force a re-render or re-fetch.
+    // Let's refactor the update logic out of useEffect or just use a state toggle.
+  };
+
+  // Ref for update helper
+  const updateFnRef = React.useRef<() => void>(() => { });
 
   useEffect(() => {
     const update = () => {
       const now = Date.now();
+      // Keep throttle for polling, but allow bypass
       if (now < nextUpdateRef.current) return;
-      nextUpdateRef.current = now + 1000; // 1 second throttle
+      nextUpdateRef.current = now + 500; // Reduce to 500ms
 
       const svc: any = (window as any).__services;
       try {
@@ -64,90 +80,208 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
       } catch { }
     };
 
-    update();
-    // Schedule periodic check just in case throttle skips the 'last' event?
-    // Actually, simple throttle drops events. For a chart, dropping intermediate frames is fine.
-    // Ideally we want trailing edge.
-    // Let's use a simpler "raf loop" or interval that checks a dirty flag?
-    // Or just interval.
+    updateFnRef.current = () => {
+      nextUpdateRef.current = 0; // Force
+      update();
+    };
 
-    // Changing approach: Use polling for UI (1s interval) instead of subscription for high-freq data.
-    // Subscriptions might flood.
-    const interval = setInterval(update, 1000);
+    update();
+    const interval = setInterval(update, 500); // Poll faster
     return () => clearInterval(interval);
   }, []);
 
   const handleClaim = (id: string) => {
     const svc: any = (window as any).__services;
     svc?.claimMilestone?.(id);
+    // Force immediate UI refresh
+    setTimeout(() => updateFnRef.current?.(), 10);
   };
 
+  const claimableCounts = useMemo(() => {
+    const counts = { flight: 0, atmo: 0, surface: 0 };
+    for (const m of milestones) {
+      if (m.isCompleted && !m.isClaimed) {
+        if (m.type === 'velocity' || m.type === 'altitude') counts.flight++;
+        if (m.type === 'temp' || m.type === 'atmo') counts.atmo++;
+        if (m.type === 'surface' || m.type === 'biosample') counts.surface++;
+      }
+    }
+    return counts;
+  }, [milestones]);
+
   return (
-    <VStack align="stretch" gap={0} bg="gray.900" minH="100%">
-      <Box p={6} bg="gray.900">
+    <VStack align="stretch" gap={0} bg="gray.900" minH="100%" h="100%">
+      <Tabs.Root defaultValue="flight" variant="line" h="100%" display="flex" flexDirection="column">
+
+        {/* Unified Header */}
         <SpaceCenterHeader
-          title="Science Data & Analysis"
+          title="Research Milestones"
           icon={FaFlask}
-          description="Analyze collected data and claim research rewards."
-          onNavigate={onNavigate}
-        />
-        <HStack justify="flex-end" mt={4}>
-          <Button
-            size="sm"
-            variant={hideClaimed ? "solid" : "outline"}
-            colorPalette={hideClaimed ? "blue" : "gray"}
-            onClick={() => setHideClaimed(!hideClaimed)}
-          >
-            {hideClaimed ? "Show Claimed" : "Hide Claimed"}
-          </Button>
-        </HStack>
-      </Box>
+          description="Track Achievements & Earn RP"
+          onInfoClick={() => setShowTutorial(true)}
+        >
+          <HStack gap={4}>
+            {/* Tabs (Navigation) */}
+            <Box overflowX="auto" maxW="100%">
+              <Tabs.List bg="transparent" borderColor="transparent" gap={2}>
+                <Tabs.Trigger value="flight" px={3}>
+                  Flight Data
+                  {claimableCounts.flight > 0 && (
+                    <Badge colorPalette="red" variant="solid" size="xs" ml={2} borderRadius="full">{claimableCounts.flight}</Badge>
+                  )}
+                </Tabs.Trigger>
+                <Tabs.Trigger value="atmo" px={3}>
+                  Atmosphere
+                  {claimableCounts.atmo > 0 && (
+                    <Badge colorPalette="red" variant="solid" size="xs" ml={2} borderRadius="full">{claimableCounts.atmo}</Badge>
+                  )}
+                </Tabs.Trigger>
+                <Tabs.Trigger value="surface" px={3}>
+                  Surface Ops
+                  {claimableCounts.surface > 0 && (
+                    <Badge colorPalette="red" variant="solid" size="xs" ml={2} borderRadius="full">{claimableCounts.surface}</Badge>
+                  )}
+                </Tabs.Trigger>
+              </Tabs.List>
+            </Box>
 
-      <Container maxW="container.xl" p={6}>
-        <VStack align="stretch" gap={10}>
+            {/* Actions */}
+            <Button
+              size="xs"
+              variant={hideClaimed ? "solid" : "outline"}
+              colorPalette={hideClaimed ? "blue" : "gray"}
+              onClick={() => setHideClaimed(!hideClaimed)}
+            >
+              {hideClaimed ? "Show Claimed" : "Hide Claimed"}
+            </Button>
+          </HStack>
+        </SpaceCenterHeader>
 
-          <ScienceSection
-            title="Atmospheric Temperature"
-            description="Vertical temperature profile of the atmosphere."
-            milestones={milestones.filter(m => m.type === "temp")}
-            onClaim={handleClaim}
-            hideClaimed={hideClaimed}
-          >
-            <TempChart data={data.temp} />
-          </ScienceSection>
+        <Box flex={1} overflowY="hidden">
+          {/* Content Areas */}
+          <Tabs.Content value="flight" h="100%" overflowY="auto" p={6}>
+            <Container maxW="container.xl">
+              <VStack align="stretch" gap={10}>
+                <ScienceSection
+                  title="Flight Velocity Records"
+                  description="Maximum velocity achieved relative to surface."
+                  milestones={milestones.filter(m => m.type === "velocity")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <MetricDisplay
+                    label="MAX VELOCITY"
+                    value={data.interactions["max_velocity"] || 0}
+                    unit="m/s"
+                    color="orange.400"
+                    icon={FaTrophy}
+                  />
+                </ScienceSection>
 
-          <ScienceSection
-            title="Atmospheric Pressure"
-            description="Pressure measurements at various altitudes."
-            milestones={milestones.filter(m => m.type === "atmo")}
-            onClaim={handleClaim}
-            hideClaimed={hideClaimed}
-          >
-            <PressureChart data={data.atm} />
-          </ScienceSection>
+                <ScienceSection
+                  title="Max Altitude Records"
+                  description="Maximum altitude achieved above sea level."
+                  milestones={milestones.filter(m => m.type === "altitude")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <MetricDisplay
+                    label="MAX ALTITUDE"
+                    value={data.interactions["max_altitude"] || 0}
+                    unit="m"
+                    color="cyan.400"
+                    icon={FaTrophy}
+                  />
+                </ScienceSection>
+              </VStack>
+            </Container>
+          </Tabs.Content>
 
-          <ScienceSection
-            title="Planetary Surface"
-            description="Terrain composition survey results."
-            milestones={milestones.filter(m => m.type === "surface")}
-            onClaim={handleClaim}
-            hideClaimed={hideClaimed}
-          >
-            <SurfaceChart data={data.surface} />
-          </ScienceSection>
+          <Tabs.Content value="atmo" h="100%" overflowY="auto" p={6}>
+            <Container maxW="container.xl">
+              <VStack align="stretch" gap={10}>
+                <ScienceSection
+                  title="Atmospheric Temperature"
+                  description="Vertical temperature profile of the atmosphere."
+                  milestones={milestones.filter(m => m.type === "temp")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <TempChart data={data.temp} />
+                </ScienceSection>
 
-          <ScienceSection
-            title="Biosample Recovery"
-            description="Physical samples recovered from the surface."
-            milestones={milestones.filter(m => m.type === "biosample")}
-            onClaim={handleClaim}
-            hideClaimed={hideClaimed}
-          >
-            <BiosampleDisplay count={data.interactions["biosamples"] || 0} />
-          </ScienceSection>
+                <ScienceSection
+                  title="Atmospheric Pressure"
+                  description="Pressure measurements at various altitudes."
+                  milestones={milestones.filter(m => m.type === "atmo")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <PressureChart data={data.atm} />
+                </ScienceSection>
+              </VStack>
+            </Container>
+          </Tabs.Content>
 
-        </VStack>
-      </Container>
+          <Tabs.Content value="surface" h="100%" overflowY="auto" p={6}>
+            <Container maxW="container.xl">
+              <VStack align="stretch" gap={10}>
+                <ScienceSection
+                  title="Planetary Surface"
+                  description="Terrain composition survey results."
+                  milestones={milestones.filter(m => m.type === "surface")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <SurfaceChart data={data.surface} />
+                </ScienceSection>
+
+                <ScienceSection
+                  title="Biosample Recovery"
+                  description="Physical samples recovered from the surface."
+                  milestones={milestones.filter(m => m.type === "biosample")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <BiosampleDisplay count={data.interactions["biosamples"] || 0} />
+                </ScienceSection>
+              </VStack>
+            </Container>
+          </Tabs.Content>
+        </Box>
+      </Tabs.Root>
+
+      {/* TUTORIAL DIALOG */}
+      <Dialog.Root open={showTutorial} onOpenChange={(e) => setShowTutorial(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content bg="gray.900" borderColor="gray.700">
+            <Dialog.Header>
+              <Dialog.Title>Welcome to Research & Development</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="start" gap={3} color="gray.300">
+                <Text>The R&D Lab is where you analyze mission data and claim rewards.</Text>
+                <ul style={{ marginLeft: "20px", listStyleType: "disc" }}>
+                  <li><Text><strong>Review Data:</strong> See charts for atmospheric pressure, temperature, and surface composition.</Text></li>
+                  <li><Text><strong>Claim Milestones:</strong> Clicking "Claim" on completed milestones earns you Research Points (RP).</Text></li>
+                  <li><Text><strong>Unlock Tech:</strong> Use your RP to unlock new parts and facilities in the Space Center.</Text></li>
+                </ul>
+                <Text color="cyan.300" fontSize="sm">
+                  <strong>Goal:</strong> Reach "Flight Data" milestones first by launching higher and faster!
+                </Text>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button onClick={() => {
+                setShowTutorial(false);
+                localStorage.setItem("tutorial_science_seen", "true");
+              }} colorPalette="blue" variant="solid">Ready to Science</Button>
+            </Dialog.Footer>
+            <Dialog.CloseTrigger />
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
     </VStack>
   );
 }
@@ -265,7 +399,7 @@ function MilestoneRow({ m, onClaim }: { m: MilestoneStatus, onClaim: (id: string
             </Progress.Track>
           </Progress.Root>
           <Text fontSize="2xs" color="gray.500" minW="50px" textAlign="right">
-            {m.currentCount} / {m.reqCount}
+            {m.currentCount.toLocaleString(undefined, { maximumFractionDigits: 1 })} / {m.reqCount.toLocaleString()}
           </Text>
         </HStack>
       </VStack>
@@ -469,6 +603,30 @@ function NoData() {
   return (
     <Center h="100%">
       <Text color="gray.600" fontStyle="italic">No Data Collected Yet</Text>
+    </Center>
+  );
+}
+
+function MetricDisplay({ label, value, unit, color, icon }: { label: string, value: number, unit: string, color: string, icon: any }) {
+  return (
+    <Center w="100%" h="100%">
+      <VStack gap={4}>
+        <Icon as={icon} boxSize={12} color={color} />
+        <VStack gap={0}>
+          <HStack align="baseline" gap={2}>
+            <Text fontSize="4xl" fontWeight="bold" color="white" fontFamily="mono">
+              {Math.round(value).toLocaleString()}
+            </Text>
+            <Text fontSize="xl" fontWeight="bold" color="gray.500" fontFamily="mono">
+              {unit}
+            </Text>
+          </HStack>
+          <Text color="gray.400" fontSize="sm">{label}</Text>
+        </VStack>
+        <Text color="gray.500" fontSize="xs" maxW="200px" textAlign="center">
+          Achieve new records to earn Research Points.
+        </Text>
+      </VStack>
     </Center>
   );
 }

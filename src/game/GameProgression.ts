@@ -38,48 +38,49 @@ export const GameProgression: ProgressionNode[] = [
         parts: [
             PartIds.ENGINE_SMALL,
             PartIds.FUEL_SMALL,
-            PartIds.BATTERY_SMALL,
-            PartIds.CPU_BASIC,
-            PartIds.SENSOR_NAV_BASIC,
-            PartIds.RW_SMALL,
-            PartIds.ANTENNA_SMALL,
-            PartIds.SCIENCE_TEMP
+            //PartIds.BATTERY_SMALL,
+            //PartIds.CPU_BASIC,
+            //PartIds.SENSOR_NAV_BASIC,
+            //PartIds.RW_SMALL,
+            //PartIds.ANTENNA_SMALL,
+            //PartIds.SCIENCE_TEMP
         ],
         apiFeatures: [
             ApiFeatures.CONTROL_THROTTLE,
-            ApiFeatures.CONTROL_TURN,
-            ApiFeatures.TELEMETRY_BASIC
+            //ApiFeatures.CONTROL_TURN,
+            //ApiFeatures.TELEMETRY_BASIC
         ]
     },
 
     // --- Tier 1 ---
     {
-        id: TechIds.BASIC_ROCKETRY,
-        name: "Basic Rocketry",
-        description: "Larger fuel tanks and engines.",
-        costRP: 10,
+        id: TechIds.BASIC_NAV,
+        name: "Basic Navigation",
+        description: "Navigation & Attitude Control.",
+        costRP: 2,
         parentIds: [TechIds.START],
         tier: 1,
-        row: 0,
+        row: 2,
         parts: [
-            PartIds.FUEL_MEDIUM,
-            PartIds.BATTERY_MEDIUM
+            PartIds.SENSOR_NAV_BASIC,
+            PartIds.RW_SMALL,
         ],
-        apiFeatures: []
+        apiFeatures: [ApiFeatures.TELEMETRY_BASIC]
     },
     {
-        id: TechIds.ELECTRICS,
-        name: "Electrics",
-        description: "Batteries and solar power.",
-        costRP: 10,
+        id: TechIds.BASIC_COMPUTING,
+        name: "Basic Computing",
+        description: "Guidance system",
+        costRP: 2,
         parentIds: [TechIds.START],
         tier: 1,
         row: 1,
         parts: [
-            PartIds.SOLAR_BASIC
+            PartIds.BATTERY_SMALL,
+            PartIds.CPU_BASIC
         ],
         apiFeatures: [
-            ApiFeatures.CONTROL_SOLAR
+            //ApiFeatures.CONTROL_SOLAR
         ]
     },
     {
@@ -91,12 +92,42 @@ export const GameProgression: ProgressionNode[] = [
         tier: 1,
         row: -1,
         parts: [
+            PartIds.SCIENCE_TEMP,
             PartIds.SCIENCE_ATMOS,
             PartIds.SCIENCE_SURFACE
         ],
         apiFeatures: [
             ApiFeatures.SCIENCE_ATMOSPHERE,
             ApiFeatures.SCIENCE_SURFACE
+        ]
+    },
+    {
+        id: TechIds.ELECTRICS,
+        name: "Basic Electrics",
+        description: "Batteries and Solar Panels.",
+        costRP: 15,
+        parentIds: [TechIds.START],
+        tier: 1,
+        row: -2,
+        parts: [
+            PartIds.BATTERY_MEDIUM,
+            PartIds.SOLAR_BASIC,
+        ],
+        apiFeatures: [ApiFeatures.CONTROL_SOLAR]
+    },
+    {
+        id: TechIds.COMMS_BASIC,
+        name: "Basic Communication",
+        description: "Transmit data back home.",
+        costRP: 15,
+        parentIds: [TechIds.START],
+        tier: 1,
+        row: -1,
+        parts: [
+            PartIds.ANTENNA_SMALL,
+        ],
+        apiFeatures: [
+            ApiFeatures.COMMS_DEEP_SPACE,
         ]
     },
 
@@ -121,11 +152,11 @@ export const GameProgression: ProgressionNode[] = [
         ]
     },
     {
-        id: TechIds.COMMS_BASIC,
-        name: "Basic Comms",
-        description: "Transmit data back home.",
+        id: TechIds.COMMS_ADV,
+        name: "Advanced Comms",
+        description: "Transmit data back home with more range.",
         costRP: 20,
-        parentIds: [TechIds.ELECTRICS],
+        parentIds: [TechIds.COMMS_BASIC, TechIds.ELECTRICS],
         tier: 2,
         row: 1,
         parts: [
@@ -143,7 +174,8 @@ export const GameProgression: ProgressionNode[] = [
         row: -1,
         parts: [
             PartIds.CONE_BASIC,
-            PartIds.FIN_BASIC,
+            PartIds.PARACHUTE_BASIC,
+            //PartIds.FIN_BASIC,
             PartIds.HEATSHIELD_BASIC
         ],
         apiFeatures: []
@@ -170,13 +202,15 @@ export const GameProgression: ProgressionNode[] = [
     {
         id: TechIds.STAGING,
         name: "Staging",
-        description: "Heavy tanks.",
+        description: "Heavy tanks and payload systems.",
         costRP: 50,
         parentIds: [TechIds.GUIDANCE_ADV],
         tier: 3,
         row: 0,
         parts: [
-            PartIds.FUEL_LARGE
+            PartIds.FUEL_MEDIUM,
+            PartIds.FUEL_LARGE,
+            PartIds.PAYLOAD_SAT_BASIC
         ],
         apiFeatures: []
     },

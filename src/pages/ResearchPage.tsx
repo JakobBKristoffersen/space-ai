@@ -6,6 +6,8 @@ import {
     VStack,
     Text,
     Box,
+    Dialog,
+    Button
 } from "@chakra-ui/react";
 
 import { useAppCore } from "../app/AppContext";
@@ -21,6 +23,10 @@ export default function ResearchPage({ onNavigate }: Props) {
     const research = services?.research;
     const [points, setPoints] = useState(0);
     const [unlocked, setUnlocked] = useState<string[]>([]);
+
+    // Tutorial State
+    const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_rnd_seen"));
+
 
     useEffect(() => {
         if (!research) return;
@@ -55,11 +61,13 @@ export default function ResearchPage({ onNavigate }: Props) {
 
     return (
         <VStack align="stretch" gap={0} h="100vh" w="100vw" bg="gray.950" overflow="hidden">
+            {/* ... Header ... */}
             <SpaceCenterHeader
                 title="R&D Laboratory"
                 icon={FaFlask}
                 description="Unlock new technologies."
                 onNavigate={onNavigate}
+                onInfoClick={() => setShowTutorial(true)}
             >
                 <HStack>
                     <Text fontSize="2xl" fontWeight="bold" color="cyan.400" fontFamily="mono">{points}</Text>
@@ -74,6 +82,41 @@ export default function ResearchPage({ onNavigate }: Props) {
                     onUnlock={handleUnlock}
                 />
             </Box>
+
+            {/* TUTORIAL DIALOG */}
+            <Dialog.Root open={showTutorial} onOpenChange={(e) => setShowTutorial(e.open)}>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                    <Dialog.Content bg="gray.900" borderColor="blue.500" borderWidth="1px">
+                        <Dialog.Header>
+                            <HStack>
+                                <FaFlask color="#4299E1" />
+                                <Dialog.Title>Welcome to Research & Development</Dialog.Title>
+                            </HStack>
+                        </Dialog.Header>
+                        <Dialog.Body>
+                            <VStack align="start" gap={3}>
+                                <Text>
+                                    As you complete milestones and gather science data, you earn <Text as="span" color="cyan.400" fontWeight="bold">Research Points (RP)</Text>.
+                                </Text>
+                                <Text>
+                                    Spend your RP here to unlock new technologies, opening up more advanced rocketry components and systems.
+                                </Text>
+                                <Text color="gray.400" fontSize="sm">
+                                    Tip: Start by unlocking "Basic Computing" to gain access to programmable guidance systems.
+                                </Text>
+                            </VStack>
+                        </Dialog.Body>
+                        <Dialog.Footer>
+                            <Button onClick={() => {
+                                setShowTutorial(false);
+                                localStorage.setItem("tutorial_rnd_seen", "true");
+                            }} colorPalette="blue">Got it!</Button>
+                        </Dialog.Footer>
+                        <Dialog.CloseTrigger />
+                    </Dialog.Content>
+                </Dialog.Positioner>
+            </Dialog.Root>
         </VStack>
     );
 }

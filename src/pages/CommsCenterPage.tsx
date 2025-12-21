@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Box, VStack, HStack, Text, Icon, Button, Separator, Grid, GridItem } from '@chakra-ui/react';
+import { Box, VStack, HStack, Text, Icon, Button, Separator, Grid, GridItem, Dialog } from '@chakra-ui/react';
 import { FaSatelliteDish, FaEnvelope, FaGlobe, FaDatabase } from 'react-icons/fa';
 import { SpaceCenterHeader } from '../components/SpaceCenterHeader';
 import { CommsMessage } from '../game/CommsService';
@@ -11,6 +11,10 @@ interface Props {
 export const CommsCenterPage: React.FC<Props> = ({ onNavigate }) => {
     const [messages, setMessages] = useState<CommsMessage[]>([]);
     const [kvData, setKvData] = useState<Record<string, any>>({});
+
+    // Tutorial
+    const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_comms_seen"));
+
 
     useEffect(() => {
         const svcs: any = (window as any).__services;
@@ -42,6 +46,7 @@ export const CommsCenterPage: React.FC<Props> = ({ onNavigate }) => {
                 description="Incoming transmissions and remote data storage."
                 icon={FaSatelliteDish}
                 onNavigate={(page) => onNavigate(page === 'hub' ? 'space_center' : page)}
+                onInfoClick={() => setShowTutorial(true)}
                 currentView="comms"
             />
             <Box>
@@ -128,6 +133,45 @@ export const CommsCenterPage: React.FC<Props> = ({ onNavigate }) => {
                     </GridItem>
                 </Grid>
             </Box>
+
+            {/* TUTORIAL DIALOG */}
+            {/* TUTORIAL DIALOG */}
+            <Dialog.Root open={showTutorial} onOpenChange={(e) => setShowTutorial(e.open)}>
+                <Dialog.Backdrop />
+                <Dialog.Positioner>
+                    <Dialog.Content bg="gray.900" borderColor="cyan.500" borderWidth="1px">
+                        <Dialog.Header>
+                            <HStack>
+                                <FaSatelliteDish color="#63B3ED" />
+                                <Dialog.Title>Welcome to Comms Center</Dialog.Title>
+                            </HStack>
+                        </Dialog.Header>
+                        <Dialog.Body>
+                            <VStack align="start" gap={3}>
+                                <Text>
+                                    This facility handles long-range communication with your rockets.
+                                </Text>
+                                <Text>
+                                    <Text as="span" color="cyan.300" fontWeight="bold">Inbox:</Text> Receive status updates and mission reports.
+                                </Text>
+                                <Text>
+                                    <Text as="span" color="purple.300" fontWeight="bold">Data Store:</Text> View key-value data transmitted by your scripts using <code>api.comms.transmitData()</code>.
+                                </Text>
+                                <Text color="gray.400" fontSize="sm">
+                                    Requirement: Rockets must have an Antenna and Line of Sight to Home or a Relay to transmit.
+                                </Text>
+                            </VStack>
+                        </Dialog.Body>
+                        <Dialog.Footer>
+                            <Button onClick={() => {
+                                setShowTutorial(false);
+                                localStorage.setItem("tutorial_comms_seen", "true");
+                            }} colorPalette="cyan">Open Frequency</Button>
+                        </Dialog.Footer>
+                        <Dialog.CloseTrigger />
+                    </Dialog.Content>
+                </Dialog.Positioner>
+            </Dialog.Root>
         </VStack>
     );
 };

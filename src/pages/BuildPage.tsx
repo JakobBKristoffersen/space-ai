@@ -58,6 +58,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
   // Resources
   const [maxActiveRockets, setMaxActiveRockets] = useState<number>(1);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_vab_seen"));
 
   // Sync with Global State
   const [unlockedTechs, setUnlockedTechs] = useState<string[]>(services.research?.system?.unlockedTechs || []);
@@ -143,12 +144,20 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
           }
           if (saved.slots) setAssignments(saved.slots);
           if (saved.scriptId) setScriptId(saved.scriptId);
-          if (saved.name) setRocketName(saved.name);
+
+          if (saved.name) {
+            setRocketName(saved.name);
+          } else if (manager?.getRocket()) {
+            setRocketName(manager.getRocket()!.name);
+          }
 
           // Restore disabled stages? 
           // Not currently saved in StoredLayout. 
           // We can infer: if a stage has NO assignments, maybe it's disabled? 
           // Or just default to all enabled.
+        } else if (manager?.getRocket()) {
+          // No saved layout, use active rocket name
+          setRocketName(manager.getRocket()!.name);
         }
       } catch { }
       setIsLoaded(true);
@@ -428,6 +437,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         icon={FaTools}
         description="Design and build your rockets"
         onNavigate={onNavigate}
+        onInfoClick={() => setShowTutorial(true)}
         currentView="build"
       >
         <HStack gap={4} w="full" justify="space-between">
@@ -500,7 +510,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
       <Grid templateColumns="1fr" gap={6} flex={1} minH={0} overflow="hidden">
 
         {/* === MAIN ASSEMBLY BAY === */}
-        <GridItem h="100%" overflowY="auto" bg="gray.900" borderRadius="lg" borderWidth="1px" borderColor="gray.800" position="relative" display="flex" justifyContent="center">
+        <GridItem h="100%" overflowY="auto" bg="gray.900" position="relative" display="flex" justifyContent="center">
           {/* Blueprint Grid Background Pattern */}
           <Box position="absolute" inset="0" zIndex="0"
             backgroundImage="radial-gradient(circle, #2D3748 1px, transparent 1px)"
@@ -510,7 +520,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
           />
 
           {/* ROCKET FUSELAGE CONTAINER */}
-          <VStack py={8} w="380px" gap={0} position="relative" zIndex="1" pb="100px">
+          <VStack py={0} w="380px" gap={0} position="relative" zIndex="1" pb="100px">
             <Heading size="md" color="gray.500" letterSpacing="widest" fontWeight="light" mb={4}>ASSEMBLY BAY (Tier {currentVabLevel})</Heading>
 
             {/* Render Stages Top-Down */}
@@ -548,12 +558,25 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
               });
 
               const renderSlotGroup = (groupName: string, slots: RocketSlot[]) => {
-                if (slots.length === 0) return null;
+                // Filter: Only show slots that either have an assigned part OR have at least one unlocked part available
+                const visibleSlots = slots.filter(slot => {
+                  if (assignments[slot.id]) return true;
+
+                  const category = slot.allowedCategories[0];
+                  const allPartsInCat = getPartsByCategory(category);
+                  return allPartsInCat.some(p => {
+                    const tech = GameProgression.find(t => t.parts.includes(p.id));
+                    if (!tech) return false;
+                    return services.research?.system.isUnlocked(tech.id);
+                  });
+                });
+
+                if (visibleSlots.length === 0) return null;
                 return (
                   <Box w="full">
-                    {slots.length > 0 && <Text fontSize="2xs" color="gray.600" textTransform="uppercase" letterSpacing="wider" ml={2} mb={1} mt={2}>{groupName}</Text>}
+                    <Text fontSize="2xs" color="gray.600" textTransform="uppercase" letterSpacing="wider" ml={2} mb={1} mt={2}>{groupName}</Text>
                     <VStack gap="1px" bg="whiteAlpha.100" p="2px" borderRadius="sm" borderXWidth="2px" borderColor="gray.700">
-                      {slots.map((slot) => {
+                      {visibleSlots.map((slot) => {
                         const assignedId = assignments[slot.id];
                         let partInfo = null;
                         if (assignedId) {
@@ -572,8 +595,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                         const unlockedCount = allPartsInCat.filter(p => {
                           // Find tech for this part
                           const tech = GameProgression.find(t => t.parts.includes(p.id));
-                          // If no tech found, assume unlocked (or locked? Basic parts usually in 'start' tech)
-                          if (!tech) return true;
+                          // Strict check: if not in tech tree, it's locked.
+                          if (!tech) return false;
                           // Check if tech is unlocked via ResearchService -> System
                           return services.research?.system.isUnlocked(tech.id);
                         }).length;
@@ -622,7 +645,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                                   <Text color="gray.500" fontSize="sm" fontStyle="italic">{slot.name}</Text>
                                   <HStack gap={1} align="center">
                                     <Text fontSize="2xs" color="gray.600">{slot.allowedCategories[0].toUpperCase()}</Text>
-                                    <Text fontSize="2xs" color="cyan.600" fontWeight="bold">({unlockedCount}/{totalCount})</Text>
+                                    {unlockedCount > 0 && <Text fontSize="2xs" color="cyan.600" fontWeight="bold">({unlockedCount})</Text>}
                                   </HStack>
                                 </>
                               )}
@@ -726,6 +749,38 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
           </VStack>
         </GridItem>
       </Grid>
+
+      {/* TUTORIAL DIALOG */}
+      <Dialog.Root open={showTutorial} onOpenChange={(e) => setShowTutorial(e.open)}>
+        <Dialog.Backdrop />
+        <Dialog.Positioner>
+          <Dialog.Content bg="gray.900" borderColor="gray.700">
+            <Dialog.Header>
+              <Dialog.Title>Welcome to the VAB</Dialog.Title>
+            </Dialog.Header>
+            <Dialog.Body>
+              <VStack align="start" gap={3} color="gray.300">
+                <Text>The Vehicle Assembly Building (VAB) is where you design rockets.</Text>
+                <ul style={{ marginLeft: "20px", listStyleType: "disc" }}>
+                  <li><Text><strong>Assemble:</strong> Click slots on the rocket to install parts.</Text></li>
+                  <li><Text><strong>Upload Code:</strong> Select a flight script to control your rocket.</Text></li>
+                  <li><Text><strong>Deploy:</strong> When ready, click "Deploy to Pad" to launch.</Text></li>
+                </ul>
+                <Text color="cyan.300" fontSize="sm">
+                  <strong>Note:</strong> You can upgrade the VAB to unlock larger heavy-lift rockets.
+                </Text>
+              </VStack>
+            </Dialog.Body>
+            <Dialog.Footer>
+              <Button onClick={() => {
+                setShowTutorial(false);
+                localStorage.setItem("tutorial_vab_seen", "true");
+              }} colorPalette="blue" variant="solid">Got it</Button>
+            </Dialog.Footer>
+            <Dialog.CloseTrigger />
+          </Dialog.Content>
+        </Dialog.Positioner>
+      </Dialog.Root>
 
       {/* === PART PICKER DIALOG === */}
       <Dialog.Root open={!!activeSlot} onOpenChange={() => setActiveSlot(null)} size="lg" scrollBehavior="inside">

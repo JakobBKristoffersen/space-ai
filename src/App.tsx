@@ -183,7 +183,7 @@ export default function App() {
           {/* Views */}
           <Box flex={1} overflow="hidden" position="relative">
             <Box h="100%" display={currentView === 'world_scene' ? 'block' : 'none'}>
-              <WorldScenePage onNavigate={setCurrentView} />
+              <WorldScenePage onNavigate={setCurrentView} isActive={currentView === 'world_scene'} />
             </Box>
 
             {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}

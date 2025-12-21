@@ -353,6 +353,8 @@ export class Rocket {
 
   // Physics
   massKg = 0;
+  destroyed = false;
+  landed = false;
 
   // Comms State (fed by CommSystem)
   commState?: {

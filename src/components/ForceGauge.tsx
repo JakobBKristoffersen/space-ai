@@ -71,9 +71,9 @@ export function ForceGauge({ forces }: ForceGaugeProps) {
             </svg>
             {/* Legend */}
             <Box position="absolute" bottom={1} right={2} fontSize="xx-small" color="gray.500" display="flex" flexDirection="column" alignItems="end">
-                <Text color="green.400">THRUST</Text>
-                <Text color="red.400">DRAG</Text>
-                <Text color="blue.400">GRAVITY</Text>
+                <Text color="green.400">THRUST: {(Math.hypot(thrust.x, thrust.y) / 1000).toFixed(1)} kN</Text>
+                <Text color="red.400">DRAG: {(Math.hypot(drag.x, drag.y) / 1000).toFixed(1)} kN</Text>
+                <Text color="blue.400">GRAVITY: {(Math.hypot(gravity.x, gravity.y) / 1000).toFixed(1)} kN</Text>
             </Box>
         </Box>
     );
