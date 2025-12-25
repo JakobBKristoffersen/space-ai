@@ -27,6 +27,7 @@ import { ROCKET_TEMPLATES, RocketTemplate, RocketSlot } from "../game/RocketTemp
 
 import { StoredLayout } from "../app/services/LayoutService";
 import { GameProgression } from "../game/GameProgression";
+import { TechIds } from "../game/GameIds";
 import { SpaceCenterHeader } from "../components/SpaceCenterHeader";
 import { FaTrash, FaInfoCircle, FaBolt, FaWeightHanging, FaDollarSign, FaFire, FaTools, FaChevronLeft, FaFlask, FaRocket, FaLock, FaCheckCircle, FaExclamationTriangle, FaPlus, FaBan } from "react-icons/fa";
 
@@ -164,15 +165,26 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     }
   }, [services, isLoaded, currentVabLevel]);
 
-  // Auto-Save
+  // Auto-Save & Simulation Sync
   useEffect(() => {
     if (isLoaded && services.layout) {
-      // Filter out disabled stages from assignments before saving?
-      // Actually, saving extra assignments is harmless.
-      // But we should filter assignments when BUILDING the rocket.
-      services.layout.saveLayout({ templateId, slots: assignments, scriptId, name: rocketName });
+      const layout: StoredLayout = { templateId, slots: assignments, scriptId, name: rocketName };
+      services.layout.saveLayout(layout);
+
+      // Auto-sync simulation if on launchpad (not yet launched)
+      if (manager && !manager.hasLaunched()) {
+        manager.recreateFromLayout(layout);
+        // Also ensure the script is assigned if needed
+        if (scriptId && services.scripts) {
+          const s = services.scripts.getById(scriptId);
+          if (s && manager.getRocket()?.cpu) {
+            const codeToRun = (s as any).compiledCode || s.code;
+            manager.getRunner().installScript(codeToRun, { timeLimitMs: 6 }, s.name);
+          }
+        }
+      }
     }
-  }, [templateId, assignments, scriptId, rocketName, isLoaded, services]);
+  }, [templateId, assignments, scriptId, rocketName, isLoaded, services, manager]);
 
 
   // Derived Data
@@ -230,7 +242,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
     if (i.dragCoefficient) stats.push({ label: "Drag", value: `${i.dragCoefficient}`, icon: FaWeightHanging });
     if (i.deployedDrag) stats.push({ label: "Chute", value: `${i.deployedDrag}`, icon: FaWeightHanging });
     if (i.maxTemp) stats.push({ label: "MaxTemp", value: `${i.maxTemp}K`, icon: FaFire });
-    if (i.scienceValue) stats.push({ label: "Sci", value: `${i.scienceValue}pts`, icon: FaFlask });
     if (i.generationWatts) stats.push({ label: "Gen", value: `${i.generationWatts}W`, icon: FaBolt });
 
     return { name: p.name, stats, instance };
@@ -281,6 +292,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
       let thrustVac = 0;
       let thrustSL = 0;
       let flowRate = 0;
+      let finCount = 0;
+      let rwAuthority = 0;
 
       stage.slots.forEach(slot => {
         const partId = assignments[slot.id];
@@ -313,6 +326,13 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
             flowRate += (instance as any).fuelBurnRateKgPerS;
           }
         }
+
+        if (slot.allowedCategories.includes("fin")) {
+          finCount++;
+        }
+        if (slot.allowedCategories.includes("reactionWheels")) {
+          rwAuthority += (instance as any).maxOmegaRadPerS || 0;
+        }
       });
 
       // Stats for this stage
@@ -328,6 +348,11 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
       const dV_Vac = ispVac * 9.81 * Math.log(totalMass / finalMass);
       const dV_SL = ispSL * 9.81 * Math.log(totalMass / finalMass);
 
+      // Fin Authority at 100m/s @ Sea Level
+      // Formula: 0.5 * count * scaleRho * scaleV
+      // scaleRho = 1.0 at SL, scaleV = 1.0 at 100m/s
+      const finTurnRate = 0.5 * finCount;
+
       if (stageWet > 0) {
         console.log(`[VAB Stage ${template.stages.indexOf(stage)}] Mass: ${totalMass.toFixed(1)}/${finalMass.toFixed(1)}, ThrustSL: ${thrustSL.toFixed(1)}, ISP_SL: ${ispSL.toFixed(1)}, dV_SL: ${dV_SL.toFixed(1)}`);
       }
@@ -341,6 +366,8 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         twrSL,
         dV_Vac,
         dV_SL,
+        finTurnRate,
+        rwAuthority,
         payload: payloadMass
       });
 
@@ -476,8 +503,18 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
               <Select.Root collection={scriptsCollection} value={[scriptId]} onValueChange={(d) => setScriptId(Array.isArray(d.value) ? d.value[0] : d.value)} size="sm">
                 <Select.HiddenSelect />
                 <Select.Control>
-                  <Select.Trigger bg="gray.900" borderColor="gray.700">
-                    <Select.ValueText placeholder="Select Flight Software..." />
+                  <Select.Trigger
+                    bg="gray.900"
+                    borderColor="gray.700"
+                    disabled={!services.research?.system?.isUnlocked(TechIds.BASIC_COMPUTING)}
+                    cursor={!services.research?.system?.isUnlocked(TechIds.BASIC_COMPUTING) ? "not-allowed" : "pointer"}
+                    opacity={!services.research?.system?.isUnlocked(TechIds.BASIC_COMPUTING) ? 0.5 : 1}
+                  >
+                    <Select.ValueText placeholder={
+                      services.research?.system?.isUnlocked(TechIds.BASIC_COMPUTING)
+                        ? "Select Flight Software..."
+                        : "Locked: Basic Computing Required"
+                    } />
                   </Select.Trigger>
                 </Select.Control>
                 <Portal>
@@ -702,6 +739,20 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                             <Text fontSize="xs" color={stats.twrSL > 1 ? "green.300" : "yellow.500"} fontFamily="mono">{stats.twrSL.toFixed(2)}</Text>
                           </HStack>
                         </VStack>
+
+                        {stats.finTurnRate > 0 && (
+                          <VStack align="start" gap={0} w="full">
+                            <Text fontSize="2xs" color="gray.400" fontWeight="bold">CONTROL (Fins)</Text>
+                            <Text fontSize="xs" color="purple.300" fontFamily="mono">+{stats.finTurnRate.toFixed(1)} rad/s <Text as="span" color="gray.600" fontSize="2xs">@100m/s</Text></Text>
+                          </VStack>
+                        )}
+
+                        {stats.rwAuthority > 0 && (
+                          <VStack align="start" gap={0} w="full">
+                            <Text fontSize="2xs" color="gray.400" fontWeight="bold">CONTROL (Wheels)</Text>
+                            <Text fontSize="xs" color="orange.300" fontFamily="mono">+{stats.rwAuthority.toFixed(1)} rad/s</Text>
+                          </VStack>
+                        )}
                       </VStack>
                     </Box>
                   )}
@@ -763,7 +814,7 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
                 <Text>The Vehicle Assembly Building (VAB) is where you design rockets.</Text>
                 <ul style={{ marginLeft: "20px", listStyleType: "disc" }}>
                   <li><Text><strong>Assemble:</strong> Click slots on the rocket to install parts.</Text></li>
-                  <li><Text><strong>Upload Code:</strong> Select a flight script to control your rocket.</Text></li>
+                  <li><Text><strong>Upload Code:</strong> Select a flight script to control your rocket. <Text as="span" color="cyan.400" fontWeight="bold">(Requires "Basic Computing" research)</Text></Text></li>
                   <li><Text><strong>Deploy:</strong> When ready, click "Deploy to Pad" to launch.</Text></li>
                 </ul>
                 <Text color="cyan.300" fontSize="sm">
@@ -858,6 +909,6 @@ export default function BuildPage({ onNavigate }: { onNavigate: (view: string) =
         </Dialog.Positioner>
       </Dialog.Root>
 
-    </Flex>
+    </Flex >
   );
 }

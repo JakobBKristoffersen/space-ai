@@ -468,16 +468,6 @@ class RocketCommsAPI {
 }
 
 class RocketScienceAPI {
-  private _buffers: {
-    temp: Map<number, number>;
-    atmo: Map<number, number>;
-    surf: Map<number, string>;
-  } = {
-      temp: new Map(),
-      atmo: new Map(),
-      surf: new Map(),
-    };
-
   // Track transmitted keys per session to avoid sending duplicate data
   private _transmitted: {
     temp: Set<number>;
@@ -493,31 +483,34 @@ class RocketScienceAPI {
 
   readonly temperature = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_TEMP) === -1) {
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_TEMP);
+      if (!part) {
         throw new Error("Science.temperature: Thermometer not installed");
       }
-      this.api.charge(1);
-      this.api.charge(1);
+      this.api.charge(2);
 
       const snap = this.api.rocket.snapshot();
       let alt = Math.round(this.api.telemetry.altitude);
 
       // Check atmosphere cutoff
-      // If we are above atmosphere, we clamp to cutoff + 1 to represent "Space" as a single data bucket.
       const cutoff = snap.atmosphereCutoffAltitudeMeters ?? 100000;
       if (alt > cutoff) {
         alt = Math.floor(cutoff) + 1;
       }
 
-      // Use actual ambient temperature from physics or fall back to 4K
       const temp = snap.ambientTemperature ?? 4;
-      this._buffers.temp.set(alt, temp);
+      if (!part.buffer) part.buffer = new Map();
+      part.buffer.set(alt, temp);
+      part.hasData = true;
     },
     transmit: (): void => {
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_TEMP);
+      if (!part || !part.buffer || part.buffer.size === 0) return;
+
       // Filter out values already transmitted
       const toSend: Record<string, number> = {};
       let count = 0;
-      for (const [alt, val] of this._buffers.temp) {
+      for (const [alt, val] of part.buffer) {
         if (!this._transmitted.temp.has(alt)) {
           toSend[alt] = val;
           count++;
@@ -525,7 +518,7 @@ class RocketScienceAPI {
       }
 
       if (count === 0) {
-        this._buffers.temp.clear();
+        part.buffer.clear();
         return;
       }
 
@@ -543,44 +536,38 @@ class RocketScienceAPI {
       });
       this.api.log(`[Science] Transmitting ${count} temperature readings`);
 
-      // Mark as transmitted
       for (const altStr of Object.keys(toSend)) {
         this._transmitted.temp.add(Number(altStr));
       }
-
-      // Buffer clear (even if filtered out, we clear buffer so we don't re-check them next time if they were old)
-      // Actually we iterate buffer. If we filtered, it means we sent it or it was sent before.
-      // So clearing buffer is correct.
-      this._buffers.temp.clear();
+      part.buffer.clear();
     }
   };
 
   readonly atmosphere = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_ATMOS) === -1) {
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_ATMOS);
+      if (!part) {
         throw new Error("Science.atmosphere: Barometer not installed");
       }
-      this.api.charge(1);
-      this.api.charge(1);
+      this.api.charge(2);
       const snap = this.api.rocket.snapshot();
       let alt = Math.round(this.api.telemetry.altitude);
 
-      // Check atmosphere cutoff
       const cutoff = snap.atmosphereCutoffAltitudeMeters ?? 100000;
-      if (alt > cutoff) {
-        alt = Math.floor(cutoff) + 1;
-      }
+      if (alt > cutoff) alt = Math.floor(cutoff) + 1;
 
-      // Use actual atmospheric pressure (Barometer)
       const pressure = snap.ambientPressure ?? 0;
-
-      this._buffers.atmo.set(alt, pressure);
+      if (!part.buffer) part.buffer = new Map();
+      part.buffer.set(alt, pressure);
+      part.hasData = true;
     },
     transmit: (): void => {
-      // Filter out values already transmitted
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_ATMOS);
+      if (!part || !part.buffer || part.buffer.size === 0) return;
+
       const toSend: Record<string, number> = {};
       let count = 0;
-      for (const [alt, val] of this._buffers.atmo) {
+      for (const [alt, val] of part.buffer) {
         if (!this._transmitted.atmo.has(alt)) {
           toSend[alt] = val;
           count++;
@@ -588,7 +575,7 @@ class RocketScienceAPI {
       }
 
       if (count === 0) {
-        this._buffers.atmo.clear();
+        part.buffer.clear();
         return;
       }
 
@@ -606,37 +593,38 @@ class RocketScienceAPI {
       });
       this.api.log(`[Science] Transmitting ${count} atmosphere readings`);
 
-      // Mark as transmitted
       for (const altStr of Object.keys(toSend)) {
         this._transmitted.atmo.add(Number(altStr));
       }
-      this._buffers.atmo.clear();
+      part.buffer.clear();
     }
   };
 
   readonly surface = {
     collect: (): void => {
-      if (this.api.rocket.science.findIndex(p => p.id === PartIds.SCIENCE_SURFACE) === -1) {
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_SURFACE);
+      if (!part) {
         throw new Error("Science.surface: Surface Scanner not installed");
       }
       this.api.charge(2);
 
-      // Calculate latitude index for the map key
       const pos = this.api.telemetry.position;
-      const angleRad = Math.atan2(pos.y, pos.x); // -PI to PI
+      const angleRad = Math.atan2(pos.y, pos.x);
       let latDeg = angleRad * (180 / Math.PI);
       const latInt = Math.floor(latDeg);
 
-      // Use actual terrain type from the physics simulation
       const terrain = this.api.rocket.currentTerrain || "Unknown";
-
-      this._buffers.surf.set(latInt, terrain);
+      if (!part.buffer) part.buffer = new Map();
+      part.buffer.set(latInt, terrain);
+      part.hasData = true;
     },
     transmit: (): void => {
-      // Filter out values already transmitted
+      const part = this.api.rocket.science.find(p => p.id === PartIds.SCIENCE_SURFACE);
+      if (!part || !part.buffer || part.buffer.size === 0) return;
+
       const toSend: Record<string, string> = {};
       let count = 0;
-      for (const [lat, val] of this._buffers.surf) {
+      for (const [lat, val] of part.buffer) {
         if (!this._transmitted.surf.has(lat)) {
           toSend[lat] = val;
           count++;
@@ -644,7 +632,7 @@ class RocketScienceAPI {
       }
 
       if (count === 0) {
-        this._buffers.surf.clear();
+        part.buffer.clear();
         return;
       }
 
@@ -662,11 +650,10 @@ class RocketScienceAPI {
       });
       this.api.log(`[Science] Transmitting ${count} surface scans`);
 
-      // Mark as transmitted
       for (const k of Object.keys(toSend)) {
         this._transmitted.surf.add(Number(k));
       }
-      this._buffers.surf.clear();
+      part.buffer.clear();
     }
   };
 

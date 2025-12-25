@@ -20,7 +20,7 @@ export interface State {
 export function getState(api: RocketAPI): State {
     const s = api.memory.get("state") as State;
     if (s) return s;
-    const initial = { phase: Phase.PRELAUNCH, targetAlt: 150000 };
+    const initial = { phase: Phase.PRELAUNCH, targetAlt: 3000 };
     api.memory.set("state", initial);
     return initial;
 }
@@ -45,10 +45,10 @@ export class PID {
         this.lastErr = error;
         return this.kp * error + this.ki * this.sum + this.kd * dErr;
     }
-}
+
 `;
 
-export const ORBIT_MAIN = `import { Phase, getState, setState, PID } from "./SeedUtils";
+export const ORBIT_MAIN = `import { Phase, getState, setState, PID } from "./Utils";
 
 // Main Launch Script using Modular RocketAPI
 
@@ -79,7 +79,7 @@ function update(api: RocketAPI) {
             api.control.turn(0); // Keep vertical
             
             // Start turn at 1km or 100m/s
-            if (alt > 1000 || speed > 100) {
+            if (alt > 400 || speed > 100) {
                 state.phase = Phase.GRAVITY_TURN;
                 setState(api, state);
             }
@@ -107,12 +107,11 @@ function update(api: RocketAPI) {
         case Phase.COAST:
             api.control.throttle(0);
             // Point Prograde for efficiency
-            if ( !isNaN(api.nav.prograde) ) {
-                api.nav.alignTo(api.nav.prograde);
-            }
+            api.nav.alignTo(api.nav.getOrbitalPrograde('apoapsis'));
 
-            if (alt > state.targetAlt * 0.95 && Math.abs(vel.y) < 100) {
+            if (alt > state.targetAlt * 0.98 && Math.abs(vel.y) < 100) {
                  state.phase = Phase.CIRCULARIZE;
+                 api.control.deploySolar()
                  setState(api, state);
             }
             break;
@@ -121,7 +120,7 @@ function update(api: RocketAPI) {
             api.nav.alignTo(api.nav.prograde);
             
             if (pe < state.targetAlt * 0.9) {
-                api.control.throttle(1.0);
+                api.control.throttle(0.4);
             } else {
                 api.control.throttle(0);
                 if (pe > state.targetAlt * 0.95) {
@@ -137,6 +136,7 @@ function update(api: RocketAPI) {
             break;
     }
 }
+
 `;
 
 export const DEFAULT_EXAMPLE = `/**

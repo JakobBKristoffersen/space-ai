@@ -234,6 +234,9 @@ export class Environment {
       r.setAtmospherePropertiesForSnapshot(atm.temperature, atm.pressure);
       r.setAtmosphereCutoffForSnapshot((this.atmosphere as any).cutoffAlt);
 
+      const lat = Math.atan2(r.state.position.y, r.state.position.x) * (180 / Math.PI);
+      r.setLatitudeForSnapshot(lat);
+
       // 2. Gravity
       // Simple gravity calc for primary only to prep snapshot
       const dist = Math.sqrt(r.state.position.x ** 2 + r.state.position.y ** 2);

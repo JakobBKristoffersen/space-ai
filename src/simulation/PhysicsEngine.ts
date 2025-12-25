@@ -43,6 +43,8 @@ export class PhysicsEngine {
         rocket.setAltitudeForSnapshot(altitude);
         rocket.setAirDensityForSnapshot(density);
         rocket.setAtmosphereCutoffForSnapshot(atmCutoff);
+        const lat = Math.atan2(dy, dx) * (180 / Math.PI);
+        rocket.setLatitudeForSnapshot(lat);
         try { (rocket as any).setInAtmosphereForSnapshot?.(!inVacuum); } catch { }
         try { (rocket as any).setSoIForSnapshot?.(primary.id); } catch { }
 
@@ -116,7 +118,11 @@ export class PhysicsEngine {
                 const ra = rs.a * (1 + rs.e);
                 (rocket as any).setApPeForSnapshot?.(ra - soi.radiusMeters, rp - soi.radiusMeters);
 
-                PhysicsEngine.tickRotation(dt, rocket, density);
+                const lat = Math.atan2(ryNew, rxNew) * (180 / Math.PI);
+                rocket.setLatitudeForSnapshot(lat);
+
+                const speedNorm = Math.hypot(vxNew, vyNew);
+                PhysicsEngine.tickRotation(dt, rocket, density, speedNorm);
 
                 // Common Updates (Fuel, etc) - Must call even on rails
                 rocket.tickInternal(dt);
@@ -292,7 +298,7 @@ export class PhysicsEngine {
                 onCrash();
             }
 
-            PhysicsEngine.tickRotation(dt, rocket, density);
+            PhysicsEngine.tickRotation(dt, rocket, density, speed);
 
             // Calculate Orbital Elements for API & Snapshot
             const elements = PhysicsMath.calculateOrbitalElements(rocket.state.position, rocket.state.velocity, primary);
@@ -345,7 +351,7 @@ export class PhysicsEngine {
         rocket.tickInternal(dt);
     }
 
-    static tickRotation(dt: number, rocket: Rocket, airDensity: number) {
+    static tickRotation(dt: number, rocket: Rocket, airDensity: number, speed: number) {
         const desired = rocket.desiredAngularVelocityRadPerS || 0;
 
         // 1. Calculate Max Omega & Energy Cost from Reaction Wheels
@@ -361,12 +367,16 @@ export class PhysicsEngine {
             }
         }
 
-        // 2. Add Aero Fin Authority
+        // 2. Add Aero Fin Authority (Requires Atmosphere AND Speed)
         const fins = rocket.fins;
-        if (airDensity > 0.001 && fins.length > 0) {
-            const scale = Math.min(1.0, airDensity / 0.1);
-            // Original logic: 0.5 * count * scale
-            const finAuthority = 0.5 * fins.length * scale;
+        if (airDensity > 0.0001 && speed > 1 && fins.length > 0) {
+            // scale_rho: 1.0 at ~1km (density ~1.1), drops linearly
+            const scaleRho = Math.min(1.0, airDensity / 0.1);
+            // scale_v: 1.0 at 100m/s
+            const scaleV = Math.min(1.0, speed / 100);
+
+            // Combined authority
+            const finAuthority = 0.5 * fins.length * scaleRho * scaleV;
             maxOmega += finAuthority;
         }
 

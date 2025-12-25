@@ -84,10 +84,10 @@ export default function SpaceCenterPage({ onNavigate }: Props) {
     };
 
     const cards = [
-        { id: "world_scene", title: "Launch Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
+        { id: "world_scene", title: "Mission Control", icon: FaGlobe, desc: "Monitor active missions.", color: "purple.400", type: "trackingStation" },
         ...(hasUnlocks.comms ? [{ id: "comms", title: "Comms Center", icon: FaSatelliteDish, desc: "View incoming data.", color: "cyan.500", type: "comms" }] : []),
         { id: "build", title: "VAB (Vehicle Assembly Building)", icon: FaRocket, desc: "Construct rockets.", color: "cyan.400" },
-        { id: "science", title: "Science Data", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
+        { id: "science", title: "Science & Achievements", icon: FaFlag, desc: "View research goals and data.", color: "orange.400", type: "missionControl" },
         ...(hasUnlocks.rnd ? [{ id: "research", title: "R&D Lab", icon: FaFlask, desc: "Unlock technologies.", color: "blue.400", type: "researchCenter" }] : []),
         ...(hasUnlocks.scripts ? [{ id: "scripts", title: "Software Engineering", icon: FaCode, desc: "Develop flight software.", color: "green.400", type: "software" }] : []),
     ];

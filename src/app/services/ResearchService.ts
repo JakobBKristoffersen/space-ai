@@ -1,6 +1,7 @@
 import { ResearchSystem, ResearchState } from "../../game/research/ResearchSystem";
 
-const KEY = "session:research";
+const OLD_KEY = "session:research";
+const KEY = "research_data";
 
 export class ResearchService {
     public system: ResearchSystem;
@@ -15,7 +16,17 @@ export class ResearchService {
 
     private load(): ResearchState {
         try {
-            const raw = sessionStorage.getItem(KEY);
+            let raw = localStorage.getItem(KEY);
+
+            // Migration from sessionStorage if localStorage is empty
+            if (!raw) {
+                raw = sessionStorage.getItem(OLD_KEY);
+                if (raw) {
+                    localStorage.setItem(KEY, raw);
+                    sessionStorage.removeItem(OLD_KEY);
+                }
+            }
+
             return raw ? JSON.parse(raw) : { points: 0, unlockedTechs: [] };
         } catch {
             return { points: 0, unlockedTechs: [] };
@@ -24,13 +35,18 @@ export class ResearchService {
 
     save() {
         try {
-            sessionStorage.setItem(KEY, JSON.stringify(this.system.snapshot()));
+            localStorage.setItem(KEY, JSON.stringify(this.system.snapshot()));
             this.notify();
         } catch { }
     }
 
     reset() {
         this.system = new ResearchSystem();
+        this.save();
+    }
+
+    addPoints(amount: number) {
+        this.system.addPoints(amount);
         this.save();
     }
 

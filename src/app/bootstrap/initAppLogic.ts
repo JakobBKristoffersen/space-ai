@@ -148,10 +148,16 @@ export function initAppLogic(): void {
           return { ok: false, reason: "error", message: e?.message ?? String(e) };
         }
       },
+      // Reset Mission - Reset rocket to pad without losing progress
+      resetMission: () => {
+        manager.resetSimulationOnly();
+      },
       // Reset All - NUCLEAR OPTION
       resetAll: () => {
         if (!confirm("Are you sure you want to completely reset all progress and data? This cannot be undone.")) return;
-        try { manager.pause(); } catch { }
+        try {
+          manager.destroy();
+        } catch { }
         try {
           // Clear EVERYTHING
           localStorage.clear();

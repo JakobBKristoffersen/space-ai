@@ -2,7 +2,7 @@ import { EnvironmentSnapshot } from "../simulation/Environment";
 import { ResearchService } from "../app/services/ResearchService";
 import { ToySystem } from "../config/ToySystem";
 
-export type ScienceType = "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude";
+export type ScienceType = "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude" | "distance";
 
 
 export type ScienceZone = "lower" | "mid" | "upper" | "space" | "global"; // global for surface
@@ -204,7 +204,7 @@ export class ScienceManager {
 
         // Passive - Velocity
         const velTiers = [
-            { l: "easy", c: 1, r: 10, title: "Liftoff (1 m/s)" },
+            { l: "easy", c: 10, r: 10, title: "First Flight (10 m/s)" },
             { l: "medium", c: 100, r: 10, title: "Subsonic Dash (100 m/s)" },
             { l: "hard", c: 340, r: 50, title: "Sound Barrier (340 m/s)" },
             { l: "master", c: 800, r: 100, title: "Orbital Velocity (800 m/s)" },
@@ -226,9 +226,11 @@ export class ScienceManager {
 
         // Passive - Altitude
         const altTiers = [
-            { l: "easy", c: 100, r: 10, title: "Flying with birds" },
+            { l: "easy", c: 1, r: 10, title: "Liftoff (1 m)" },
+            { l: "easy", c: 200, r: 10, title: "Low Altitude (200 m)" },
             { l: "medium", c: 1000, r: 10, title: "High Altitude (1km)" },
-            { l: "hard", c: 5000, r: 50, title: "Edge of Space (5km)" },
+            { l: "hard", c: 2000, r: 50, title: "Edge of Space (2km)" },
+            { l: "hard", c: 2001, r: 50, title: "Space Attitude Research (2km)" },
             { l: "master", c: 25000, r: 100, title: "Moon Orbit (25km)" },
             { l: "grandmaster", c: 50000, r: 250, title: "Deep Space (50km)" }
         ] as const;
@@ -239,6 +241,26 @@ export class ScienceManager {
                 type: "altitude",
                 zone: "global",
                 level: (t.l === "grandmaster" ? "master" : t.l) as MilestoneLevel,
+                reqCount: t.c,
+                rewardRp: t.r,
+                title: t.title
+            });
+        }
+
+        // Passive - Distance (Latitude from origin)
+        const distTiers = [
+            { l: "easy", c: 5, r: 20, title: "Neighboring Region (5° from origin)" },
+            { l: "medium", c: 20, r: 50, title: "Continental Traveler (20° from origin)" },
+            { l: "hard", c: 45, r: 100, title: "Hemisphere Hop (45° from origin)" },
+            { l: "master", c: 90, r: 250, title: "Pole to Pole (90° from origin)" }
+        ] as const;
+
+        for (const t of distTiers) {
+            defs.push({
+                id: `dist_${t.c}`,
+                type: "distance",
+                zone: "global",
+                level: t.l,
                 reqCount: t.c,
                 rewardRp: t.r,
                 title: t.title
@@ -281,6 +303,7 @@ export class ScienceManager {
             else if (d.type === "biosample") count = this.data.interactions["biosamples"] || 0;
             else if (d.type === "velocity") count = this.data.interactions["max_velocity"] || 0;
             else if (d.type === "altitude") count = this.data.interactions["max_altitude"] || 0;
+            else if (d.type === "distance") count = this.data.interactions["max_distance"] || 0;
 
             const isCompleted = count >= d.reqCount;
             const isClaimed = this.claimedMs.has(d.id);
@@ -304,7 +327,7 @@ export class ScienceManager {
         this.claimedMs.add(id);
         this.save();
         if (this.research) {
-            this.research.system.addPoints(ms.rewardRp);
+            this.research.addPoints(ms.rewardRp);
         }
         this.notify();
     }
@@ -378,10 +401,10 @@ export class ScienceManager {
         let count = this.data.interactions["biosamples"] || 0;
 
         if (count < 3) {
-            this.research?.system.addPoints(50);
+            this.research?.addPoints(50);
             console.log("Biosample recovered! +50 RP");
         } else {
-            this.research?.system.addPoints(10); // Diminishing returns
+            this.research?.addPoints(10); // Diminishing returns
             console.log("Biosample recovered! +10 RP");
         }
 
@@ -395,7 +418,7 @@ export class ScienceManager {
     // Throttle save
     private lastSaveTime = 0;
 
-    checkPassiveMilestones(rocket: { state: { position: { x: number, y: number }, velocity: { x: number, y: number } }, _altitudeForSnapshot?: number }) {
+    checkPassiveMilestones(rocket: { state: { position: { x: number, y: number }, velocity: { x: number, y: number } }, _altitudeForSnapshot?: number, _latitudeForSnapshot?: number }) {
         let changed = false;
 
         // 1. Velocity
@@ -411,6 +434,19 @@ export class ScienceManager {
         const currentMaxAlt = this.data.interactions["max_altitude"] || 0;
         if (alt > currentMaxAlt) {
             this.data.interactions["max_altitude"] = alt;
+            changed = true;
+        }
+
+        // 3. Distance (Angular displacement from 90° launch site)
+        const currentLat = (rocket as any)._latitudeForSnapshot ?? 90;
+        // Displacement in degrees. Launch is at 90. 
+        // We handle wrapping by ensuring we take the shortest path or just absolute diff if small.
+        let diff = Math.abs(currentLat - 90);
+        if (diff > 180) diff = 360 - diff;
+
+        const currentMaxDist = this.data.interactions["max_distance"] || 0;
+        if (diff > currentMaxDist) {
+            this.data.interactions["max_distance"] = diff;
             changed = true;
         }
 

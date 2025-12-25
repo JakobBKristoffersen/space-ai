@@ -57,39 +57,55 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.BASIC_NAV,
         name: "Basic Navigation",
         description: "Navigation & Attitude Control.",
-        costRP: 2,
+        costRP: 5,
         parentIds: [TechIds.START],
         tier: 1,
-        row: 2,
+        row: 1,
         parts: [
             PartIds.SENSOR_NAV_BASIC,
-            PartIds.RW_SMALL,
+            PartIds.FIN_BASIC,
         ],
-        apiFeatures: [ApiFeatures.TELEMETRY_BASIC]
+        apiFeatures: [
+            ApiFeatures.TELEMETRY_BASIC,
+            ApiFeatures.CONTROL_TURN
+        ]
     },
     {
         id: TechIds.BASIC_COMPUTING,
         name: "Basic Computing",
         description: "Guidance system",
-        costRP: 2,
+        costRP: 5,
         parentIds: [TechIds.START],
         tier: 1,
-        row: 1,
+        row: -1,
         parts: [
             PartIds.BATTERY_SMALL,
             PartIds.CPU_BASIC
         ],
-        apiFeatures: [
-            //ApiFeatures.CONTROL_SOLAR
-        ]
+        apiFeatures: []
+    },
+
+    // --- Tier 2 ---
+    {
+        id: TechIds.BASIC_ROCKETRY,
+        name: "Basic Rocketry",
+        description: "Improved engine technology.",
+        costRP: 10,
+        parentIds: [TechIds.BASIC_NAV, TechIds.BASIC_COMPUTING],
+        tier: 2,
+        row: 0,
+        parts: [
+            PartIds.ENGINE_SMALL_V2,
+        ],
+        apiFeatures: []
     },
     {
         id: TechIds.SCIENCE_BASIC,
         name: "Basic Science",
-        description: "Sensors to collect data.",
+        description: "Basic scientific sensors to collect data.",
         costRP: 15,
-        parentIds: [TechIds.START],
-        tier: 1,
+        parentIds: [TechIds.BASIC_COMPUTING],
+        tier: 2,
         row: -1,
         parts: [
             PartIds.SCIENCE_TEMP,
@@ -104,11 +120,11 @@ export const GameProgression: ProgressionNode[] = [
     {
         id: TechIds.ELECTRICS,
         name: "Basic Electrics",
-        description: "Batteries and Solar Panels.",
-        costRP: 15,
-        parentIds: [TechIds.START],
-        tier: 1,
-        row: -2,
+        description: "Better Batteries and Solar Panels.",
+        costRP: 50,
+        parentIds: [TechIds.BASIC_COMPUTING],
+        tier: 2,
+        row: 1,
         parts: [
             PartIds.BATTERY_MEDIUM,
             PartIds.SOLAR_BASIC,
@@ -116,13 +132,26 @@ export const GameProgression: ProgressionNode[] = [
         apiFeatures: [ApiFeatures.CONTROL_SOLAR]
     },
     {
+        id: TechIds.ATTITUDE_CONTROL,
+        name: "Attitude Control",
+        description: "Reaction wheels for non-atmospheric control.",
+        costRP: 50,
+        parentIds: [TechIds.BASIC_NAV],
+        tier: 2,
+        row: 2,
+        parts: [
+            PartIds.RW_SMALL,
+        ],
+        apiFeatures: []
+    },
+    {
         id: TechIds.COMMS_BASIC,
         name: "Basic Communication",
-        description: "Transmit data back home.",
+        description: "Transmit scientific data back home.",
         costRP: 15,
-        parentIds: [TechIds.START],
-        tier: 1,
-        row: -1,
+        parentIds: [TechIds.BASIC_COMPUTING],
+        tier: 2,
+        row: -2,
         parts: [
             PartIds.ANTENNA_SMALL,
         ],
@@ -131,7 +160,7 @@ export const GameProgression: ProgressionNode[] = [
         ]
     },
 
-    // --- Tier 2 ---
+    // --- Tier 3 ---
     {
         id: TechIds.GUIDANCE_ADV,
         name: "Adv. Guidance",
@@ -155,7 +184,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.COMMS_ADV,
         name: "Advanced Comms",
         description: "Transmit data back home with more range.",
-        costRP: 20,
+        costRP: 200,
         parentIds: [TechIds.COMMS_BASIC, TechIds.ELECTRICS],
         tier: 2,
         row: 1,
@@ -168,7 +197,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.AERODYNAMICS,
         name: "Aerodynamics",
         description: "Fins and nose cones.",
-        costRP: 20,
+        costRP: 200,
         parentIds: [TechIds.BASIC_ROCKETRY, TechIds.SCIENCE_BASIC],
         tier: 2,
         row: -1,
@@ -184,7 +213,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.LANDING_SYSTEMS,
         name: "Landing Systems",
         description: "Hardware for controlled descent.",
-        costRP: 30,
+        costRP: 300,
         parentIds: [TechIds.BASIC_ROCKETRY],
         tier: 2,
         row: 2,
@@ -203,7 +232,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.STAGING,
         name: "Staging",
         description: "Heavy tanks and payload systems.",
-        costRP: 50,
+        costRP: 500,
         parentIds: [TechIds.GUIDANCE_ADV],
         tier: 3,
         row: 0,
@@ -218,7 +247,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.SOLAR_ADV,
         name: "Adv. Electrics",
         description: "Deployable solar panels.",
-        costRP: 45,
+        costRP: 450,
         parentIds: [TechIds.COMMS_BASIC],
         tier: 3,
         row: 1,
@@ -231,7 +260,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.ORBITAL_SCI,
         name: "Orbital Science",
         description: "Space-grade sensors.",
-        costRP: 50,
+        costRP: 500,
         parentIds: [TechIds.AERODYNAMICS],
         tier: 3,
         row: -1,
@@ -249,7 +278,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.PROPULSION_VAC,
         name: "Vacuum Propulsion",
         description: "Engines optimized for space.",
-        costRP: 100,
+        costRP: 1000,
         parentIds: [TechIds.STAGING],
         tier: 4,
         row: 0,
@@ -262,7 +291,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.COMMS_RELAY,
         name: "Relay Comms",
         description: "Long-range dishes.",
-        costRP: 90,
+        costRP: 900,
         parentIds: [TechIds.SOLAR_ADV],
         tier: 4,
         row: 1,
@@ -280,7 +309,7 @@ export const GameProgression: ProgressionNode[] = [
         id: TechIds.ION_PROPULSION,
         name: "Ion Propulsion",
         description: "High efficiency, low thrust.",
-        costRP: 300,
+        costRP: 3000,
         parentIds: [TechIds.PROPULSION_VAC, TechIds.COMMS_RELAY],
         tier: 5,
         row: 0,

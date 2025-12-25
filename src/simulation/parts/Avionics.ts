@@ -9,7 +9,7 @@ import { PartIds, TelemetryIds } from "../../game/GameIds";
 export class BasicCPU implements ProcessingUnitPart {
     readonly id = PartIds.CPU_BASIC;
     readonly name = "Basic CPU";
-    readonly massKg = 5;
+    readonly massKg = 2;
     readonly maxScriptChars = 10000;
     readonly processingBudgetPerTick = 50;
     readonly energyPerTickJ = 2;
@@ -21,7 +21,7 @@ export class BasicCPU implements ProcessingUnitPart {
 export class AdvancedCPU implements ProcessingUnitPart {
     readonly id = PartIds.CPU_ADVANCED;
     readonly name = "Advanced CPU";
-    readonly massKg = 10;
+    readonly massKg = 2;
     readonly maxScriptChars = 32000;
     readonly processingBudgetPerTick = 100;
     readonly energyPerTickJ = 5;
@@ -33,7 +33,7 @@ export class AdvancedCPU implements ProcessingUnitPart {
 export class OrbitalProcessingUnit implements ProcessingUnitPart {
     readonly id = PartIds.CPU_ORBITAL;
     readonly name = "Orbital Computer";
-    readonly massKg = 20;
+    readonly massKg = 3;
     readonly maxScriptChars = 64000;
     readonly processingBudgetPerTick = 250;
     readonly energyPerTickJ = 25; // High power
@@ -53,7 +53,7 @@ export class OrbitalProcessingUnit implements ProcessingUnitPart {
 export class BasicNavigationSensor implements SensorPart {
     readonly id = PartIds.SENSOR_NAV_BASIC;
     readonly name = "Basic Navigation Sensor";
-    readonly massKg = 5;
+    readonly massKg = 1;
     readonly exposes = [
         TelemetryIds.ALTITUDE,
         TelemetryIds.VELOCITY,
@@ -108,9 +108,9 @@ const AntennaParts: Record<string, AntennaPart> = {
         id: PartIds.ANTENNA_SMALL,
         name: "Comm 16",
         rangeMeters: 500,
-        bandwidth: 20, // 20 Bytes/s
+        bandwidth: 60, // 60 Bytes/s
         power: 0.5, // 0.5 Watts
-        massKg: 2
+        massKg: 1
     },
     "antenna.medium": {
         id: PartIds.ANTENNA_MEDIUM,

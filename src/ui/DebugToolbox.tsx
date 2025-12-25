@@ -82,11 +82,17 @@ export function DebugToolbox() {
                             {/* Danger Zone */}
                             <Box>
                                 <Heading size="sm" mb={2} color="red.400">Danger Zone</Heading>
-                                <Button w="full" colorScheme="red" variant="solid" onClick={handleReset}>
-                                    <Icon as={FaTrash} mr={2} /> Hard Reset Application
-                                </Button>
+                                <VStack gap={2}>
+                                    <Button w="full" colorScheme="orange" variant="outline" onClick={() => svcs?.resetMission?.()}>
+                                        <Icon as={FaRocket} mr={2} /> Reset Current Mission
+                                    </Button>
+                                    <Button w="full" colorScheme="red" variant="solid" onClick={handleReset}>
+                                        <Icon as={FaTrash} mr={2} /> FACTORY RESET (Wipe All)
+                                    </Button>
+                                </VStack>
                                 <Text fontSize="xs" color="gray.500" mt={1}>
-                                    Clears all data and reloads the page. Cannot be undone.
+                                    "Reset Mission" puts your rocket back on the pad.<br />
+                                    "Factory Reset" clears all research and history.
                                 </Text>
                             </Box>
 

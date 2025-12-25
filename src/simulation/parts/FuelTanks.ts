@@ -9,8 +9,8 @@ export class SmallFuelTank implements FuelTankPart {
     readonly id = PartIds.FUEL_SMALL;
     readonly name = "Small Fuel Tank";
     readonly dryMassKg = 20;
-    fuelKg = 60; // initial fuel load
-    readonly capacityKg = 60;
+    fuelKg = 80; // initial fuel load
+    readonly capacityKg = 80;
     readonly exposes = [TelemetryIds.FUEL];
 
     drawFuel(requestKg: number): number {

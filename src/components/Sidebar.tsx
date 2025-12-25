@@ -16,6 +16,23 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
 
     const [hasClaimable, setHasClaimable] = React.useState(false);
     const [hasUnlocks, setHasUnlocks] = React.useState({ scripts: false, rnd: false, comms: false });
+    const [visitedViews, setVisitedViews] = React.useState<string[]>(() => {
+        try {
+            const saved = localStorage.getItem("visited_views");
+            return saved ? JSON.parse(saved) : ["space_center"]; // Default space center as visited
+        } catch {
+            return ["space_center"];
+        }
+    });
+
+    // Mark current view as visited
+    React.useEffect(() => {
+        if (!visitedViews.includes(currentView)) {
+            const next = [...visitedViews, currentView];
+            setVisitedViews(next);
+            localStorage.setItem("visited_views", JSON.stringify(next));
+        }
+    }, [currentView]);
 
     React.useEffect(() => {
         const update = () => {
@@ -43,30 +60,37 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
         // Initial check
         update();
 
-        // Poll every 1s (simple, robust) or subscribe if available
-        // Manager has subscribe, let's try to use it if accessible, else poll
         const svc: any = (window as any).__services;
-        let unsubscribe: (() => void) | undefined;
+        const unsubs: (() => void)[] = [];
 
+        // 1. Science Manager subscription (Milestones)
         if (svc?.getScienceManager?.()?.subscribe) {
-            unsubscribe = svc.getScienceManager().subscribe(update);
-        } else {
+            unsubs.push(svc.getScienceManager().subscribe(update));
+        }
+
+        // 2. Research Service subscription (Tech Unlocks)
+        if (svc?.research?.subscribe) {
+            unsubs.push(svc.research.subscribe(update));
+        }
+
+        // 3. Fallback polling if services not yet ready or don't support subscribe
+        if (unsubs.length === 0) {
             const interval = setInterval(update, 1000);
-            unsubscribe = () => clearInterval(interval);
+            unsubs.push(() => clearInterval(interval));
         }
 
         return () => {
-            if (unsubscribe) unsubscribe();
+            unsubs.forEach(unsub => unsub());
         };
     }, []);
 
     const navItems = [
         { id: "space_center", label: "Space Center", icon: FaHome },
-        { id: "world_scene", label: "Launch Control", icon: FaGlobe },
+        { id: "world_scene", label: "Mission Control", icon: FaGlobe },
         { id: "build", label: "VAB", icon: FaRocket },
         ...(hasUnlocks.scripts ? [{ id: "scripts", label: "Scripts", icon: FaCode }] : []),
         ...(hasUnlocks.rnd ? [{ id: "research", label: "R&D", icon: FaFlask }] : []),
-        { id: "science", label: "Science & Milestones", icon: FaFlag, showBadge: hasClaimable },
+        { id: "science", label: "Science & Achievements", icon: FaFlag, forceBadge: hasClaimable },
         ...(hasUnlocks.comms ? [{ id: "comms", label: "Comms", icon: FaSatelliteDish }] : []),
     ];
 
@@ -84,13 +108,15 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
             zIndex={100}
         >
             <Box mb={2}>
-                {/* Logo or Top Icon placeholder if needed */}
                 <Icon as={FaRocket} color="cyan.400" boxSize={6} />
             </Box>
 
             <VStack gap={2} w="full">
                 {navItems.map((item) => {
                     const isActive = currentView === item.id;
+                    const isNew = !visitedViews.includes(item.id);
+                    const showBadge = (item as any).forceBadge || isNew;
+
                     return (
                         <Tooltip key={item.id} content={item.label} positioning={{ placement: "right" }} showArrow>
                             <Box position="relative">
@@ -109,16 +135,17 @@ export function Sidebar({ currentView, onNavigate }: SidebarProps) {
                                 >
                                     <Icon as={item.icon} boxSize={5} />
                                 </IconButton>
-                                {(item as any).showBadge && (
+                                {showBadge && (
                                     <Box
                                         position="absolute"
                                         top={0}
                                         right={0}
-                                        boxSize={3}
-                                        bg="red.500"
+                                        boxSize={isNew ? 2.5 : 3}
+                                        bg={isNew ? "cyan.400" : "red.500"}
                                         borderRadius="full"
                                         borderWidth="2px"
                                         borderColor={bg}
+                                        zIndex={1}
                                     />
                                 )}
                             </Box>

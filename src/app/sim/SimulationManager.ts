@@ -61,6 +61,7 @@ export class SimulationManager {
   // Launch gating per rocket: scripts cannot power engines until takeOff() is called for that rocket
   private launchedByIndex: boolean[] = [];
   private postRenderListeners = new Set<PostRenderListener>();
+  private saveInterval: any = null;
 
   constructor(private readonly opts: SimulationManagerOptions) {
     this.rocket = opts.rocket;
@@ -497,6 +498,11 @@ export class SimulationManager {
           parachutes: this.rocket.parachutes.map(p => ({ id: p.id, deployed: p.deployed })),
           solarPanels: this.rocket.solarPanels.map(p => ({ id: p.id, deployed: p.deployed })),
           engines: this.rocket.engines.map(e => ({ id: e.id, power: e.power })),
+          science: this.rocket.science.map(s => ({
+            id: s.id,
+            hasData: s.hasData,
+            buffer: s.buffer ? Array.from(s.buffer.entries()) : []
+          })),
         }
       };
       localStorage.setItem("sim_state", JSON.stringify(state));
@@ -552,6 +558,15 @@ export class SimulationManager {
             if (part) part.power = saved.power;
           });
         }
+        if (state.rocket.science) {
+          state.rocket.science.forEach(saved => {
+            const part = r.science.find(p => p.id === saved.id);
+            if (part) {
+              part.hasData = saved.hasData;
+              if (saved.buffer) part.buffer = new Map(saved.buffer);
+            }
+          });
+        }
       }
       return true;
     } catch (e) {
@@ -567,12 +582,20 @@ export class SimulationManager {
     }
 
     // Auto-save
-    setInterval(() => this.saveState(), 5000); // 5s
+    this.saveInterval = setInterval(() => this.saveState(), 5000); // 5s
 
     // Save on visibility change (tab switch/close)
     document.addEventListener("visibilitychange", () => {
       if (document.visibilityState === "hidden") this.saveState();
     });
+  }
+
+  destroy() {
+    this.pause();
+    if (this.saveInterval) {
+      clearInterval(this.saveInterval);
+      this.saveInterval = null;
+    }
   }
 }
 
@@ -593,5 +616,6 @@ interface SimState {
     parachutes: Array<{ id: string, deployed: boolean }>;
     solarPanels: Array<{ id: string, deployed: boolean }>;
     engines: Array<{ id: string, power: number }>;
+    science?: Array<{ id: string, hasData?: boolean, buffer?: Array<[number, any]> }>;
   };
 }

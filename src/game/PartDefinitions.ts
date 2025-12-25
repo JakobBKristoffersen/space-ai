@@ -1,6 +1,6 @@
 import { PartIds } from "./GameIds";
 import { PartCategory } from "./PartStore";
-import { SmallEngine, PrecisionEngine, VacuumEngine, IonEngine } from "../simulation/parts/Engines";
+import { SmallEngine, SmallEngineV2, PrecisionEngine, VacuumEngine, IonEngine } from "../simulation/parts/Engines";
 import { SmallFuelTank, MediumFuelTank, LargeFuelTank } from "../simulation/parts/FuelTanks";
 import { SmallBattery, MediumBattery, BasicSolarPanel } from "../simulation/parts/Power";
 import { BasicCPU, AdvancedCPU, OrbitalProcessingUnit, BasicNavigationSensor, AdvancedNavigationSensor, LidarSensor, SmallReactionWheels, SmallAntenna, MediumAntenna, RelayAntenna, DeepSpaceAntenna } from "../simulation/parts/Avionics";
@@ -23,6 +23,12 @@ export const PartDefinitions: Record<string, PartDefinition> = {
         name: "Small Engine",
         category: "engine",
         factory: () => new SmallEngine()
+    },
+    [PartIds.ENGINE_SMALL_V2]: {
+        id: PartIds.ENGINE_SMALL_V2,
+        name: "Small Engine V2",
+        category: "engine",
+        factory: () => new SmallEngineV2()
     },
     [PartIds.ENGINE_PRECISION]: {
         id: PartIds.ENGINE_PRECISION,

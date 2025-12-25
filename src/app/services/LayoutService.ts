@@ -144,6 +144,7 @@ export class LayoutService {
       case "parachute": return DefaultCatalog.parachutes;
       case "heatShield": return DefaultCatalog.heatShields;
       case "science": return DefaultCatalog.science;
+      case "science_large": return DefaultCatalog.science;
     }
     return [];
   }
@@ -221,6 +222,7 @@ export class LayoutService {
       case "parachute": r.parachutes.push(part); break;
       case "heatShield": r.heatShields.push(part); break;
       case "science": r.science.push(part); break;
+      case "science_large": r.science.push(part); break;
     }
   }
 
@@ -231,14 +233,14 @@ export class LayoutService {
   }
 
   saveLayoutFor(index: number, layout: StoredLayout): void {
-    try { sessionStorage.setItem(this.keyFor(index), JSON.stringify(layout)); } catch { }
+    try { localStorage.setItem(this.keyFor(index), JSON.stringify(layout)); } catch { }
   }
   // Changed signature to take layout object instead of Rocket, because Rocket doesn't store slot info anymore
   saveLayout(layout: StoredLayout): void { this.saveLayoutFor(0, layout); }
 
   loadLayoutFor(index: number): StoredLayout | null {
     try {
-      const raw = sessionStorage.getItem(this.keyFor(index)) ?? (index === 0 ? sessionStorage.getItem(SessionKeys.LAYOUT) : null);
+      const raw = localStorage.getItem(this.keyFor(index)) ?? (index === 0 ? localStorage.getItem(SessionKeys.LAYOUT) : null);
       return raw ? JSON.parse(raw) : null;
     } catch { return null; }
   }

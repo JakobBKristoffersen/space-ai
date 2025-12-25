@@ -9,6 +9,7 @@ export interface MonacoScriptEditorProps {
     disabled?: boolean;
     onChange?: (value: string) => void;
     onCompile?: () => void;
+    onSave?: () => void;
     telemetryKeys?: string[];
     // language prop removed as it is always typescript
     files?: { name: string, code: string }[];
@@ -21,7 +22,7 @@ export interface MonacoScriptEditorRef {
 }
 
 const MonacoScriptEditor = React.memo(forwardRef<MonacoScriptEditorRef, MonacoScriptEditorProps>(
-    ({ value, initialValue, theme = "dark", onChange, onCompile, telemetryKeys, disabled, files = [], currentFileName = "main.ts", unlockedTechs = [] }, ref) => {
+    ({ value, initialValue, theme = "dark", onChange, onCompile, onSave, telemetryKeys, disabled, files = [], currentFileName = "main.ts", unlockedTechs = [] }, ref) => {
         const [editorMounted, setEditorMounted] = useState(false);
         const editorRef = useRef<any>(null);
         const monacoRef = useRef<Monaco | null>(null);
@@ -150,6 +151,11 @@ const module = { exports };
             },
         }));
 
+        const onCompileRef = useRef(onCompile);
+        const onSaveRef = useRef(onSave);
+        useEffect(() => { onCompileRef.current = onCompile; }, [onCompile]);
+        useEffect(() => { onSaveRef.current = onSave; }, [onSave]);
+
         const handleEditorDidMount = (editor: any, monaco: Monaco) => {
             editorRef.current = editor;
             monacoRef.current = monaco;
@@ -167,7 +173,13 @@ const module = { exports };
 
             // Add keybinding for Compile (Cmd/Ctrl + Enter)
             editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.Enter, () => {
-                onCompile?.();
+                onCompileRef.current?.();
+            });
+
+            // Add keybinding for Save (Cmd/Ctrl + S)
+            editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
+                // Prevent default browser save dialog
+                onSaveRef.current?.();
             });
         };
 

@@ -15,8 +15,8 @@ import { PartIds } from "../../game/GameIds";
 export class SmallEngine implements EnginePart {
     readonly id = PartIds.ENGINE_SMALL;
     readonly name = "Small Engine";
-    readonly dryMassKg = 50;
-    readonly maxThrustN = 1_500; // placeholder
+    readonly dryMassKg = 30;
+    readonly maxThrustN = 1_200; // placeholder
     private _power: number = 0;
 
     get power(): number { return this._power; }
@@ -45,8 +45,8 @@ export class SmallEngine implements EnginePart {
 export class SmallEngineV2 implements EnginePart {
     readonly id = PartIds.ENGINE_SMALL_V2;
     readonly name = "Small Engine V2";
-    readonly dryMassKg = 50;
-    readonly maxThrustN = 1_700; // placeholder
+    readonly dryMassKg = 35;
+    readonly maxThrustN = 1_750; // placeholder
     private _power: number = 0;
 
     get power(): number { return this._power; }

@@ -241,6 +241,7 @@ export default function ScriptsPage({ onNavigate }: { onNavigate?: (v: string) =
                 setCode(v);
                 try { sessionStorage.setItem("session:user-script", v); } catch { }
               }}
+              onSave={save}
               onCompile={save}
               theme={editorTheme}
               unlockedTechs={unlockedTechs}

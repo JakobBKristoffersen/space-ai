@@ -75,6 +75,7 @@ export const TechIds = {
     PROPULSION_VAC: "tech.propulsion_vac",
     COMMS_RELAY: "tech.comms_relay",
     ION_PROPULSION: "tech.ion",
+    ATTITUDE_CONTROL: "tech.attitude",
 } as const;
 
 export const ApiFeatures = {

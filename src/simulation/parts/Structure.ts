@@ -17,7 +17,7 @@ export class NoseCone implements NoseConePart {
 export class Fin implements FinPart {
     readonly id = PartIds.FIN_BASIC;
     name = "Aerodynamic Fin";
-    massKg = 25;
+    massKg = 5;
     dragCoefficient = 0.5;
 }
 

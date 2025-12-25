@@ -19,11 +19,12 @@ import {
 } from "@chakra-ui/react";
 import React, { useState, useEffect, useMemo } from "react";
 import { Scatter, ScatterChart, XAxis, YAxis, Tooltip, CartesianGrid, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import { toaster } from "../components/ui/toaster";
 
 // Types matching ScienceManager
 interface MilestoneStatus {
   id: string;
-  type: "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude";
+  type: "temp" | "atmo" | "surface" | "biosample" | "velocity" | "altitude" | "distance";
   zone: string;
   level: string;
   reqCount: number;
@@ -92,7 +93,17 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
 
   const handleClaim = (id: string) => {
     const svc: any = (window as any).__services;
+    const m = milestones.find(m => m.id === id);
     svc?.claimMilestone?.(id);
+
+    if (m) {
+      toaster.create({
+        title: "Achievement Claimed!",
+        description: `Successfully claimed ${m.title} for ${m.rewardRp} RP.`,
+        type: "success",
+      });
+    }
+
     // Force immediate UI refresh
     setTimeout(() => updateFnRef.current?.(), 10);
   };
@@ -101,7 +112,7 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
     const counts = { flight: 0, atmo: 0, surface: 0 };
     for (const m of milestones) {
       if (m.isCompleted && !m.isClaimed) {
-        if (m.type === 'velocity' || m.type === 'altitude') counts.flight++;
+        if (m.type === 'velocity' || m.type === 'altitude' || m.type === 'distance') counts.flight++;
         if (m.type === 'temp' || m.type === 'atmo') counts.atmo++;
         if (m.type === 'surface' || m.type === 'biosample') counts.surface++;
       }
@@ -115,7 +126,7 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
 
         {/* Unified Header */}
         <SpaceCenterHeader
-          title="Research Milestones"
+          title="Science & Achievements"
           icon={FaFlask}
           description="Track Achievements & Earn RP"
           onInfoClick={() => setShowTutorial(true)}
@@ -193,6 +204,22 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
                     icon={FaTrophy}
                   />
                 </ScienceSection>
+
+                <ScienceSection
+                  title="Distance from Origin"
+                  description="Maximum angular distance achieved from the launch site."
+                  milestones={milestones.filter(m => m.type === "distance")}
+                  onClaim={handleClaim}
+                  hideClaimed={hideClaimed}
+                >
+                  <MetricDisplay
+                    label="MAX LATITUDE"
+                    value={data.interactions["max_distance"] || 0}
+                    unit="°"
+                    color="purple.400"
+                    icon={FaTrophy}
+                  />
+                </ScienceSection>
               </VStack>
             </Container>
           </Tabs.Content>
@@ -257,15 +284,15 @@ export default function MissionsPage({ onNavigate }: { onNavigate: (view: string
         <Dialog.Positioner>
           <Dialog.Content bg="gray.900" borderColor="gray.700">
             <Dialog.Header>
-              <Dialog.Title>Welcome to Research & Development</Dialog.Title>
+              <Dialog.Title>Welcome to Science & Achievements</Dialog.Title>
             </Dialog.Header>
             <Dialog.Body>
               <VStack align="start" gap={3} color="gray.300">
                 <Text>The R&D Lab is where you analyze mission data and claim rewards.</Text>
                 <ul style={{ marginLeft: "20px", listStyleType: "disc" }}>
                   <li><Text><strong>Review Data:</strong> See charts for atmospheric pressure, temperature, and surface composition.</Text></li>
-                  <li><Text><strong>Claim Milestones:</strong> Clicking "Claim" on completed milestones earns you Research Points (RP).</Text></li>
-                  <li><Text><strong>Unlock Tech:</strong> Use your RP to unlock new parts and facilities in the Space Center.</Text></li>
+                  <li><Text><strong>Claim Achievements:</strong> Earn Research Points (RP) by claiming rewards from completed milestones.</Text></li>
+                  <li><Text>Use the RP you earn here to unlock new technologies at the <Text as="span" fontWeight="bold">R&D Laboratory</Text>.</Text></li>
                 </ul>
                 <Text color="cyan.300" fontSize="sm">
                   <strong>Goal:</strong> Reach "Flight Data" milestones first by launching higher and faster!

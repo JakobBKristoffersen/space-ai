@@ -103,8 +103,8 @@ export class DebugService {
     }
 
     cheatLoadOrbitScript() {
-        this.scriptLib.upsertByName("SeedUtils.ts", ORBIT_UTIL);
-        this.scriptLib.upsertByName("SeedMain.ts", ORBIT_MAIN);
-        alert("SeedMain.ts and SeedUtils.ts loaded into library!");
+        this.scriptLib.upsertByName("Utils.ts", ORBIT_UTIL);
+        this.scriptLib.upsertByName("GoToOrbit.ts", ORBIT_MAIN);
+        alert("GoToOrbit.ts and Utils.ts loaded into library!");
     }
 }

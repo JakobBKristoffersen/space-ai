@@ -54,6 +54,7 @@ export interface RocketSnapshot {
   /** Orbital periapsis altitude over primary, if bound ellipse; else NaN. */
   peAltitude?: number;
   fuelKg: number;
+  fuelCapacityKg: number;
   /** instantaneous fuel consumption rate in kg/s based on last tick */
   fuelConsumptionKgPerS: number;
   /** Average ISP (Specific Impulse) of active engines (s) */
@@ -128,8 +129,10 @@ export interface RocketSnapshot {
   packetQueueLength?: number;
   /** Total size of waiting packets in KB. */
   packetQueueSizeKb?: number;
+  /** Current latitude in degrees (0..360 or -180..180 depending on implementation). */
+  latitude?: number;
   /** Installed science experiments. */
-  science?: { id: string; name: string; hasData?: boolean }[];
+  science?: { id: string; name: string; hasData?: boolean; bufferSize?: number }[];
 }
 
 export type RocketCommand =
@@ -298,8 +301,8 @@ export interface SciencePart {
   readonly id: string;
   readonly name: string;
   readonly massKg: number;
-  readonly scienceValue?: number;
   hasData?: boolean;
+  buffer?: Map<number, any>;
   data?: any;
   stageIndex?: number;
 }
@@ -385,6 +388,7 @@ export class Rocket {
   private _maxTurnRateForSnapshot: number | undefined = undefined;
   // private _maxTurnRateForSnapshot: number | undefined = undefined; // duplicate removed
   private _atmosphereCutoffForSnapshot: number | undefined = undefined;
+  private _latitudeForSnapshot: number = 90;
 
   // Cache for Persistent Rails Physics
   _railsState?: RailsState;
@@ -423,6 +427,7 @@ export class Rocket {
     this._commsRecvPerS = Number(params.recvPerS);
   }
   setTurnStatsForSnapshot(maxOmega: number): void { this._maxTurnRateForSnapshot = Number(maxOmega); }
+  setLatitudeForSnapshot(lat: number): void { this._latitudeForSnapshot = lat; }
   // setCurrentTerrainForSnapshot removed, using public property this.currentTerrain
 
   // --- Logic ---
@@ -630,6 +635,10 @@ export class Rocket {
     return this.fuelTanks.reduce((m, t) => m + t.fuelKg, 0);
   }
 
+  totalFuelCapacityKg(): number {
+    return this.fuelTanks.reduce((m, t) => m + (t.capacityKg || 0), 0);
+  }
+
   availableEnergyJ(): number {
     return this.batteries.reduce((e, b) => e + b.energyJoules, 0);
   }
@@ -716,6 +725,7 @@ export class Rocket {
       apAltitude: this._apAltitudeForSnapshot,
       peAltitude: this._peAltitudeForSnapshot,
       fuelKg: this.availableFuelKg(),
+      fuelCapacityKg: this.totalFuelCapacityKg(),
       fuelConsumptionKgPerS: this._lastFuelBurnKgPerS,
       batteryJoules: energy,
       batteryCapacityJoules: capacity,
@@ -814,7 +824,13 @@ export class Rocket {
       hasSolarPanels: this.solarPanels.length > 0,
       totalDragCoefficient: cd,
       currentTerrain: this.currentTerrain,
-      science: this.science.map(s => ({ id: s.id, name: s.name, hasData: !!s.hasData })),
+      latitude: this._latitudeForSnapshot,
+      science: this.science.map(s => ({
+        id: s.id,
+        name: s.name,
+        hasData: Boolean(s.hasData || (s.buffer && s.buffer.size > 0)),
+        bufferSize: s.buffer?.size || 0
+      })),
     };
   }
 

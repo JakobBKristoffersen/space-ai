@@ -3,7 +3,7 @@ import { Box, Flex, HStack, Heading, Tabs, Button, Text, Dialog, Icon, Select, P
 import { useColorModeValue } from "@/components/ui/color-mode";
 import { initAppLogic } from "./app/bootstrap/initAppLogic";
 import { AppCoreContext } from "./app/AppContext";
-import WorldScenePage from "./pages/WorldScenePage";
+import MissionControlPage from "./pages/MissionControlPage";
 import ScriptsPage from "./pages/ScriptsPage";
 import SciencePage from "./pages/SciencePage";
 import ResearchPage from "./pages/ResearchPage";
@@ -13,6 +13,7 @@ import { CommsCenterPage } from "./pages/CommsCenterPage";
 import { DebugToolbox } from "./ui/DebugToolbox";
 import { Sidebar } from "./components/Sidebar";
 import { FaPause, FaPlay } from "react-icons/fa";
+import { toaster } from "./components/ui/toaster";
 
 function useManagerAndServices() {
   const [core, setCore] = useState<any>({ manager: null, services: { layout: null, scripts: null, telemetry: null } });
@@ -20,7 +21,7 @@ function useManagerAndServices() {
     const g = window as any;
     if (!g.__appInited) {
       g.__appInited = true;
-      // Ensure the canvas exists: WorldScenePage is mounted by default (tab index 0)
+      // Ensure the canvas exists: MissionControlPage is mounted by default (tab index 0)
       initAppLogic();
     }
     // Pull manager & services from globals (set by initAppLogic)
@@ -123,6 +124,31 @@ export default function App() {
     return () => { try { unsub?.(); } catch { } };
   }, [core]);
 
+  // Achievement listener
+  const [lastClaimableCount, setLastClaimableCount] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => {
+      const svc: any = (window as any).__services;
+      if (!svc?.getMilestones) return;
+
+      const ms: any[] = svc.getMilestones();
+      const claimable = ms.filter(m => m.isCompleted && !m.isClaimed);
+      const count = claimable.length;
+
+      if (count > lastClaimableCount) {
+        // New achievement(s) available!
+        const latest = claimable[claimable.length - 1]; // Just take the last one for the toast
+        toaster.create({
+          title: "Achievement Available",
+          description: `New achievement: ${latest.title}`,
+          duration: 4000,
+        });
+      }
+      setLastClaimableCount(count);
+    }, 2000);
+    return () => clearInterval(id);
+  }, [lastClaimableCount]);
+
   // Render logic: specific pages + persistent WorldScene
   return (
     <AppCoreContext.Provider value={core}>
@@ -183,7 +209,7 @@ export default function App() {
           {/* Views */}
           <Box flex={1} overflow="hidden" position="relative">
             <Box h="100%" display={currentView === 'world_scene' ? 'block' : 'none'}>
-              <WorldScenePage onNavigate={setCurrentView} isActive={currentView === 'world_scene'} />
+              <MissionControlPage onNavigate={setCurrentView} isActive={currentView === 'world_scene'} />
             </Box>
 
             {currentView === 'space_center' && <SpaceCenterPage onNavigate={setCurrentView} />}

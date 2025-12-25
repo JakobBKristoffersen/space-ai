@@ -39,7 +39,7 @@ function fmt(n: number, digits = 2): string {
 
 import { StatRow } from "../components/ui/StatRow";
 
-export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: (v: string) => void, isActive?: boolean }) {
+export default function MissionControlPage({ onNavigate, isActive }: { onNavigate?: (v: string) => void, isActive?: boolean }) {
     const { manager, services } = useAppCore();
     const [snapKey, setSnapKey] = useState<number>(0);
     const [launched, setLaunched] = useState<boolean>(false);
@@ -48,8 +48,19 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
     const [showTutorial, setShowTutorial] = useState(() => !localStorage.getItem("tutorial_launch_seen"));
 
     useEffect(() => {
-        setHasBasicComputing(services.research?.system?.isUnlocked(TechIds.BASIC_COMPUTING) ?? false);
-    }, [services]);
+        const research = services.research;
+        if (!research?.system) return;
+
+        const update = () => {
+            if (research.system) {
+                setHasBasicComputing(research.system.isUnlocked(TechIds.BASIC_COMPUTING));
+            }
+        };
+
+        update();
+        const unsub = research.subscribe(update);
+        return () => unsub?.();
+    }, [services.research]);
 
     // ... (rest of component)
 
@@ -63,7 +74,7 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
         };
         let lastTs = 0;
         const unsub = manager.onPostRender((_alpha, ts) => {
-            if (ts - lastTs < 100) return;
+            if (ts - lastTs < 50) return; // Slightly faster sync
             lastTs = ts;
             setSnapKey((k) => (k + 1) % 1000000);
             sync();
@@ -102,6 +113,8 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
     const speedMag = rocketSnap ? mag2(rocketSnap.velocity?.x ?? 0, rocketSnap.velocity?.y ?? 0) : 0;
     const verticalSpeed = rocketSnap?.velocity?.y ?? 0;
     const fuel = rocketSnap?.fuelKg ?? 0;
+    const fuelMax = rocketSnap?.fuelCapacityKg || 0;
+    const fuelPct = fuelMax > 0 ? Math.max(0, Math.min(100, (fuel / fuelMax) * 100)) : 0;
     const fuelRate = rocketSnap?.fuelConsumptionKgPerS ?? 0;
     const throttle = (rocketSnap?.avgEngineThrustPct ?? 0) * 100;
     const mass = rocketSnap?.massKg ?? 1;
@@ -134,7 +147,7 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
         <VStack align="stretch" h="100%" gap={0} bg="gray.950" className="dashboard-container">
             {/* Header */}
             <SpaceCenterHeader
-                title="Launch Control"
+                title="Mission Control"
                 icon={FaGlobe}
                 description="Mission Dashboard"
                 onNavigate={onNavigate}
@@ -168,11 +181,11 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
                                 </Progress.Root>
                             </Box>
                             <Box mb={2}>
-                                <HStack justify="space-between" mb={1}><Text fontSize="xs" color="gray.400">FUEL</Text><Text fontSize="xs" color={fuelRate > 0 ? "yellow.300" : "gray.400"}>{fmt(fuel, 0)} kg</Text></HStack>
-                                <Progress.Root value={fuel > 0 ? 100 : 0} max={100} size="sm" colorPalette="yellow" striped={fuelRate > 0} animated={fuelRate > 0}>
+                                <HStack justify="space-between" mb={1}><Text fontSize="xs" color="gray.400">FUEL</Text><Text fontSize="xs" color={fuelRate > 0.001 ? "yellow.300" : "gray.400"}>{fmt(fuel, 1)} kg</Text></HStack>
+                                <Progress.Root value={fuelPct} max={100} size="sm" colorPalette="yellow" striped={fuelRate > 0.001} animated={fuelRate > 0.001}>
                                     <Progress.Track bg="gray.800"><Progress.Range /></Progress.Track>
                                 </Progress.Root>
-                                {fuelRate > 0 && <Text fontSize="xs" color="yellow.500" textAlign="right">-{fmt(fuelRate, 1)} kg/s</Text>}
+                                {fuelRate > 0.001 && <Text fontSize="xs" color="yellow.500" textAlign="right">-{fmt(fuelRate, 1)} kg/s</Text>}
                             </Box>
                             <Grid templateColumns="1fr 1fr" gap={2} mt={1}>
                                 <BigStat label="TWR" value={fmt(twr, 2)} color={twr > 1 ? "green.300" : "orange.300"} />
@@ -271,8 +284,8 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
                         </Box>
                     </Box>
 
-                    {/* Guidance Computer Log (Bottom Console) - ONLY IF UNLOCKED */}
-                    {hasBasicComputing && (
+                    {/* Guidance Computer Log (Bottom Console) - ONLY IF UNLOCKED AND CPU PRESENT */}
+                    {hasBasicComputing && rocketSnap?.cpuName && (
                         <Box h="250px" borderTopWidth="1px" borderColor="gray.800" bg="gray.950" display="flex" flexDirection="column">
                             <ScriptLogsPanel manager={manager} nextRun={rocketSnap?.cpuNextRunInSeconds} />
                         </Box>
@@ -313,7 +326,8 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
                                         <Text fontSize="xs" color="gray.500">Uplink</Text>
                                         <Badge size="xs" colorPalette={rocketSnap?.commsInRange ? "green" : "red"}>{rocketSnap?.commsInRange ? "CONNECTED" : "NO SIGNAL"}</Badge>
                                     </HStack>
-                                    <StatRow label="Queue" value={`${rocketSnap?.packetQueueLength || 0} pkts`} unit="" />
+                                    <StatRow label="Queue" value={`${rocketSnap?.packetQueueLength || 0} pkts`} unit={`(${fmt(rocketSnap?.packetQueueSizeKb || 0, 1)} KB)`} />
+                                    <StatRow label="Throughput" value={fmt(((rocketSnap?.commsBytesSentPerS ?? 0) + (rocketSnap?.commsBytesRecvPerS ?? 0)) / 1024, 2)} unit="kB/s" />
 
                                     <Separator borderColor="gray.800" my={1} />
 
@@ -322,7 +336,10 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
                                         <VStack align="stretch" gap={1}>
                                             {rocketSnap.science.map((s: any) => (
                                                 <HStack key={s.id} justify="space-between">
-                                                    <Text fontSize="xs" color="gray.400" truncate>{s.name}</Text>
+                                                    <VStack align="start" gap={0}>
+                                                        <Text fontSize="xs" color="gray.400" truncate>{s.name}</Text>
+                                                        {s.bufferSize > 0 && <Text fontSize="xxxx-small" color="gray.600" lineHeight={1}>{s.bufferSize} readings</Text>}
+                                                    </VStack>
                                                     <Text fontSize="xs" fontWeight="bold" color={s.hasData ? "green.300" : "gray.600"}>{s.hasData ? "READY" : "IDLE"}</Text>
                                                 </HStack>
                                             ))}
@@ -343,7 +360,7 @@ export default function WorldScenePage({ onNavigate, isActive }: { onNavigate?: 
                 <Dialog.Positioner>
                     <Dialog.Content bg="gray.900" borderColor="gray.700">
                         <Dialog.Header>
-                            <Dialog.Title>Welcome to Launch Control</Dialog.Title>
+                            <Dialog.Title>Welcome to Mission Control</Dialog.Title>
                         </Dialog.Header>
                         <Dialog.Body>
                             <VStack align="start" gap={3} color="gray.300">

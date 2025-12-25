@@ -91,16 +91,19 @@ export default function ResearchPage({ onNavigate }: Props) {
                         <Dialog.Header>
                             <HStack>
                                 <FaFlask color="#4299E1" />
-                                <Dialog.Title>Welcome to Research & Development</Dialog.Title>
+                                <Dialog.Title>Welcome to the R&D Laboratory</Dialog.Title>
                             </HStack>
                         </Dialog.Header>
                         <Dialog.Body>
                             <VStack align="start" gap={3}>
                                 <Text>
-                                    As you complete milestones and gather science data, you earn <Text as="span" color="cyan.400" fontWeight="bold">Research Points (RP)</Text>.
+                                    Research Points (RP) gathered from your missions are spent here to unlock new technologies.
                                 </Text>
                                 <Text>
-                                    Spend your RP here to unlock new technologies, opening up more advanced rocketry components and systems.
+                                    To earn more <Text as="span" color="cyan.400" fontWeight="bold">RP</Text>, head over to the <Text as="span" fontWeight="bold">Science & Achievements</Text> page and claim rewards for your flight milestones and data analysis.
+                                </Text>
+                                <Text>
+                                    Unlocking new techs will provide more advanced rocketry components and systems for your next build.
                                 </Text>
                                 <Text color="gray.400" fontSize="sm">
                                     Tip: Start by unlocking "Basic Computing" to gain access to programmable guidance systems.
