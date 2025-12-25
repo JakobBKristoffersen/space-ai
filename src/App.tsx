@@ -55,7 +55,16 @@ export default function App() {
   const core = useManagerAndServices();
 
   // View state
-  const [currentView, setCurrentView] = useState<string>("space_center");
+  const [currentView, setCurrentView] = useState<string>(() => {
+    const hasSeenIntro = localStorage.getItem("app:has_seen_mission_control");
+    return hasSeenIntro ? "space_center" : "world_scene";
+  });
+
+  useEffect(() => {
+    if (currentView === "world_scene") {
+      localStorage.setItem("app:has_seen_mission_control", "true");
+    }
+  }, [currentView]);
 
   // RP state for header
   const [rp, setRp] = useState<number>(0);
